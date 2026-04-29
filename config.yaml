@@ -1,0 +1,51 @@
+# Quant system config
+# 中线策略 (20-60 日持仓)，A 股 + 港股，手动下单
+
+markets:
+  a_share:
+    enabled: true
+    universe: a_all        # hs300 / zz500 / zz1000 / a_all (全市场, 排除 ST)
+    benchmark: sh000300
+  hk_share:
+    enabled: true
+    universe: hsi          # hsi (恒指) / hsce (国企指数)
+    benchmark: HSI
+
+data:
+  cache_dir: ./data/cache
+  start_date: "2022-01-01"
+  refresh_days: 1          # 缓存超过 N 天则重新拉取
+
+strategy:
+  hold_days_min: 20
+  hold_days_max: 60
+  position_max_count: 10           # 同时持仓最多 N 只
+  single_position_pct_max: 0.15    # 单只最大仓位
+  cash_buffer_pct_min: 0.10        # 最低现金占比
+
+# 多因子权重 (用于自下而上打分，模块: bottomup/factors.py)
+factors:
+  weights:
+    pe_inverse: 0.20       # 估值: 1/PE
+    pb_inverse: 0.15       # 估值: 1/PB
+    roe: 0.25              # 质量: ROE
+    revenue_growth: 0.20   # 成长: 营收同比
+    momentum_3m: 0.20      # 动量: 3 个月涨幅
+
+journal:
+  db_path: ./data/journal.db
+
+backtest:
+  initial_capital: 1000000        # 初始资金 100 万
+  commission: 0.0003              # 佣金率 (双边)
+  stamp_tax: 0.001                # 印花税 (仅卖出)
+  slippage: 0.001                 # 单边滑点
+  cash_buffer_pct: 0.05           # 留 5% 现金缓冲
+  benchmark_symbol: sh000300      # HS300 基准
+  output_dir: ./data/backtest
+
+  # 准入门槛 (实盘前必须通过)
+  admission:
+    min_sharpe: 0.5
+    max_drawdown: 0.25
+    min_win_rate: 0.40
