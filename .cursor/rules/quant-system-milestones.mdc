@@ -1,0 +1,14 @@
+---
+description: Auto-load quant milestone goals and audit standards (project skill)
+alwaysApply: true
+---
+
+# Quant system — 里程碑 Skill（自动）
+
+在本仓库做**实质性**改动前（策略、回测、`daily_run`、数据加载、universe、择时/M2、`config.yaml`、诊断产物），先阅读并遵循：
+
+**`.cursor/skills/quant-system-milestones/SKILL.md`**
+
+补充清单与命令：**同目录 `reference.md`**。
+
+涉及回测输出或 M0 诊断时，在合适节点运行：`python scripts/audit_m0_outputs.py <回测输出目录>`（`data/backtest/<strategy>_<market>_<start>_<end>`）。

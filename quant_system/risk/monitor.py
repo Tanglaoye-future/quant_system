@@ -22,6 +22,7 @@ from typing import Optional
 
 from quant_system.data.loader import DataLoader
 from quant_system.journal.journal import Journal
+from quant_system.timing.exit_taxonomy import exit_layer_from_reason
 from quant_system.timing.signals import (
     TimingConfig,
     exit_signal,
@@ -46,6 +47,7 @@ class PositionRisk:
     new_stop: float
     action: str       # HOLD / EXIT
     reason: str
+    exit_layer: str = ""
 
 
 @dataclass
@@ -108,6 +110,7 @@ class RiskMonitor:
             pnl_pct = current_price / trade["entry_price"] - 1.0
             pnl_amount = (current_price - trade["entry_price"]) * trade["entry_size"]
             action = "EXIT" if ex["signal"] else "HOLD"
+            ex_layer = str(ex.get("exit_layer") or exit_layer_from_reason(str(ex.get("reason", ""))))
 
             if ex["signal"]:
                 risk_flag = "exit"
@@ -133,7 +136,7 @@ class RiskMonitor:
                 current_date=current_date, current_price=current_price,
                 pnl_pct=pnl_pct, pnl_amount=pnl_amount, hold_days=hold_days,
                 prev_stop=trade["stop_loss_price"], new_stop=new_stop,
-                action=action, reason=ex["reason"],
+                action=action, reason=ex["reason"], exit_layer=ex_layer,
             ))
 
         port = self._aggregate(positions)

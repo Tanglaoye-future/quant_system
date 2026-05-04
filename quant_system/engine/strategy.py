@@ -10,12 +10,18 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Optional, Protocol
 
+import pandas as pd
+
 from quant_system.bottomup.factors import FactorWeights, score_universe
+from quant_system.bottomup.portfolio import M4Config
 from quant_system.data.loader import DataLoader
+from quant_system.timing.exit_taxonomy import exit_layer_from_reason
+from quant_system.timing.regime import MarketRegimeGate, build_timing_regime_context
 from quant_system.timing.signals import (
     TimingConfig, enrich,
     entry_signal_from_enriched, exit_signal_from_enriched, trailing_stop_from_enriched,
 )
+from quant_system.universe.filter import UniverseFilter, UniverseFilterConfig
 
 
 @dataclass
@@ -34,6 +40,7 @@ class ExitSignal:
     action: str                    # "HOLD" / "EXIT"
     new_stop: Optional[float] = None
     reason: str = ""
+    exit_layer: str = ""           # M5：与 exit_taxonomy / exit_events 对齐
 
 
 @dataclass
@@ -67,24 +74,47 @@ class BottomupTimingStrategy:
         timing_cfg: Optional[TimingConfig] = None,
         weights: Optional[FactorWeights] = None,
         history_start: str = "2018-01-01",
+        regime_benchmark_symbol: Optional[str] = None,
+        m4_cfg: Optional[M4Config] = None,
     ):
         self.loader = loader
         self.market = market
         self.universe_codes = universe_codes
         self.tcfg = timing_cfg or TimingConfig()
         self.weights = weights or FactorWeights()
+        self.m4_cfg: M4Config = m4_cfg or M4Config()
+        self._m4_prev_top: set[str] = set()
         self.history_start = history_start
-        # 一次性预 enrich, 后续 screen/evaluate 都查 cache
+        self._regime_benchmark_symbol = regime_benchmark_symbol or "sh000300"
+        self._regime_gate: MarketRegimeGate | None = None
+        if self.tcfg.m2_regime_enabled and self.market == "a_share":
+            self._regime_gate = MarketRegimeGate(
+                loader, self._regime_benchmark_symbol, self.tcfg.m2_regime_ma_days
+            )
+        # enrich 缓存：按需构建（UniverseFilter 先缩小集合，再 enrich）
         self._enriched: dict[str, "object"] = {}
-        self._cache_built = False
+        self._universe_filter = UniverseFilter(loader, UniverseFilterConfig())
+        self._filtered_cache: dict[str, list[str]] = {}   # asof_str -> codes
 
-    def _build_enriched_cache(self) -> None:
-        """对 universe 全量股票一次性算 enrich, 后续每天复用."""
-        if self._cache_built:
-            return
-        import sys
-        n_total = len(self.universe_codes)
-        for i, code in enumerate(self.universe_codes, 1):
+    def _filtered_universe_codes(self, asof_str: str) -> list[str]:
+        if asof_str in self._filtered_cache:
+            return self._filtered_cache[asof_str]
+        # 当前只实现 A 股过滤；港股后续按 M2 方案扩展
+        if self.market != "a_share":
+            self._filtered_cache[asof_str] = self.universe_codes
+            return self.universe_codes
+        uni_df = pd.DataFrame({"code": self.universe_codes})
+        uni_df["name"] = ""
+        filtered_df, _stats = self._universe_filter.filter_a_share(uni_df, asof_str)
+        codes = filtered_df["code"].astype(str).tolist()
+        self._filtered_cache[asof_str] = codes
+        return codes
+
+    def _ensure_enriched(self, codes: list[str]) -> None:
+        """对 codes 里尚未 enrich 的股票做 enrich 并写入缓存。"""
+        for code in codes:
+            if code in self._enriched:
+                continue
             try:
                 px = self.loader.get_daily(self.market, code, self.history_start, "2030-01-01")
             except Exception:
@@ -92,21 +122,41 @@ class BottomupTimingStrategy:
             if len(px) < self.tcfg.ma_long + 5:
                 continue
             self._enriched[code] = enrich(px, self.tcfg)
-            if i % 50 == 0:
-                print(f"  预热 enriched cache: {i}/{n_total}", flush=True)
-        self._cache_built = True
-        print(f"  预热完成: {len(self._enriched)}/{n_total} 只入 cache", flush=True)
 
     def screen(self, asof: date) -> list[BuySignal]:
-        self._build_enriched_cache()
         asof_str = asof.strftime("%Y-%m-%d") if isinstance(asof, date) else asof
+        if self._regime_gate is not None:
+            ok, _msg = self._regime_gate.allows_long_entries(asof_str)
+            if not ok:
+                return []
+        codes = self._filtered_universe_codes(asof_str)
+        self._ensure_enriched(codes)
+
+        regime_ctx = None
+        if self.market == "a_share" and (
+            self.tcfg.m3_regime_rsi_band or self.tcfg.m3_reg_vol_tighten_hi
+        ):
+            regime_ctx = build_timing_regime_context(
+                self.loader,
+                self._regime_benchmark_symbol,
+                asof_str,
+                self.tcfg.m2_regime_ma_days,
+                atr_period=self.tcfg.atr_period,
+                atr_pct_median_window=self.tcfg.m3_reg_index_atr_pct_median_window,
+            )
 
         hits = []
-        for code, enr in self._enriched.items():
-            sub = enr[enr["date"] <= asof_str]
-            if len(sub) < self.tcfg.ma_long + 5:
+        for code in codes:
+            enr = self._enriched.get(code)
+            if enr is None:
                 continue
-            sig = entry_signal_from_enriched(sub, self.tcfg)
+            sub = enr[enr["date"] <= asof_str]
+            min_rows = self.tcfg.ma_long + 5
+            if self.tcfg.m3_mtf_rsi_enabled:
+                min_rows = max(min_rows, int(self.tcfg.m3_mtf_rsi_period) + 3)
+            if len(sub) < min_rows:
+                continue
+            sig = entry_signal_from_enriched(sub, self.tcfg, regime_ctx=regime_ctx)
             if sig["signal"]:
                 hits.append({"code": code, **sig})
         if not hits:
@@ -114,16 +164,31 @@ class BottomupTimingStrategy:
 
         # 因子排序 (score_universe 内部 fundamentals 已 cache, 秒回)
         hit_codes = [h["code"] for h in hits]
+        m4_for_score = (
+            self.m4_cfg
+            if float(self.m4_cfg.m4_factor_dispersion_lambda) > 0
+            else None
+        )
         try:
             ranked = score_universe(
-                self.loader, self.market, hit_codes, asof_str, self.weights, verbose=False
+                self.loader, self.market, hit_codes, asof_str, self.weights,
+                verbose=False, m4_cfg=m4_for_score,
             )
             for h in hits:
                 h["_score"] = float(ranked.loc[h["code"], "score"]) if h["code"] in ranked.index else 0.0
         except Exception:
             for h in hits:
                 h["_score"] = 0.0
-        hits.sort(key=lambda h: -h["_score"])
+        if float(self.m4_cfg.m4_turnover_penalty) > 0:
+            pen = float(self.m4_cfg.m4_turnover_penalty)
+            for h in hits:
+                if h["code"] not in self._m4_prev_top:
+                    h["_score"] -= pen
+            hits.sort(key=lambda h: -h["_score"])
+            ntop = max(1, int(self.m4_cfg.m4_turnover_top_n))
+            self._m4_prev_top = {h["code"] for h in sorted(hits, key=lambda x: -x["_score"])[:ntop]}
+        else:
+            hits.sort(key=lambda h: -h["_score"])
 
         return [
             BuySignal(
@@ -136,14 +201,17 @@ class BottomupTimingStrategy:
         ]
 
     def evaluate(self, position: Position, asof: date) -> ExitSignal:
-        self._build_enriched_cache()
         asof_str = asof.strftime("%Y-%m-%d") if isinstance(asof, date) else asof
         enr = self._enriched.get(position.symbol)
         if enr is None:
-            return ExitSignal(action="HOLD", reason="not in enriched cache")
+            # 评估时若没缓存，补一次（避免因为 universe 过滤变化导致 hold 无法评估）
+            self._ensure_enriched([position.symbol])
+            enr = self._enriched.get(position.symbol)
+        if enr is None:
+            return ExitSignal(action="HOLD", reason="not in enriched cache", exit_layer="")
         sub = enr[enr["date"] <= asof_str]
         if len(sub) < self.tcfg.ma_long + 5:
-            return ExitSignal(action="HOLD", reason="insufficient history")
+            return ExitSignal(action="HOLD", reason="insufficient history", exit_layer="")
 
         new_stop = trailing_stop_from_enriched(
             sub, position.entry_price, position.stop_loss, self.tcfg
@@ -155,5 +223,19 @@ class BottomupTimingStrategy:
             trailing_stop_price=new_stop, cfg=self.tcfg,
         )
         if ex["signal"]:
-            return ExitSignal(action="EXIT", new_stop=new_stop, reason=ex["reason"])
-        return ExitSignal(action="HOLD", new_stop=new_stop, reason="持有")
+            layer = str(ex.get("exit_layer") or exit_layer_from_reason(str(ex.get("reason", ""))))
+            return ExitSignal(action="EXIT", new_stop=new_stop, reason=str(ex["reason"]), exit_layer=layer)
+        if self.tcfg.m5_regime_exit_enabled and self.market == "a_share":
+            gate = self._regime_gate or MarketRegimeGate(
+                self.loader, self._regime_benchmark_symbol, self.tcfg.m2_regime_ma_days
+            )
+            ok, msg = gate.allows_long_entries(asof_str)
+            if not ok:
+                rs = f"m5_regime_exit: {msg}"
+                return ExitSignal(
+                    action="EXIT",
+                    new_stop=new_stop,
+                    reason=rs,
+                    exit_layer=exit_layer_from_reason(rs),
+                )
+        return ExitSignal(action="HOLD", new_stop=new_stop, reason="持有", exit_layer="")

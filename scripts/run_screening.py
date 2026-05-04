@@ -14,6 +14,7 @@ if hasattr(sys.stdout, "reconfigure"):
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from quant_system.bottomup.factors import FactorWeights, score_universe
+from quant_system.bottomup.portfolio import m4_config_from_yaml
 from quant_system.config import load_config
 from quant_system.data.loader import DataLoader
 
@@ -33,7 +34,13 @@ def main() -> None:
         print(f"market {args.market} 在 config 里未启用")
         return
 
-    loader = DataLoader(cfg.cache_dir, refresh_days=cfg.get("data", "refresh_days", default=1))
+    hsi = cfg.get("data", "hang_seng_indexes", default=None) or {}
+    loader = DataLoader(
+        cfg.cache_dir,
+        refresh_days=cfg.get("data", "refresh_days", default=1),
+        price_adjust=cfg.get("data", "price_adjust", default="qfq"),
+        hang_seng_indexes=hsi,
+    )
     universe = loader.get_universe(args.market, market_cfg["universe"])
     if args.limit > 0:
         universe = universe.head(args.limit)
@@ -41,10 +48,14 @@ def main() -> None:
 
     w_cfg = cfg.get("factors", "weights", default={}) or {}
     weights = FactorWeights(**w_cfg)
+    m4_cfg = m4_config_from_yaml(cfg.get("factors", "m4", default=None))
+    m4_for_score = m4_cfg if float(m4_cfg.m4_factor_dispersion_lambda) > 0 else None
 
     codes = universe["code"].tolist()
     print(f"开始拉数据并打分 ...")
-    ranked = score_universe(loader, args.market, codes, args.asof, weights, verbose=True)
+    ranked = score_universe(
+        loader, args.market, codes, args.asof, weights, verbose=True, m4_cfg=m4_for_score,
+    )
     top = ranked.head(args.top).join(universe.set_index("code")[["name"]], how="left")
     print()
     print(top[["name", "pe_inverse", "pb_inverse", "roe", "revenue_growth", "momentum_3m", "score"]].to_string())

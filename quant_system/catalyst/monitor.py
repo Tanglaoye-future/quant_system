@@ -137,6 +137,11 @@ class CatalystMonitor:
             yj = self._all_forecasts(period)
             rows = yj[yj["股票代码"].astype(str) == code]
             if not rows.empty:
+                # 防止“公告日期在 asof 之后”的未来信息泄漏：回测时只能用已公告的那条
+                if "公告日期" in rows.columns:
+                    rows = rows[pd.to_datetime(rows["公告日期"], errors="coerce") <= pd.to_datetime(asof_yyyymmdd)]
+                if rows.empty:
+                    return out
                 rows = rows.sort_values("公告日期", ascending=False)
                 r = rows.iloc[0]
                 out.forecast_type = str(r.get("预告类型") or "")

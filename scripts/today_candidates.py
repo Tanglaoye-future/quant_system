@@ -13,7 +13,12 @@ from quant_system.timing.signals import TimingConfig, entry_signal
 
 def main() -> None:
     cfg = load_config()
-    loader = DataLoader(cfg.cache_dir)
+    hsi = cfg.get("data", "hang_seng_indexes", default=None) or {}
+    loader = DataLoader(
+        cfg.cache_dir,
+        price_adjust=cfg.get("data", "price_adjust", default="qfq"),
+        hang_seng_indexes=hsi,
+    )
     tcfg = TimingConfig()
     asof = "2026-04-27"
 
@@ -26,7 +31,7 @@ def main() -> None:
     out.write(f"今日 ({asof}) 触发 entry signal 的 HS300 股票:\n\n")
     n_hits = 0
     for code in universe["code"]:
-        cache_path = cfg.cache_dir / f"daily_a_share_{code}.parquet"
+        cache_path = loader.daily_cache_path("a_share", code)
         if not cache_path.exists():
             continue
         px = loader.get_daily("a_share", code, "2024-01-01", asof)

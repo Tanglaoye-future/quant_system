@@ -19,7 +19,12 @@ from quant_system.timing.signals import TimingConfig, scan_entries
 
 def main() -> None:
     cfg = load_config()
-    loader = DataLoader(cfg.cache_dir)
+    hsi = cfg.get("data", "hang_seng_indexes", default=None) or {}
+    loader = DataLoader(
+        cfg.cache_dir,
+        price_adjust=cfg.get("data", "price_adjust", default="qfq"),
+        hang_seng_indexes=hsi,
+    )
     tcfg = TimingConfig()
     asof = "2026-04-27"
 
@@ -49,7 +54,7 @@ def main() -> None:
         if i % 50 == 0:
             log(f"  ...{i}/{len(universe)} 处理中")
         # 跳过没缓存的, 避免在线 fetch 被限流卡死
-        cache_path = cfg.cache_dir / f"daily_a_share_{code}.parquet"
+        cache_path = loader.daily_cache_path("a_share", code)
         if not cache_path.exists():
             n_fail += 1
             continue

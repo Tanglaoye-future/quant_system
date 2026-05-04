@@ -25,12 +25,14 @@ if hasattr(sys.stdout, "reconfigure"):
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from quant_system.bottomup.factors import FactorWeights, score_universe
+from quant_system.bottomup.portfolio import m4_config_from_yaml
 from quant_system.catalyst.monitor import CatalystMonitor
 from quant_system.config import load_config
 from quant_system.data.loader import DataLoader
 from quant_system.journal.journal import Journal
 from quant_system.risk.monitor import RiskMonitor
-from quant_system.timing.signals import TimingConfig, scan_today_entries
+from quant_system.timing.regime import MarketRegimeGate, build_timing_regime_context
+from quant_system.timing.signals import scan_today_entries, timing_config_from_yaml_node
 
 
 def main() -> None:
@@ -53,10 +55,18 @@ def main() -> None:
         print(f"market {args.market} 在 config 里未启用")
         return
 
-    loader = DataLoader(cfg.cache_dir, refresh_days=cfg.get("data", "refresh_days", default=1))
+    hsi = cfg.get("data", "hang_seng_indexes", default=None) or {}
+    loader = DataLoader(
+        cfg.cache_dir,
+        refresh_days=cfg.get("data", "refresh_days", default=1),
+        price_adjust=cfg.get("data", "price_adjust", default="qfq"),
+        hang_seng_indexes=hsi,
+    )
     j = Journal(cfg.journal_db_path)
     j.init_schema()
-    tcfg = TimingConfig()
+    tcfg = timing_config_from_yaml_node(cfg.get("strategy", "timing", default=None))
+    bt_cfg = cfg.get("backtest") or {}
+    bench = market_cfg.get("benchmark") or bt_cfg.get("benchmark_symbol", "sh000300")
 
     print()
     print("=" * 78)
@@ -79,8 +89,9 @@ def main() -> None:
         print("  无")
     for p in exits:
         cat = catalyst.summarize(p.symbol, asof=args.asof)
+        layer = f" [{p.exit_layer}]" if getattr(p, "exit_layer", "") else ""
         print(f"  #{p.trade_id} {p.symbol}  浮盈 {p.pnl_pct*100:+.2f}%  "
-              f"持有 {p.hold_days} 天  >> {p.reason}")
+              f"持有 {p.hold_days} 天  >> {p.reason}{layer}")
         if cat.to_label() != "-":
             print(f"      催化剂: {cat.to_label()}")
 
@@ -110,10 +121,37 @@ def main() -> None:
     open_codes = {t["symbol"] for t in j.list_open()}
     name_map = dict(zip(universe["code"], universe["name"]))
 
-    hits = scan_today_entries(
-        loader, args.market, universe["code"].tolist(), args.asof, tcfg,
-        only_cached=not args.all_stocks,
-    )
+    regime_ctx = None
+    if args.market == "a_share" and (
+        tcfg.m3_regime_rsi_band or tcfg.m3_reg_vol_tighten_hi
+    ):
+        regime_ctx = build_timing_regime_context(
+            loader,
+            str(bench),
+            args.asof,
+            tcfg.m2_regime_ma_days,
+            atr_period=tcfg.atr_period,
+            atr_pct_median_window=tcfg.m3_reg_index_atr_pct_median_window,
+        )
+
+    if tcfg.m2_regime_enabled and args.market == "a_share":
+        gate = MarketRegimeGate(loader, str(bench), tcfg.m2_regime_ma_days)
+        ok, msg = gate.allows_long_entries(args.asof)
+        print(f"  M2市况门: {msg}", flush=True)
+        if not ok:
+            hits = []
+        else:
+            hits = scan_today_entries(
+                loader, args.market, universe["code"].tolist(), args.asof, tcfg,
+                only_cached=not args.all_stocks,
+                regime_ctx=regime_ctx,
+            )
+    else:
+        hits = scan_today_entries(
+            loader, args.market, universe["code"].tolist(), args.asof, tcfg,
+            only_cached=not args.all_stocks,
+            regime_ctx=regime_ctx,
+        )
     # 排除已持仓
     hits = [h for h in hits if h["code"] not in open_codes]
     print(f"  共 {len(hits)} 只触发 (排除已持仓)", flush=True)
@@ -122,9 +160,16 @@ def main() -> None:
     if hits:
         w_cfg = cfg.get("factors", "weights", default={}) or {}
         weights = FactorWeights(**w_cfg)
+        m4_cfg = m4_config_from_yaml(cfg.get("factors", "m4", default=None))
+        m4_for_score = (
+            m4_cfg if float(m4_cfg.m4_factor_dispersion_lambda) > 0 else None
+        )
         hit_codes = [h["code"] for h in hits]
         try:
-            ranked = score_universe(loader, args.market, hit_codes, args.asof, weights, verbose=False)
+            ranked = score_universe(
+                loader, args.market, hit_codes, args.asof, weights,
+                verbose=False, m4_cfg=m4_for_score,
+            )
             for h in hits:
                 h["score"] = float(ranked.loc[h["code"], "score"]) if h["code"] in ranked.index else 0.0
                 row = ranked.loc[h["code"]] if h["code"] in ranked.index else None

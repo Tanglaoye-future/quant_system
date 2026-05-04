@@ -23,7 +23,13 @@ from quant_system.timing.signals import (
 
 def main() -> None:
     cfg = load_config()
-    loader = DataLoader(cfg.cache_dir, refresh_days=cfg.get("data", "refresh_days", default=1))
+    hsi = cfg.get("data", "hang_seng_indexes", default=None) or {}
+    loader = DataLoader(
+        cfg.cache_dir,
+        refresh_days=cfg.get("data", "refresh_days", default=1),
+        price_adjust=cfg.get("data", "price_adjust", default="qfq"),
+        hang_seng_indexes=hsi,
+    )
     tcfg = TimingConfig()
 
     today = datetime.now().strftime("%Y-%m-%d")

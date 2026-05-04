@@ -4,17 +4,27 @@
 markets:
   a_share:
     enabled: true
-    universe: a_all        # hs300 / zz500 / zz1000 / a_all (全市场, 排除 ST)
+    universe: hs300        # 本项目仅支持 hs300
     benchmark: sh000300
   hk_share:
     enabled: true
-    universe: hsi          # hsi (恒指) / hsce (国企指数)
-    benchmark: HSI
+    # 恒生 HSCHK100（恒生中国内地企业(香港上市)100）；成份与行情须来自恒生公开资料或订阅数据产品
+    universe: hs100
+    benchmark: HSCHK100
 
 data:
   cache_dir: ./data/cache
   start_date: "2022-01-01"
   refresh_days: 1          # 缓存超过 N 天则重新拉取
+  price_adjust: ""         # qfq(前复权) / hfq(后复权) / ""(不复权=raw; 更严格避免复权带来的未来信息)
+
+  # 恒生指数公司数据源（港股 hs100 / HSCHK100 基准）；见 quant_system/data/hang_seng_indexes.py
+  hang_seng_indexes:
+    full_constituents_csv: ""           # 可选：订阅《指数数据产品》全量成份 CSV 路径
+    allow_factsheet_top50_only: true    # true：仅用官网英文 factsheet 内 TOP 50（研究）；完整 100 请配 full_constituents_csv 并置 false
+    official_factsheet_pdf_en: ""       # 可选：覆盖默认 HSCHK100 英文 factsheet URL
+    hk_constituent_daily_dir: ""        # 每只股票 {code}.csv，列 date,open,high,low,close,volume（订阅导出）
+    hschk100_index_daily_csv: ""        # HSCHK100 指数日线 CSV（与个股列相同）
 
 strategy:
   hold_days_min: 20
@@ -22,6 +32,37 @@ strategy:
   position_max_count: 10           # 同时持仓最多 N 只
   single_position_pct_max: 0.15    # 单只最大仓位
   cash_buffer_pct_min: 0.10        # 最低现金占比
+
+  # 择时 + M2（字段必须被 timing_config_from_yaml_node 识别；未知键忽略）
+  timing:
+    # --- M2 市况门（指数）；与 backtest.benchmark_symbol 对齐，由 BottomupTimingStrategy 外层拦截新仓 ---
+    m2_regime_enabled: true
+    m2_regime_ma_days: 60
+    # --- M2 单票：RSI 带宽随 ATR% 微调、可选收阳/中位量、结构突破 ---
+    m2_rsi_atr_adjust: true
+    m2_rsi_atr_k: 400.0
+    m2_rsi_atr_cap: 8.0
+    m2_vol_green_bar: false
+    m2_vol_median_lookback: 5
+    m2_vol_median_mult: 1.0          # <=1 关闭「相对近端中位量」约束
+    m2_structure_lookback: 20        # 收盘需不低于前 N 日最高收盘(含 eps 缓冲)
+    m2_structure_eps: 0.002
+
+    # --- M3：RSI 入场带与指数市况/波动联动 + 慢周期 RSI（默认关；与 m2_regime_ma_days / 基准指数对齐）---
+    m3_regime_rsi_band: false
+    m3_reg_rsi_lo_widen_pts_per_ma_gap_1pct: 1.5   # 指数高于 SMA 时，每 1 个百分点 gap 放宽 RSI 下沿的点数
+    m3_reg_rsi_lo_widen_cap: 8.0
+    m3_reg_vol_tighten_hi: false
+    m3_reg_vol_hi_tighten_k: 18.0
+    m3_reg_vol_hi_tighten_cap: 6.0
+    m3_reg_index_atr_pct_median_window: 20
+
+    m3_mtf_rsi_enabled: false
+    m3_mtf_rsi_period: 28
+    m3_mtf_rsi_min: 48.0
+
+    # --- M5：持仓评估时若技术出场未触发，指数市况门不通过则强制平仓（与 m2_regime_* / 基准一致）---
+    m5_regime_exit_enabled: false
 
 # 多因子权重 (用于自下而上打分，模块: bottomup/factors.py)
 factors:
@@ -31,6 +72,15 @@ factors:
     roe: 0.25              # 质量: ROE
     revenue_growth: 0.20   # 成长: 营收同比
     momentum_3m: 0.20      # 动量: 3 个月涨幅
+
+  # M4：因子离散度 / 换手惩罚 / 回测组合约束（字段由 m4_config_from_yaml 读取）
+  m4:
+    m4_enabled: false
+    m4_factor_dispersion_lambda: 0.0   # >0：按截面 z 标准差惩罚总分（因子间分歧大则降权）
+    m4_turnover_penalty: 0.0           # >0：非「上一屏 topN」内的命中扣分后重排
+    m4_turnover_top_n: 30
+    m4_max_same_industry: 0            # >0：持仓+待买+当日新选中同行业上限（需 industry 映射）
+    m4_new_risk_budget_frac: 0.0       # >0：当日新入选信号 (entry-stop)/entry 之和上限
 
 journal:
   db_path: ./data/journal.db

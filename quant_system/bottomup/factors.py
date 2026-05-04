@@ -6,11 +6,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 import pandas as pd
 
 from quant_system.data.loader import DataLoader, Market
+
+if TYPE_CHECKING:
+    from quant_system.bottomup.portfolio import M4Config
 
 
 @dataclass
@@ -60,8 +64,8 @@ def compute_raw_factors(
 
         try:
             abstract = loader.get_a_share_abstract(code)
-            roe = loader.latest_indicator_value(abstract, "净资产收益率(ROE)")
-            rev_g = loader.latest_indicator_value(abstract, "营业总收入增长率")
+            roe = loader.latest_indicator_value(abstract, "净资产收益率(ROE)", asof=asof)
+            rev_g = loader.latest_indicator_value(abstract, "营业总收入增长率", asof=asof)
             factors["roe"] = float(roe) if roe is not None else np.nan
             factors["revenue_growth"] = float(rev_g) if rev_g is not None else np.nan
         except Exception:
@@ -97,9 +101,9 @@ def score_universe(
     asof: str,
     weights: FactorWeights,
     verbose: bool = False,
+    m4_cfg: Optional["M4Config"] = None,
 ) -> pd.DataFrame:
-    """对 universe 内每只股票打分, 返回按总分降序的 DataFrame."""
-    import sys
+    """对 universe 内每只股票打分, 返回按总分降序的 DataFrame.m4_cfg 可选（M4 因子离散度惩罚）。"""
     rows = []
     for i, code in enumerate(codes, 1):
         if verbose:
@@ -114,4 +118,8 @@ def score_universe(
     # 缺失因子用 0 (中性), 避免一只股票因为单个因子缺失就被淘汰
     z_filled = z.fillna(0.0)
     raw["score"] = z_filled.mul(w, axis=1).sum(axis=1)
+    if m4_cfg is not None and float(m4_cfg.m4_factor_dispersion_lambda) > 0:
+        lam = float(m4_cfg.m4_factor_dispersion_lambda)
+        row_std = z_filled.std(axis=1, ddof=0).clip(upper=5.0)
+        raw["score"] = raw["score"] - lam * row_std
     return raw.sort_values("score", ascending=False)

@@ -1,5 +1,5 @@
 """
-预热全 A 股 daily cache. 单线程顺序拉, 5+ 小时完成.
+预热 HS300 daily cache. 单线程顺序拉, 量级约 1 小时内（视网络）.
 
 实时把进度写到 data/prefetch_progress.txt, 供前端查看.
 失败的股票记录到 data/prefetch_failed.txt, 后续可重试.
@@ -18,21 +18,28 @@ from quant_system.data.loader import DataLoader
 
 def main() -> None:
     cfg = load_config()
-    loader = DataLoader(cfg.cache_dir, refresh_days=999)
+    hsi = cfg.get("data", "hang_seng_indexes", default=None) or {}
+    loader = DataLoader(
+        cfg.cache_dir,
+        refresh_days=999,
+        price_adjust=cfg.get("data", "price_adjust", default="qfq"),
+        hang_seng_indexes=hsi,
+    )
 
     progress_path = Path(__file__).resolve().parents[1] / "data" / "prefetch_progress.txt"
     failed_path = Path(__file__).resolve().parents[1] / "data" / "prefetch_failed.txt"
     progress_path.parent.mkdir(parents=True, exist_ok=True)
 
-    universe = loader.get_universe("a_share", "a_all")
+    universe = loader.get_universe("a_share", "hs300")
     all_codes = universe["code"].tolist()
 
-    existing = {f.stem.replace("daily_a_share_", "") for f in cfg.cache_dir.glob("daily_a_share_*.parquet")}
+    existing = {c for c in all_codes if loader.daily_cache_path("a_share", c).exists()}
     todo = [c for c in all_codes if c not in existing]
 
     progress_path.write_text(
         f"start at {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
         f"universe size: {len(all_codes)}\n"
+        f"price_adjust: {repr(loader.price_adjust)}\n"
         f"already cached: {len(existing)}\n"
         f"todo: {len(todo)}\n",
         encoding="utf-8",

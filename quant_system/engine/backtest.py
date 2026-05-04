@@ -17,7 +17,9 @@ from typing import Optional
 
 import pandas as pd
 
+from quant_system.bottomup.portfolio import m4_prioritize_signals
 from quant_system.data.loader import DataLoader
+from quant_system.timing.exit_taxonomy import exit_layer_from_reason
 from quant_system.engine.strategy import BuySignal, ExitSignal, Position, Strategy
 
 
@@ -43,6 +45,14 @@ class BacktestResult:
     closed_trades: list[ClosedTrade]
     benchmark_curve: pd.Series           # date -> benchmark value (rebased to initial_capital)
     daily_positions: pd.DataFrame        # date, n_positions, market_value, cash
+
+
+@dataclass
+class BacktestDiagnostics:
+    """M0 可追溯诊断：由 Backtester.run 写入 list[dict]，脚本层落盘 CSV/JSON。"""
+
+    entry_rows: list[dict] = field(default_factory=list)
+    exit_rows: list[dict] = field(default_factory=list)
 
 
 class Backtester:
@@ -74,6 +84,7 @@ class Backtester:
         market: str = "a_share",
         benchmark_symbol: str = "sh000300",
         verbose: bool = True,
+        diagnostics: Optional[BacktestDiagnostics] = None,
     ) -> BacktestResult:
         # 交易日历: 用基准指数的日期
         idx = self.loader.get_index_daily(benchmark_symbol)
@@ -180,6 +191,17 @@ class Backtester:
                     continue   # 已在卖出队列, 不重复评估 / append
                 ex = strategy.evaluate(pos, day_dt)
                 if ex.action == "EXIT":
+                    if diagnostics is not None:
+                        nxt = trading_days[i + 1] if (i + 1) < len(trading_days) else ""
+                        diagnostics.exit_rows.append({
+                            "decision_date": day_str,
+                            "planned_exec_date": nxt,
+                            "symbol": sym,
+                            "reason": ex.reason,
+                            "event": "exit_signal",
+                            "exit_layer": getattr(ex, "exit_layer", None)
+                            or exit_layer_from_reason(ex.reason),
+                        })
                     pending_sells.append((pos, ex.reason))
                 elif ex.new_stop is not None:
                     pos.stop_loss = ex.new_stop
@@ -188,6 +210,34 @@ class Backtester:
             slots = self.max_positions - len(positions) - len(pending_buys)
             if slots > 0:
                 signals = strategy.screen(day_dt)
+                m4_cfg = getattr(strategy, "m4_cfg", None)
+                if m4_cfg is not None and m4_cfg.m4_enabled:
+                    signals = m4_prioritize_signals(
+                        signals, positions, pending_buys, slots,
+                        self.loader, market, day_str, m4_cfg,
+                    )
+                if diagnostics is not None and signals:
+                    picked: list[str] = []
+                    for sig in signals:
+                        if sig.symbol in positions:
+                            continue
+                        if len(picked) < slots:
+                            picked.append(sig.symbol)
+                    picked_set = set(picked)
+                    timing_reason = lambda s: (s.reasons or {}).get("timing", "")
+                    for rank_idx, sig in enumerate(signals, start=1):
+                        diagnostics.entry_rows.append({
+                            "screen_date": day_str,
+                            "factor_rank": rank_idx,
+                            "symbol": sig.symbol,
+                            "factor_score": sig.score,
+                            "signal_entry_price": sig.entry_price,
+                            "stop_loss": sig.stop_loss,
+                            "take_profit": sig.take_profit,
+                            "timing_reason": timing_reason(sig),
+                            "already_held": sig.symbol in positions,
+                            "queued_for_buy": sig.symbol in picked_set,
+                        })
                 taken = 0
                 for sig in signals:
                     if sig.symbol in positions:
@@ -219,6 +269,15 @@ class Backtester:
         last_day_str = trading_days[-1]
         last_day_dt = datetime.strptime(last_day_str, "%Y-%m-%d").date()
         for pos in list(positions.values()):
+            if diagnostics is not None:
+                diagnostics.exit_rows.append({
+                    "decision_date": last_day_str,
+                    "planned_exec_date": last_day_str,
+                    "symbol": pos.symbol,
+                    "reason": "backtest_end_close",
+                    "event": "forced_close",
+                    "exit_layer": exit_layer_from_reason("backtest_end_close"),
+                })
             bar = get_today(pos.symbol, pos.market, last_day_str)
             if bar is None:
                 df = ohlc_cache.get(pos.symbol)

@@ -7,16 +7,28 @@
   python scripts/backtest.py --capital 500000
 
 输出:
-  data/backtest/<strategy>_<start>_<end>/
-    equity.csv         每日净值 + 基准
-    trades.csv         所有交易明细
-    positions.csv      每日持仓数 / 市值 / 现金
-    report.txt         指标 + 准入判定
+  data/backtest/<strategy>_<market>_<start>_<end>/
+    （固定目录；每次运行会先清空再写入，不累积 run_id）
+    equity.csv                   每日净值 + 基准
+    trades.csv                     所有交易明细
+    positions.csv                  每日持仓数 / 市值 / 现金
+    report.txt                     指标 + 准入判定
+    metrics.json
+    universe_filtered_sample.csv   (A 股) start 日 universe 过滤明细
+    universe_filter_stats_sample.json
+    entry_candidates.csv           每日 timing 命中 + 因子排序 + 是否入队待买
+    ranking.csv                    同上精简列 (screen_date, rank, symbol, score)
+    exit_events.csv                卖出决策日 + 计划执行日 + 原因 (+ 末日强平)
+    exit_reason_summary.json       成交/决策事件按 reason 与 exit_layer 分布
+
+择时参数: config.yaml -> strategy.timing（含 M2 字段）
 """
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
@@ -27,30 +39,53 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import pandas as pd
 
 from quant_system.bottomup.factors import FactorWeights
+from quant_system.bottomup.portfolio import m4_config_from_yaml
 from quant_system.config import load_config
 from quant_system.data.loader import DataLoader
-from quant_system.engine.backtest import Backtester
+from quant_system.engine.backtest import BacktestDiagnostics, Backtester
 from quant_system.engine.metrics import check_admission, compute_metrics
 from quant_system.engine.strategy import BottomupTimingStrategy
-from quant_system.timing.signals import TimingConfig
+from quant_system.timing.exit_taxonomy import exit_layer_from_reason
+from quant_system.timing.signals import timing_config_from_yaml_node
+from quant_system.universe.filter import UniverseFilter, UniverseFilterConfig
 
 
 def build_strategy(name: str, loader: DataLoader, cfg, market: str) -> object:
     """策略工厂. 后续新策略在这里注册."""
-    market_cfg = cfg.get("markets", market)
+    market_cfg = cfg.get("markets", market) or {}
     universe = loader.get_universe(market, market_cfg["universe"])
     if name == "bottomup_timing":
         w_cfg = cfg.get("factors", "weights", default={}) or {}
+        m4_cfg = m4_config_from_yaml(cfg.get("factors", "m4", default=None))
+        tcfg = timing_config_from_yaml_node(cfg.get("strategy", "timing", default=None))
+        bt_fallback = cfg.get("backtest", "benchmark_symbol", default="sh000300")
+        bench = market_cfg.get("benchmark") or bt_fallback
         return BottomupTimingStrategy(
             loader=loader, market=market,
             universe_codes=universe["code"].tolist(),
-            timing_cfg=TimingConfig(),
+            timing_cfg=tcfg,
             weights=FactorWeights(**w_cfg),
+            regime_benchmark_symbol=str(bench),
+            m4_cfg=m4_cfg,
         )
     raise ValueError(f"未注册策略: {name}")
 
 
-def write_report(out_dir: Path, strategy_name: str, args, metrics, admission_pass, fails):
+def _write_json(path: Path, obj) -> None:
+    import json
+    path.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _benchmark_report_label(benchmark_symbol: str) -> str:
+    s = str(benchmark_symbol)
+    if s.upper() == "HSCHK100":
+        return "HSCHK100 同期"
+    if s in ("sh000300",):
+        return "沪深300 同期"
+    return f"{s} 同期"
+
+
+def write_report(out_dir: Path, strategy_name: str, args, metrics, admission_pass, fails, benchmark_label: str):
     out_dir.mkdir(parents=True, exist_ok=True)
     lines = []
     lines.append("=" * 78)
@@ -103,8 +138,17 @@ def main() -> None:
     args = parser.parse_args()
 
     cfg = load_config()
-    loader = DataLoader(cfg.cache_dir, refresh_days=args.refresh_days)
+    hsi = cfg.get("data", "hang_seng_indexes", default=None) or {}
+    loader = DataLoader(
+        cfg.cache_dir,
+        refresh_days=args.refresh_days,
+        price_adjust=cfg.get("data", "price_adjust", default="qfq"),
+        hang_seng_indexes=hsi,
+    )
     bt_cfg = cfg.get("backtest") or {}
+    market_cfg_bt = cfg.get("markets", args.market) or {}
+    benchmark_symbol = market_cfg_bt.get("benchmark") or bt_cfg.get("benchmark_symbol", "sh000300")
+    benchmark_label = _benchmark_report_label(benchmark_symbol)
 
     strategy = build_strategy(args.strategy, loader, cfg, args.market)
 
@@ -119,14 +163,37 @@ def main() -> None:
         cash_buffer_pct=bt_cfg.get("cash_buffer_pct", 0.05),
     )
 
+    # ---------- 固定输出目录（同策略+市场+区间覆盖写入，不产生历史 run_id 子目录） ----------
+    out_root = Path(bt_cfg.get("output_dir", "./data/backtest"))
+    if not out_root.is_absolute():
+        out_root = Path(__file__).resolve().parents[1] / out_root
+    out_dir = out_root / f"{args.strategy}_{args.market}_{args.start}_{args.end}"
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # ---------- Universe 过滤样例输出（无黑盒；按 start 截断，避免未来信息） ----------
+    if args.market == "a_share":
+        try:
+            market_cfg = cfg.get("markets", args.market)
+            universe = loader.get_universe(args.market, market_cfg["universe"])
+            uf = UniverseFilter(loader, UniverseFilterConfig())
+            filt_df, stats = uf.filter_a_share(universe[["code", "name"]], args.start)
+            filt_df.to_csv(out_dir / "universe_filtered_sample.csv", index=False, encoding="utf-8-sig")
+            _write_json(out_dir / "universe_filter_stats_sample.json", stats)
+        except Exception as e:
+            _write_json(out_dir / "universe_filter_stats_sample.json", {"error": str(e)})
+
     print(f"启动回测: {args.strategy}  {args.start} -> {args.end}", flush=True)
     print(f"  初始资金 {bt.initial_capital:,.0f}, 最多持仓 {bt.max_positions}, 单只 {bt.single_position_pct*100:.0f}%", flush=True)
     print(f"  手续费 {bt.commission*100:.2f}%, 印花税 {bt.stamp_tax*100:.2f}%, 滑点 {bt.slippage*100:.2f}%", flush=True)
     print()
 
+    diagnostics = BacktestDiagnostics()
     result = bt.run(
         strategy, args.start, args.end, market=args.market,
-        benchmark_symbol=bt_cfg.get("benchmark_symbol", "sh000300"),
+        benchmark_symbol=benchmark_symbol,
+        diagnostics=diagnostics,
     )
 
     metrics = compute_metrics(result.equity_curve, result.closed_trades, result.benchmark_curve)
@@ -137,12 +204,6 @@ def main() -> None:
         max_drawdown=adm.get("max_drawdown", 0.25),
         min_win_rate=adm.get("min_win_rate", 0.40),
     )
-
-    out_root = Path(bt_cfg.get("output_dir", "./data/backtest"))
-    if not out_root.is_absolute():
-        out_root = Path(__file__).resolve().parents[1] / out_root
-    out_dir = out_root / f"{args.strategy}_{args.start}_{args.end}"
-    out_dir.mkdir(parents=True, exist_ok=True)
 
     # CSV 输出
     pd.concat([result.equity_curve, result.benchmark_curve], axis=1).to_csv(out_dir / "equity.csv")
@@ -157,7 +218,71 @@ def main() -> None:
         ])
         trades_df.to_csv(out_dir / "trades.csv", index=False)
 
-    write_report(out_dir, args.strategy, args, metrics, admission_pass, fails)
+    # ---------- M0: 选股排序 / 退出决策 可追溯输出 ----------
+    entry_cols = [
+        "screen_date", "factor_rank", "symbol", "factor_score", "signal_entry_price",
+        "stop_loss", "take_profit", "timing_reason", "already_held", "queued_for_buy",
+    ]
+    if diagnostics.entry_rows:
+        ent = pd.DataFrame(diagnostics.entry_rows)
+        ent.to_csv(out_dir / "entry_candidates.csv", index=False, encoding="utf-8-sig")
+        ent[["screen_date", "factor_rank", "symbol", "factor_score"]].rename(
+            columns={"factor_rank": "rank", "factor_score": "score"},
+        ).to_csv(out_dir / "ranking.csv", index=False, encoding="utf-8-sig")
+    else:
+        pd.DataFrame(columns=entry_cols).to_csv(
+            out_dir / "entry_candidates.csv", index=False, encoding="utf-8-sig",
+        )
+        pd.DataFrame(columns=["screen_date", "rank", "symbol", "score"]).to_csv(
+            out_dir / "ranking.csv", index=False, encoding="utf-8-sig",
+        )
+
+    exit_cols = ["decision_date", "planned_exec_date", "symbol", "reason", "event", "exit_layer"]
+    if diagnostics.exit_rows:
+        pd.DataFrame(diagnostics.exit_rows).to_csv(
+            out_dir / "exit_events.csv", index=False, encoding="utf-8-sig",
+        )
+    else:
+        pd.DataFrame(columns=exit_cols).to_csv(
+            out_dir / "exit_events.csv", index=False, encoding="utf-8-sig",
+        )
+
+    closed_by_reason = Counter(t.exit_reason for t in result.closed_trades)
+    events_by_reason = Counter(r.get("reason", "") for r in diagnostics.exit_rows)
+    closed_by_layer = Counter(
+        exit_layer_from_reason(t.exit_reason) for t in result.closed_trades
+    )
+    events_by_layer = Counter(
+        (r.get("exit_layer") or exit_layer_from_reason(r.get("reason", "")))
+        for r in diagnostics.exit_rows
+    )
+    _write_json(
+        out_dir / "exit_reason_summary.json",
+        {
+            "closed_trades_by_exit_reason": dict(closed_by_reason),
+            "exit_events_by_reason": dict(events_by_reason),
+            "closed_trades_by_exit_layer": {k: v for k, v in closed_by_layer.items() if k},
+            "exit_events_by_exit_layer": {k: v for k, v in events_by_layer.items() if k},
+            "n_exit_events": len(diagnostics.exit_rows),
+            "n_closed_trades": len(result.closed_trades),
+        },
+    )
+
+    write_report(out_dir, args.strategy, args, metrics, admission_pass, fails, benchmark_label)
+    _write_json(
+        out_dir / "metrics.json",
+        {
+            "strategy": args.strategy,
+            "market": args.market,
+            "benchmark_symbol": benchmark_symbol,
+            "start": args.start,
+            "end": args.end,
+            "price_adjust": cfg.get("data", "price_adjust", default="qfq"),
+            "metrics": metrics.__dict__,
+            "admission_pass": admission_pass,
+            "fails": fails,
+        },
+    )
     print(f"\n输出目录: {out_dir}")
 
 
