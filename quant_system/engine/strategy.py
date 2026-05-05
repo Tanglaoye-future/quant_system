@@ -87,7 +87,7 @@ class BottomupTimingStrategy:
         self.history_start = history_start
         self._regime_benchmark_symbol = regime_benchmark_symbol or "sh000300"
         self._regime_gate: MarketRegimeGate | None = None
-        if self.tcfg.m2_regime_enabled and self.market == "a_share":
+        if self.tcfg.m2_regime_enabled:
             self._regime_gate = MarketRegimeGate(
                 loader, self._regime_benchmark_symbol, self.tcfg.m2_regime_ma_days
             )
@@ -133,9 +133,7 @@ class BottomupTimingStrategy:
         self._ensure_enriched(codes)
 
         regime_ctx = None
-        if self.market == "a_share" and (
-            self.tcfg.m3_regime_rsi_band or self.tcfg.m3_reg_vol_tighten_hi
-        ):
+        if self.tcfg.m3_regime_rsi_band or self.tcfg.m3_reg_vol_tighten_hi:
             regime_ctx = build_timing_regime_context(
                 self.loader,
                 self._regime_benchmark_symbol,
@@ -225,7 +223,7 @@ class BottomupTimingStrategy:
         if ex["signal"]:
             layer = str(ex.get("exit_layer") or exit_layer_from_reason(str(ex.get("reason", ""))))
             return ExitSignal(action="EXIT", new_stop=new_stop, reason=str(ex["reason"]), exit_layer=layer)
-        if self.tcfg.m5_regime_exit_enabled and self.market == "a_share":
+        if self.tcfg.m5_regime_exit_enabled:
             gate = self._regime_gate or MarketRegimeGate(
                 self.loader, self._regime_benchmark_symbol, self.tcfg.m2_regime_ma_days
             )

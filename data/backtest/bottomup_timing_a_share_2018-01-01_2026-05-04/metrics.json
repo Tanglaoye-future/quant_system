@@ -1,0 +1,26 @@
+{
+  "strategy": "bottomup_timing",
+  "market": "a_share",
+  "benchmark_symbol": "sh000300",
+  "start": "2018-01-01",
+  "end": "2026-05-04",
+  "price_adjust": "",
+  "metrics": {
+    "n_trades": 398,
+    "win_rate": 0.43467336683417085,
+    "avg_win_pct": 0.10392574694075397,
+    "avg_loss_pct": -0.0491317108777184,
+    "win_loss_ratio": 2.1152478731996505,
+    "avg_hold_days": 20.027638190954775,
+    "total_return": 0.8686086161946076,
+    "annual_return": 0.08128404156979352,
+    "annual_volatility": 0.09659841032252348,
+    "sharpe_ratio": 0.6503993653809833,
+    "max_drawdown": -0.14913400646384187,
+    "calmar_ratio": 0.5450402862307676,
+    "benchmark_total_return": 0.16723242960502294,
+    "excess_return": 0.7013761865895847
+  },
+  "admission_pass": true,
+  "fails": []
+}

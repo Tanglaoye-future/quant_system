@@ -11,12 +11,22 @@ markets:
     # 恒生 HSCHK100（恒生中国内地企业(香港上市)100）；成份与行情须来自恒生公开资料或订阅数据产品
     universe: hs100
     benchmark: HSCHK100
+  us_share:
+    enabled: true
+    universe: nasdaq100    # NASDAQ 100（QQQ 成份）
+    benchmark: NDX         # QQQ ETF 作 NDX 基准代理
 
 data:
   cache_dir: ./data/cache
   start_date: "2022-01-01"
   refresh_days: 1          # 缓存超过 N 天则重新拉取
   price_adjust: ""         # qfq(前复权) / hfq(后复权) / ""(不复权=raw; 更严格避免复权带来的未来信息)
+
+  # 美股数据源（NASDAQ 100）；见 scripts/prefetch_us_universe.py
+  us_market:
+    daily_dir: "./data/us_prices"                    # 每只股票一个 {ticker}.csv，列: date,open,high,low,close,volume
+    index_daily_csv: "./data/us_prices/NDX_index.csv"  # QQQ ETF 日线（akshare 预取）
+    constituents_csv: "./data/us_prices/nasdaq100_constituents.csv"  # 成份股列表，列: code,name
 
   # 恒生指数公司数据源（港股 hs100 / HSCHK100 基准）；见 quant_system/data/hang_seng_indexes.py
   hang_seng_indexes:

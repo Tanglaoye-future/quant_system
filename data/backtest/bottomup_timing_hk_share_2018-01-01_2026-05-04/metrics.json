@@ -1,0 +1,28 @@
+{
+  "strategy": "bottomup_timing",
+  "market": "hk_share",
+  "benchmark_symbol": "HSCHK100",
+  "start": "2018-01-01",
+  "end": "2026-05-04",
+  "price_adjust": "",
+  "metrics": {
+    "n_trades": 283,
+    "win_rate": 0.43109540636042404,
+    "avg_win_pct": 0.08518816037968237,
+    "avg_loss_pct": -0.04385167115050364,
+    "win_loss_ratio": 1.9426434191597275,
+    "avg_hold_days": 20.381625441696112,
+    "total_return": 0.3635583569544052,
+    "annual_return": 0.03889386480845913,
+    "annual_volatility": 0.08695804748711712,
+    "sharpe_ratio": 0.2523303401035181,
+    "max_drawdown": -0.1800539869482523,
+    "calmar_ratio": 0.216012238705035,
+    "benchmark_total_return": -0.22117297035152061,
+    "excess_return": 0.5847313273059258
+  },
+  "admission_pass": false,
+  "fails": [
+    "Sharpe 0.25 < 门槛 0.5"
+  ]
+}

@@ -1,5 +1,5 @@
 """
-数据层: A 股 + 港股的统一接口。
+数据层: A 股 + 港股 + 美股的统一接口。
 所有外部数据源（akshare）都收敛到这里，上层模块不直接 import akshare。
 """
 from __future__ import annotations
@@ -19,7 +19,7 @@ from quant_system.data.hang_seng_indexes import (
     read_hschk100_index_daily_csv,
 )
 
-Market = Literal["a_share", "hk_share"]
+Market = Literal["a_share", "hk_share", "us_share"]
 
 
 class DataLoader:
@@ -29,6 +29,7 @@ class DataLoader:
         refresh_days: int = 1,
         price_adjust: str = "qfq",
         hang_seng_indexes: dict[str, Any] | None = None,
+        us_market: dict[str, Any] | None = None,
     ):
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -36,6 +37,7 @@ class DataLoader:
         # akshare adjust: "qfq"(前复权) / "hfq"(后复权) / ""(不复权)
         self.price_adjust = price_adjust
         self._hsi_cfg: dict[str, Any] = hang_seng_indexes or {}
+        self._us_cfg: dict[str, Any] = us_market or {}
 
     # ---------- universe ----------
 
@@ -60,6 +62,21 @@ class DataLoader:
                 raise ValueError(
                     f"未知 港股 universe: {name}（本项目仅支持 hs100=恒生 HSCHK100）",
                 )
+        elif market == "us_share":
+            if name == "nasdaq100":
+                csvp = self._us_cfg.get("constituents_csv") or ""
+                if not csvp:
+                    raise ValueError(
+                        "请先运行 scripts/prefetch_us_universe.py，并在 config.yaml 设置 "
+                        "data.us_market.constituents_csv"
+                    )
+                from quant_system.config import PROJECT_ROOT
+                p = Path(csvp)
+                if not p.is_absolute():
+                    p = PROJECT_ROOT / p
+                df = pd.read_csv(p)[["code", "name"]]
+            else:
+                raise ValueError(f"未知美股 universe: {name}（本项目仅支持 nasdaq100）")
         else:
             raise ValueError(f"未知 market: {market}")
 
@@ -128,6 +145,27 @@ class DataLoader:
             if not dpath.is_absolute():
                 dpath = PROJECT_ROOT / dpath
             df = read_hk_constituent_daily_csv(dpath, code)
+        elif market == "us_share":
+            daily_dir = self._us_cfg.get("daily_dir") or ""
+            if not daily_dir:
+                raise ValueError(
+                    "美股日线须先运行 scripts/prefetch_us_universe.py 预取。"
+                    "请在 config.yaml 设置 data.us_market.daily_dir "
+                    "（每只股票一个 {ticker}.csv，列: date,open,high,low,close,volume）。"
+                )
+            from quant_system.config import PROJECT_ROOT
+
+            dpath = Path(daily_dir)
+            if not dpath.is_absolute():
+                dpath = PROJECT_ROOT / dpath
+            csv_path = dpath / f"{code}.csv"
+            if not csv_path.exists():
+                raise FileNotFoundError(f"美股日线文件不存在: {csv_path}  请先运行 prefetch_us_universe.py")
+            raw = pd.read_csv(csv_path)
+            # akshare stock_us_daily 可能返回中/英文列名，统一映射
+            cn_map = {"日期": "date", "开盘": "open", "最高": "high", "最低": "low", "收盘": "close", "成交量": "volume"}
+            raw = raw.rename(columns=cn_map)
+            df = raw[["date", "open", "high", "low", "close", "volume"]].copy()
         else:
             raise ValueError(f"未知 market: {market}")
 
@@ -156,6 +194,25 @@ class DataLoader:
             if not p.is_absolute():
                 p = PROJECT_ROOT / p
             df = read_hschk100_index_daily_csv(p)
+        elif symbol.upper() == "NDX":
+            csvp = self._us_cfg.get("index_daily_csv") or ""
+            if not csvp:
+                raise ValueError(
+                    "美股基准 NDX 须先运行 scripts/prefetch_us_universe.py。"
+                    "请设置 data.us_market.index_daily_csv（列: date,open,high,low,close,volume）。"
+                )
+            from quant_system.config import PROJECT_ROOT
+
+            p = Path(csvp)
+            if not p.is_absolute():
+                p = PROJECT_ROOT / p
+            raw = pd.read_csv(p)
+            cn_map = {"日期": "date", "开盘": "open", "最高": "high", "最低": "low", "收盘": "close", "成交量": "volume"}
+            raw = raw.rename(columns=cn_map)
+            if "volume" not in raw.columns:
+                raw["volume"] = 0.0
+            df = raw[["date", "open", "high", "low", "close", "volume"]].copy()
+            df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
         else:
             raw = ak.stock_zh_index_daily(symbol=symbol)
             df = raw[["date", "open", "high", "low", "close", "volume"]].copy()

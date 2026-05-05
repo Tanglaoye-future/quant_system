@@ -128,7 +128,7 @@ def write_report(out_dir: Path, strategy_name: str, args, metrics, admission_pas
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--strategy", default="bottomup_timing")
-    parser.add_argument("--market", default="a_share", choices=["a_share", "hk_share"])
+    parser.add_argument("--market", default="a_share", choices=["a_share", "hk_share", "us_share"])
     parser.add_argument("--start", default="2024-04-01")
     parser.add_argument("--end", default=datetime.now().strftime("%Y-%m-%d"))
     parser.add_argument("--capital", type=float, default=None,
@@ -139,11 +139,13 @@ def main() -> None:
 
     cfg = load_config()
     hsi = cfg.get("data", "hang_seng_indexes", default=None) or {}
+    us_mkt = cfg.get("data", "us_market", default=None) or {}
     loader = DataLoader(
         cfg.cache_dir,
         refresh_days=args.refresh_days,
         price_adjust=cfg.get("data", "price_adjust", default="qfq"),
         hang_seng_indexes=hsi,
+        us_market=us_mkt,
     )
     bt_cfg = cfg.get("backtest") or {}
     market_cfg_bt = cfg.get("markets", args.market) or {}
@@ -158,7 +160,7 @@ def main() -> None:
         max_positions=cfg.get("strategy", "position_max_count", default=10),
         single_position_pct=cfg.get("strategy", "single_position_pct_max", default=0.15),
         commission=bt_cfg.get("commission", 0.0003),
-        stamp_tax=bt_cfg.get("stamp_tax", 0.001),
+        stamp_tax=0.0 if args.market == "us_share" else bt_cfg.get("stamp_tax", 0.001),
         slippage=bt_cfg.get("slippage", 0.001),
         cash_buffer_pct=bt_cfg.get("cash_buffer_pct", 0.05),
     )

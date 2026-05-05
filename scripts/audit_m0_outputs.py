@@ -22,20 +22,21 @@ def main() -> int:
         print(f"FAIL: not a directory: {run_dir.resolve()}", file=sys.stderr)
         return 2
 
-    # universe filter files are A-share only; HK backtest legitimately omits them
+    # universe filter files are A-share only; HK and US backtests legitimately omit them
     import json as _json
     _metrics_path = run_dir / "metrics.json"
-    _is_hk = False
+    _market = "a_share"
     if _metrics_path.exists():
         try:
-            _is_hk = _json.loads(_metrics_path.read_text(encoding="utf-8")).get("market") == "hk_share"
+            _market = _json.loads(_metrics_path.read_text(encoding="utf-8")).get("market", "a_share")
         except Exception:
             pass
+    _has_universe_filter = (_market == "a_share")
 
     required = {
         "metrics.json": None,
         **({"universe_filter_stats_sample.json": None,
-            "universe_filtered_sample.csv": ["code"]} if not _is_hk else {}),
+            "universe_filtered_sample.csv": ["code"]} if _has_universe_filter else {}),
         "equity.csv": None,
         "positions.csv": None,
         "entry_candidates.csv": [
