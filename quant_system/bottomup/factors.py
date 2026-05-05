@@ -78,7 +78,8 @@ def compute_raw_factors(
 
     try:
         end_dt = pd.to_datetime(asof)
-        start_dt = end_dt - pd.Timedelta(days=250)   # 250 天覆盖 3m + 6m 动量
+        # Floor at FETCH_FLOOR to avoid cache misses when backtest starts near 2018-01-01
+        start_dt = max(end_dt - pd.Timedelta(days=250), pd.Timestamp("2018-01-01"))
         px = loader.get_daily(market, code, start_dt.strftime("%Y-%m-%d"), asof)
         if len(px) >= 60:
             factors["momentum_3m"] = float(px["close"].iloc[-1] / px["close"].iloc[-60] - 1.0)
