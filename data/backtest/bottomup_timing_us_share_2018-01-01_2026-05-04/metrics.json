@@ -1,0 +1,28 @@
+{
+  "strategy": "bottomup_timing",
+  "market": "us_share",
+  "benchmark_symbol": "NDX",
+  "start": "2018-01-01",
+  "end": "2026-05-04",
+  "price_adjust": "",
+  "metrics": {
+    "n_trades": 510,
+    "win_rate": 0.403921568627451,
+    "avg_win_pct": 0.06474571645986658,
+    "avg_loss_pct": -0.03994562901978475,
+    "win_loss_ratio": 1.6208460862588634,
+    "avg_hold_days": 19.91176470588235,
+    "total_return": 0.1736804867709283,
+    "annual_return": 0.019449940658453402,
+    "annual_volatility": 0.08787276097345632,
+    "sharpe_ratio": 0.03585474316934814,
+    "max_drawdown": -0.19022216647364032,
+    "calmar_ratio": 0.1022485497827018,
+    "benchmark_total_return": 3.245567543693608,
+    "excess_return": -3.0718870569226793
+  },
+  "admission_pass": false,
+  "fails": [
+    "Sharpe 0.04 < 门槛 0.5"
+  ]
+}
