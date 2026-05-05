@@ -24,6 +24,7 @@ class FactorWeights:
     roe: float = 0.25
     revenue_growth: float = 0.20
     momentum_3m: float = 0.20
+    momentum_6m: float = 0.0    # 默认关闭；US/动量市场可设 >0 启用6个月动量
 
     def as_series(self) -> pd.Series:
         return pd.Series({
@@ -32,6 +33,7 @@ class FactorWeights:
             "roe": self.roe,
             "revenue_growth": self.revenue_growth,
             "momentum_3m": self.momentum_3m,
+            "momentum_6m": self.momentum_6m,
         })
 
 
@@ -48,7 +50,8 @@ def compute_raw_factors(
     """对单只股票, 拉取最新一期的 5 个因子原始值."""
     factors: dict[str, float] = {
         "pe_inverse": np.nan, "pb_inverse": np.nan,
-        "roe": np.nan, "revenue_growth": np.nan, "momentum_3m": np.nan,
+        "roe": np.nan, "revenue_growth": np.nan,
+        "momentum_3m": np.nan, "momentum_6m": np.nan,
     }
 
     if market == "a_share":
@@ -75,10 +78,12 @@ def compute_raw_factors(
 
     try:
         end_dt = pd.to_datetime(asof)
-        start_dt = end_dt - pd.Timedelta(days=120)
+        start_dt = end_dt - pd.Timedelta(days=250)   # 250 天覆盖 3m + 6m 动量
         px = loader.get_daily(market, code, start_dt.strftime("%Y-%m-%d"), asof)
         if len(px) >= 60:
             factors["momentum_3m"] = float(px["close"].iloc[-1] / px["close"].iloc[-60] - 1.0)
+        if len(px) >= 120:
+            factors["momentum_6m"] = float(px["close"].iloc[-1] / px["close"].iloc[-120] - 1.0)
     except Exception:
         pass
 

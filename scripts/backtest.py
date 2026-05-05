@@ -51,20 +51,33 @@ from quant_system.universe.filter import UniverseFilter, UniverseFilterConfig
 
 
 def build_strategy(name: str, loader: DataLoader, cfg, market: str) -> object:
-    """策略工厂. 后续新策略在这里注册."""
+    """策略工厂. 后续新策略在这里注册。
+    参数优先级: markets.<market>.timing > strategy.timing（全局默认）
+                markets.<market>.factors.weights > factors.weights（全局默认）
+    """
     market_cfg = cfg.get("markets", market) or {}
     universe = loader.get_universe(market, market_cfg["universe"])
     if name == "bottomup_timing":
-        w_cfg = cfg.get("factors", "weights", default={}) or {}
+        # 全局默认
+        global_timing = cfg.get("strategy", "timing", default=None) or {}
+        global_weights = cfg.get("factors", "weights", default={}) or {}
         m4_cfg = m4_config_from_yaml(cfg.get("factors", "m4", default=None))
-        tcfg = timing_config_from_yaml_node(cfg.get("strategy", "timing", default=None))
         bt_fallback = cfg.get("backtest", "benchmark_symbol", default="sh000300")
         bench = market_cfg.get("benchmark") or bt_fallback
+
+        # 市场级覆盖（同名字段以市场配置为准）
+        mkt_timing = market_cfg.get("timing") or {}
+        mkt_weights = (market_cfg.get("factors") or {}).get("weights") or {}
+
+        merged_timing = {**global_timing, **mkt_timing}
+        merged_weights = {**global_weights, **mkt_weights}
+
+        tcfg = timing_config_from_yaml_node(merged_timing)
         return BottomupTimingStrategy(
             loader=loader, market=market,
             universe_codes=universe["code"].tolist(),
             timing_cfg=tcfg,
-            weights=FactorWeights(**w_cfg),
+            weights=FactorWeights(**merged_weights),
             regime_benchmark_symbol=str(bench),
             m4_cfg=m4_cfg,
         )

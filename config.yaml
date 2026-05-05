@@ -6,15 +6,51 @@ markets:
     enabled: true
     universe: hs300        # 本项目仅支持 hs300
     benchmark: sh000300
+    # A 股使用全局 strategy.timing 和 factors.weights，无需市场级覆盖
+
   hk_share:
     enabled: true
     # 恒生 HSCHK100（恒生中国内地企业(香港上市)100）；成份与行情须来自恒生公开资料或订阅数据产品
     universe: hs100
     benchmark: HSCHK100
+    # --- 港股适配：MA200 门控（6年熊市中MA60近乎永远关门）+ 深度折价入场 ---
+    timing:
+      m2_regime_ma_days: 200      # 用 MA200 识别主趋势（MA60 在长熊中噪声太多）
+      rsi_entry_low: 40.0         # 接受更深的超卖入场（港股折价修复逻辑）
+      rsi_entry_high: 72.0
+      ma_long: 80                 # 更长趋势均线，减少港股低流动性带来的误穿
+      max_hold_days: 80           # 港股中线持仓稍长
+    factors:
+      weights:
+        pe_inverse: 0.10
+        pb_inverse: 0.40          # 港股折价修复为主线，PB 权重大幅提升
+        roe: 0.20
+        revenue_growth: 0.10
+        momentum_3m: 0.20
+
   us_share:
     enabled: true
     universe: nasdaq100    # NASDAQ 100（QQQ 成份）
     benchmark: NDX         # QQQ ETF 作 NDX 基准代理
+    # --- 美股适配：MA200 门控 + 更宽 RSI 带 + 更长持仓（捕捉 AI 超级周期）---
+    timing:
+      m2_regime_ma_days: 200      # MA200 是美股牛熊的标准分界线
+      rsi_entry_low: 50.0
+      rsi_entry_high: 78.0        # 关键：NASDAQ 动量股 RSI 70-80 时往往仍在上涨
+      rsi_overbought: 85.0        # 延迟超买出场，避免过早离场强势股
+      ma_long: 100                # 更长趋势均线，与 MA200 门控对齐
+      max_hold_days: 150          # 让利润奔跑（AI 超级周期需要 3-5 个月持仓）
+      atr_target_mult: 6.0        # 更高止盈目标（NASDAQ 动量股有更大上行空间）
+      m2_rsi_atr_k: 200.0         # 降低 ATR 对 RSI 带的扰动
+      m2_structure_lookback: 30   # 更长的结构突破窗口
+    factors:
+      weights:
+        pe_inverse: 0.0           # 高 PE 成长股，估值因子反效（NVDA PE 50 仍暴涨）
+        pb_inverse: 0.0
+        roe: 0.0
+        revenue_growth: 0.0
+        momentum_3m: 0.50         # 短动量：入场时机
+        momentum_6m: 0.50         # 中动量：趋势强度（NASDAQ 超级周期的核心信号）
 
 data:
   cache_dir: ./data/cache
