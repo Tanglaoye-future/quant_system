@@ -23,8 +23,8 @@ data:
     full_constituents_csv: ""           # 可选：订阅《指数数据产品》全量成份 CSV 路径
     allow_factsheet_top50_only: true    # true：仅用官网英文 factsheet 内 TOP 50（研究）；完整 100 请配 full_constituents_csv 并置 false
     official_factsheet_pdf_en: ""       # 可选：覆盖默认 HSCHK100 英文 factsheet URL
-    hk_constituent_daily_dir: ""        # 每只股票 {code}.csv，列 date,open,high,low,close,volume（订阅导出）
-    hschk100_index_daily_csv: ""        # HSCHK100 指数日线 CSV（与个股列相同）
+    hk_constituent_daily_dir: "./data/hk_prices"          # akshare 预取，见 scripts/prefetch_hk_universe.py
+    hschk100_index_daily_csv: "./data/hk_prices/HSCHK100_index.csv"  # HSML100 指数日线（akshare 预取）
 
 strategy:
   hold_days_min: 20

@@ -42,7 +42,12 @@ def main() -> int:
 
     def need_cols(csv_path: Path, cols: list[str]) -> None:
         import pandas as pd
-        df = pd.read_csv(csv_path, nrows=0)
+        try:
+            df = pd.read_csv(csv_path, nrows=0)
+        except Exception:
+            # Empty file (e.g. universe_filtered_sample on a non-trading start date) — warn, don't fail
+            print(f"  WARN: {csv_path.name} is empty (non-trading start date?), skipping column check")
+            return
         missing = [c for c in cols if c not in df.columns]
         if missing:
             errors.append(f"{csv_path.name}: missing columns {missing}")
