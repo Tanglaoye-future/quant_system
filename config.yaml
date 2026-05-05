@@ -32,13 +32,12 @@ markets:
     enabled: true
     universe: nasdaq100    # NASDAQ 100（QQQ 成份）
     benchmark: NDX         # QQQ ETF 作 NDX 基准代理
-    # --- 美股适配：MA200 门控 + 更宽 RSI 带 + 更长持仓（捕捉 AI 超级周期）---
+    # --- 美股适配 v3：仅保留 MA200 门控（ma_long 回归默认 60）---
     timing:
-      m2_regime_ma_days: 200      # MA200 是美股牛熊的标准分界线
+      m2_regime_ma_days: 200      # MA200 是美股牛熊的标准分界线（唯一保留的覆盖）
       rsi_entry_low: 50.0
       rsi_entry_high: 78.0        # 关键：NASDAQ 动量股 RSI 70-80 时往往仍在上涨
       rsi_overbought: 85.0        # 延迟超买出场，避免过早离场强势股
-      ma_long: 100                # 更长趋势均线，与 MA200 门控对齐
       max_hold_days: 150          # 让利润奔跑（AI 超级周期需要 3-5 个月持仓）
       atr_target_mult: 6.0        # 更高止盈目标（NASDAQ 动量股有更大上行空间）
       m2_rsi_atr_k: 200.0         # 降低 ATR 对 RSI 带的扰动
