@@ -93,6 +93,11 @@ strategy:
     m2_structure_lookback: 20        # 收盘需不低于前 N 日最高收盘(含 eps 缓冲)
     m2_structure_eps: 0.002
 
+    # --- Level 3：突破+量能入场（替换 MA20/60 金叉）---
+    m2_breakout_mode: false          # v8 全段 FAIL (Sharpe 0.21)，回滚到 MA20/60金叉
+    m2_breakout_ma_trend: true       # 突破时仍要求 close > MA60（趋势门）
+    vol_breakout_mult: 1.3           # 量能门槛放宽（突破+量，不必要求 1.5x）
+
     # --- M3：RSI 入场带与指数市况/波动联动 + 慢周期 RSI（默认关；与 m2_regime_ma_days / 基准指数对齐）---
     m3_regime_rsi_band: false
     m3_reg_rsi_lo_widen_pts_per_ma_gap_1pct: 1.5   # 指数高于 SMA 时，每 1 个百分点 gap 放宽 RSI 下沿的点数
@@ -109,22 +114,29 @@ strategy:
     # --- M5：持仓评估时若技术出场未触发，指数市况门不通过则强制平仓（与 m2_regime_* / 基准一致）---
     m5_regime_exit_enabled: false
 
+    # --- M5 部分出场：ATR 止盈触发 → 出场 50%，剩余切换到 1.5× 更宽松 trailing stop ---
+    partial_exit_enabled: false         # true 启用；false = 原全量出场逻辑
+    partial_exit_pct: 0.5              # 首次止盈出场比例
+    partial_exit_trail_mult: 1.5       # 剩余仓位 trailing stop 倍数扩展（×atr_stop_mult）
+
 # 多因子权重 (用于自下而上打分，模块: bottomup/factors.py)
 factors:
   weights:
-    pe_inverse: 0.20       # 估值: 1/PE
-    pb_inverse: 0.15       # 估值: 1/PB
-    roe: 0.25              # 质量: ROE
-    revenue_growth: 0.20   # 成长: 营收同比
-    momentum_3m: 0.20      # 动量: 3 个月涨幅
+    pe_inverse: 0.0        # 已关闭 (A股 PE 可调节，信噪比低)
+    pb_inverse: 0.25       # 估值: 1/PB（A股折价修复信号）
+    roe: 0.30              # 质量: ROE
+    revenue_growth: 0.0    # 已关闭
+    momentum_3m: 0.25      # 动量: 3 个月涨幅
+    fcf_yield: 0.0         # 已关闭 (A股财报延迟+金融股NaN，信噪比低，v6实验验证)
+    rev_accel: 0.0         # 已关闭 (同上，v6实验验证)
 
   # M4：因子离散度 / 换手惩罚 / 回测组合约束（字段由 m4_config_from_yaml 读取）
   m4:
-    m4_enabled: false
+    m4_enabled: true
     m4_factor_dispersion_lambda: 0.0   # >0：按截面 z 标准差惩罚总分（因子间分歧大则降权）
     m4_turnover_penalty: 0.0           # >0：非「上一屏 topN」内的命中扣分后重排
     m4_turnover_top_n: 30
-    m4_max_same_industry: 0            # >0：持仓+待买+当日新选中同行业上限（需 industry 映射）
+    m4_max_same_industry: 3            # >0：持仓+待买+当日新选中同行业上限（需 industry 映射）
     m4_new_risk_budget_frac: 0.0       # >0：当日新入选信号 (entry-stop)/entry 之和上限
 
 journal:
@@ -142,5 +154,6 @@ backtest:
   # 准入门槛 (实盘前必须通过)
   admission:
     min_sharpe: 0.5
+    min_sortino: 0.7          # Sortino 门槛（仅惩罚下行波动，比 Sharpe 要求更高）
     max_drawdown: 0.25
     min_win_rate: 0.40

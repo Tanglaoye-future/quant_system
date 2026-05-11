@@ -16,9 +16,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
+
+_REPORT_DATA = Path(__file__).resolve().parent.parent / "report" / "data"
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -214,6 +217,54 @@ def main() -> None:
               f"最差单只浮亏 {port.worst_drawdown_pct*100:+.2f}%  "
               f"EXIT 信号 {port.n_at_risk}/{port.n_positions}")
     print()
+
+    # ---------------- 输出报告 JSON ----------------
+    gate_ok = None
+    gate_msg_str = ""
+    if tcfg.m2_regime_enabled and args.market == "a_share":
+        gate_ok = ok  # noqa: F821  (defined in the branch above)
+        gate_msg_str = msg  # noqa: F821
+
+    report_signals = []
+    for c in hits[: args.top]:
+        reasons_str = " · ".join(c.get("reasons", []))
+        report_signals.append({
+            "code": c["code"],
+            "name": name_map.get(c["code"], ""),
+            "score": round(float(c.get("score", 0)), 3),
+            "entry_price": round(float(c.get("entry_price", 0)), 2),
+            "stop_loss": round(float(c.get("stop_loss", 0)), 2),
+            "take_profit": round(float(c.get("take_profit", 0)), 2),
+            "reason": reasons_str,
+            "suggested_action": "买入",
+        })
+
+    report_positions = []
+    for p in positions:
+        report_positions.append({
+            "code": p.symbol,
+            "name": name_map.get(p.symbol, ""),
+            "entry_date": str(getattr(p, "entry_date", "")),
+            "hold_days": getattr(p, "hold_days", 0),
+            "pnl_pct": round(float(p.pnl_pct), 4) if hasattr(p, "pnl_pct") else None,
+            "action": p.action,
+        })
+
+    report_payload = {
+        "date": args.asof,
+        "market": args.market,
+        "market_gate": gate_ok,
+        "market_gate_msg": gate_msg_str,
+        "benchmark_close": "—",
+        "benchmark_ma60": "—",
+        "signals": report_signals,
+        "positions": report_positions,
+    }
+    _REPORT_DATA.mkdir(parents=True, exist_ok=True)
+    (_REPORT_DATA / "quant.json").write_text(
+        json.dumps(report_payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    print(f"[report] quant.json → {_REPORT_DATA / 'quant.json'}")
 
 
 if __name__ == "__main__":

@@ -37,10 +37,12 @@ class BuySignal:
 
 @dataclass
 class ExitSignal:
-    action: str                    # "HOLD" / "EXIT"
+    action: str                    # "HOLD" / "EXIT" / "PARTIAL_EXIT"
     new_stop: Optional[float] = None
     reason: str = ""
     exit_layer: str = ""           # M5：与 exit_taxonomy / exit_events 对齐
+    partial_exit_pct: float = 0.0  # PARTIAL_EXIT 时出场比例（如 0.5）
+    new_trail_mult: Optional[float] = None  # PARTIAL_EXIT 后剩余仓位使用的 trailing stop ATR 倍数
 
 
 @dataclass
@@ -52,6 +54,8 @@ class Position:
     size: int
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
+    partial_exit_done: bool = False          # 已完成过一次部分出场
+    atr_stop_mult_override: Optional[float] = None  # 部分出场后使用的宽松 ATR 倍数
 
 
 class Strategy(Protocol):
@@ -212,16 +216,27 @@ class BottomupTimingStrategy:
             return ExitSignal(action="HOLD", reason="insufficient history", exit_layer="")
 
         new_stop = trailing_stop_from_enriched(
-            sub, position.entry_price, position.stop_loss, self.tcfg
+            sub, position.entry_price, position.stop_loss, self.tcfg,
+            trail_mult_override=position.atr_stop_mult_override,
         )
         ex = exit_signal_from_enriched(
             sub,
             entry_price=position.entry_price,
             entry_date=position.entry_date.strftime("%Y-%m-%d"),
             trailing_stop_price=new_stop, cfg=self.tcfg,
+            partial_exit_done=position.partial_exit_done,
         )
         if ex["signal"]:
             layer = str(ex.get("exit_layer") or exit_layer_from_reason(str(ex.get("reason", ""))))
+            if ex.get("partial"):
+                return ExitSignal(
+                    action="PARTIAL_EXIT",
+                    new_stop=ex.get("new_stop_wide"),   # 宽松止损，由 backtest 写入 pos.stop_loss
+                    reason=str(ex["reason"]),
+                    exit_layer=layer,
+                    partial_exit_pct=float(ex.get("partial_exit_pct", 0.5)),
+                    new_trail_mult=ex.get("new_trail_mult"),
+                )
             return ExitSignal(action="EXIT", new_stop=new_stop, reason=str(ex["reason"]), exit_layer=layer)
         if self.tcfg.m5_regime_exit_enabled:
             gate = self._regime_gate or MarketRegimeGate(

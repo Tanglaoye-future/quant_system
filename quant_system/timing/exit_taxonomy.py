@@ -8,6 +8,7 @@ from __future__ import annotations
 LAYER_STOP_TRAIL = "STOP_TRAIL"
 LAYER_STOP_TREND = "STOP_TREND"
 LAYER_TAKE_PROFIT = "TAKE_PROFIT"
+LAYER_TAKE_PROFIT_PARTIAL = "TAKE_PROFIT_PARTIAL"   # M5: 部分止盈（50%出场，剩余宽松 trailing）
 LAYER_OVERBOUGHT = "OVERBOUGHT"
 LAYER_TIME_STOP = "TIME_STOP"
 LAYER_REGIME = "REGIME"
@@ -22,6 +23,8 @@ def exit_layer_from_reason(reason: str) -> str:
         return LAYER_STOP_TRAIL
     if r.startswith("break_ma"):
         return LAYER_STOP_TREND
+    if r.startswith("take_profit_partial"):
+        return LAYER_TAKE_PROFIT_PARTIAL
     if r.startswith("take_profit"):
         return LAYER_TAKE_PROFIT
     if r.startswith("overbought"):

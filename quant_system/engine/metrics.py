@@ -22,6 +22,7 @@ class BacktestMetrics:
     annual_return: float = 0.0
     annual_volatility: float = 0.0
     sharpe_ratio: float = 0.0
+    sortino_ratio: float = 0.0    # 仅用下行偏差（只惩罚亏损波动）
     max_drawdown: float = 0.0
     calmar_ratio: float = 0.0
 
@@ -59,6 +60,12 @@ def compute_metrics(
     sd = float(excess_daily.std())
     m.sharpe_ratio = float(excess_daily.mean() / sd * np.sqrt(252)) if sd > 0 else 0.0
 
+    # Sortino (仅用下行偏差：收益 < 0 的日子)
+    downside = daily_ret[daily_ret < 0]
+    downside_std = float(downside.std()) if len(downside) >= 2 else 0.0
+    downside_ann = downside_std * np.sqrt(252)
+    m.sortino_ratio = float((m.annual_return - risk_free_rate) / downside_ann) if downside_ann > 0 else 0.0
+
     # 最大回撤
     cummax = equity.cummax()
     drawdown = (equity - cummax) / cummax
@@ -90,11 +97,14 @@ def check_admission(
     min_sharpe: float = 0.5,
     max_drawdown: float = 0.25,
     min_win_rate: float = 0.40,
+    min_sortino: float = 0.0,   # 0 = 不检查；>0 则强制
 ) -> tuple[bool, list[str]]:
     """准入门槛检查. 返回 (pass, [失败原因])."""
     fails = []
     if metrics.sharpe_ratio < min_sharpe:
         fails.append(f"Sharpe {metrics.sharpe_ratio:.2f} < 门槛 {min_sharpe}")
+    if min_sortino > 0 and metrics.sortino_ratio < min_sortino:
+        fails.append(f"Sortino {metrics.sortino_ratio:.2f} < 门槛 {min_sortino}")
     if abs(metrics.max_drawdown) > max_drawdown:
         fails.append(f"最大回撤 {metrics.max_drawdown*100:.2f}% 超过门槛 {max_drawdown*100:.0f}%")
     if metrics.win_rate < min_win_rate:

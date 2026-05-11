@@ -397,6 +397,32 @@ class DataLoader:
         return df
 
     @staticmethod
+    def latest_n_indicator_values(
+        abstract_df: pd.DataFrame, indicator: str, asof: str | None = None, n: int = 2
+    ) -> list[float]:
+        """从 stock_financial_abstract 里取某指标最近 N 期的有效值（降序排列，最新在前）。
+        asof 截断：仅使用报告期 <= asof 的列，与 latest_indicator_value 保持相同防未来函数规则。
+        """
+        rows = abstract_df[abstract_df["指标"] == indicator]
+        if rows.empty:
+            return []
+        date_cols = [c for c in abstract_df.columns if c not in ("选项", "指标")]
+        if asof:
+            cutoff = asof.replace("-", "")
+            date_cols = [c for c in date_cols if str(c) <= cutoff]
+        results: list[float] = []
+        for col in sorted(date_cols, reverse=True):
+            if len(results) >= n:
+                break
+            v = rows.iloc[0][col]
+            if pd.notna(v):
+                try:
+                    results.append(float(v))
+                except (ValueError, TypeError):
+                    continue
+        return results
+
+    @staticmethod
     def latest_indicator_value(
         abstract_df: pd.DataFrame, indicator: str, asof: str | None = None
     ) -> float | None:

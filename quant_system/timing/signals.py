@@ -86,6 +86,18 @@ class TimingConfig:
     # --- M5：为 true 时技术出场未触发且指数市况门不通过则强制 EXIT（REGIME 层）---
     m5_regime_exit_enabled: bool = False
 
+    # --- M5 部分出场：ATR 止盈触发 → 出场 partial_exit_pct，剩余切换到更宽松 trailing stop ---
+    partial_exit_enabled: bool = False
+    partial_exit_pct: float = 0.5          # 首次止盈时出场比例（0.5 = 50%）
+    partial_exit_trail_mult: float = 1.5   # 剩余仓位的 trailing stop 倍数扩展（相对 atr_stop_mult）
+
+    # --- Level 3：入场信号替换（突破+量能）---
+    # True  → 取消 MA20/60 金叉要求，改为「收盘创 m2_structure_lookback 日新高 + 量能确认」
+    # False → 原 MA20/60 金叉逻辑（默认）
+    m2_breakout_mode: bool = False
+    # m2_breakout_mode=True 时，要求收盘价 > MA60（趋势确认，替代金叉）
+    m2_breakout_ma_trend: bool = True
+
 
 def timing_config_from_yaml_node(node: dict | None) -> TimingConfig:
     """从 config.yaml `strategy.timing` 映射到 TimingConfig；未知键忽略。"""
@@ -239,32 +251,58 @@ def entry_signal_from_enriched(
     a = float(today["atr"]) if pd.notna(today["atr"]) else None
     reasons: list[str] = []
 
-    if not (pd.notna(today["ma_long"]) and today["ma_short"] > today["ma_long"]):
-        return _no_entry(
-            f"趋势 X: 当前 MA{cfg.ma_short} 未在 MA{cfg.ma_long} 之上", close, None, None
-        )
-    # 趋势强度: MA_short 与 MA_long 差距太小, 容易假突破/来回切换
-    if pd.notna(today["ma_short"]) and pd.notna(today["ma_long"]) and today["ma_long"] > 0:
-        strength = float(today["ma_short"] / today["ma_long"] - 1.0)
-        if strength < cfg.trend_strength_min:
+    # ── Level 3 突破模式 / 原金叉模式 分支 ──────────────────────────────────
+    if cfg.m2_breakout_mode:
+        # --- 突破模式: 收盘创 N 日新高 + MA60 趋势确认 ---
+        n_high = int(cfg.m2_structure_lookback) if cfg.m2_structure_lookback > 0 else 20
+        if len(df) < n_high + 2:
+            return _no_entry("数据不足(突破窗口)", close, None, None)
+        # MA60 趋势确认（替代金叉）
+        if cfg.m2_breakout_ma_trend:
+            if not (pd.notna(today["ma_long"]) and close > float(today["ma_long"])):
+                return _no_entry(
+                    f"趋势 X: close({close:.2f}) < MA{cfg.ma_long}({today['ma_long']:.2f})",
+                    close, None, None,
+                )
+            reasons.append(f"趋势 OK: close({close:.2f}) > MA{cfg.ma_long}({today['ma_long']:.2f})")
+        # 收盘突破 N 日新高（包含缓冲 eps）
+        prev_closes = df["close"].iloc[-(n_high + 1):-1]
+        prev_high = float(prev_closes.max())
+        thr = prev_high * (1.0 - cfg.m2_structure_eps)
+        if close < thr:
             return _no_entry(
-                f"趋势 X: 强度不足 (MA差={strength*100:.2f}% < {cfg.trend_strength_min*100:.2f}%)",
+                f"突破 X: close({close:.2f}) < 前{n_high}日最高收盘{prev_high:.2f}×(1-ε)={thr:.2f}",
                 close, None, None,
             )
-    window = df.iloc[-(cfg.cross_lookback + 1):]
-    above = (window["ma_short"] > window["ma_long"]).reset_index(drop=True)
-    cross_days = (~above.shift(1).fillna(False)) & above
-    cross_idx = cross_days[cross_days].index.tolist()
-    if not cross_idx:
-        return _no_entry(
-            f"趋势 X: 过去 {cfg.cross_lookback} 日无 MA{cfg.ma_short}/{cfg.ma_long} 金叉",
-            close, None, None,
+        reasons.append(f"突破 OK: close({close:.2f}) 创前{n_high}日新高(前高={prev_high:.2f})")
+    else:
+        # --- 原金叉模式 ---
+        if not (pd.notna(today["ma_long"]) and today["ma_short"] > today["ma_long"]):
+            return _no_entry(
+                f"趋势 X: 当前 MA{cfg.ma_short} 未在 MA{cfg.ma_long} 之上", close, None, None
+            )
+        # 趋势强度: MA_short 与 MA_long 差距太小, 容易假突破/来回切换
+        if pd.notna(today["ma_short"]) and pd.notna(today["ma_long"]) and today["ma_long"] > 0:
+            strength = float(today["ma_short"] / today["ma_long"] - 1.0)
+            if strength < cfg.trend_strength_min:
+                return _no_entry(
+                    f"趋势 X: 强度不足 (MA差={strength*100:.2f}% < {cfg.trend_strength_min*100:.2f}%)",
+                    close, None, None,
+                )
+        window = df.iloc[-(cfg.cross_lookback + 1):]
+        above = (window["ma_short"] > window["ma_long"]).reset_index(drop=True)
+        cross_days = (~above.shift(1).fillna(False)) & above
+        cross_idx = cross_days[cross_days].index.tolist()
+        if not cross_idx:
+            return _no_entry(
+                f"趋势 X: 过去 {cfg.cross_lookback} 日无 MA{cfg.ma_short}/{cfg.ma_long} 金叉",
+                close, None, None,
+            )
+        cross_date = window.iloc[cross_idx[-1]]["date"]
+        reasons.append(
+            f"趋势 OK: {cross_date} 金叉 (MA{cfg.ma_short}={today['ma_short']:.2f} > "
+            f"MA{cfg.ma_long}={today['ma_long']:.2f})"
         )
-    cross_date = window.iloc[cross_idx[-1]]["date"]
-    reasons.append(
-        f"趋势 OK: {cross_date} 金叉 (MA{cfg.ma_short}={today['ma_short']:.2f} > "
-        f"MA{cfg.ma_long}={today['ma_long']:.2f})"
-    )
 
     r = today["rsi"]
     rsi_lo, rsi_hi = _effective_rsi_entry_band(cfg, close, a, regime_ctx)
@@ -303,21 +341,24 @@ def entry_signal_from_enriched(
     if _m2_volume_quality_fail(df, today, cfg, reasons):
         return {"signal": False, "reasons": reasons,
                 "entry_price": close, "stop_loss": None, "take_profit": None}
-    if _m2_structure_fail(df, today, cfg, reasons):
-        return {"signal": False, "reasons": reasons,
-                "entry_price": close, "stop_loss": None, "take_profit": None}
+    # 突破模式：收盘新高已是主逻辑，无需二次 structure_fail 过滤
+    if not cfg.m2_breakout_mode:
+        if _m2_structure_fail(df, today, cfg, reasons):
+            return {"signal": False, "reasons": reasons,
+                    "entry_price": close, "stop_loss": None, "take_profit": None}
 
     if a is None:
         return _no_entry("ATR 缺失", close, None, None)
 
-    # 不追高: close 明显高于 MA_short, 容易回撤洗出 (胜率差)
-    if pd.notna(today["ma_short"]) and today["ma_short"] > 0:
-        chase = float(close / float(today["ma_short"]) - 1.0)
-        if chase > cfg.chase_max:
-            return _no_entry(
-                f"追高 X: close 相对 MA{cfg.ma_short} 偏离 {chase*100:.1f}% > {cfg.chase_max*100:.0f}%",
-                close, None, None,
-            )
+    # 不追高：突破模式下跳过（突破本身就是创新高，chase_max 会误杀信号）
+    if not cfg.m2_breakout_mode:
+        if pd.notna(today["ma_short"]) and today["ma_short"] > 0:
+            chase = float(close / float(today["ma_short"]) - 1.0)
+            if chase > cfg.chase_max:
+                return _no_entry(
+                    f"追高 X: close 相对 MA{cfg.ma_short} 偏离 {chase*100:.1f}% > {cfg.chase_max*100:.0f}%",
+                    close, None, None,
+                )
 
     stop = close - cfg.atr_stop_mult * a
     risk_pct = (close - stop) / close if close else 0.0
@@ -337,8 +378,11 @@ def entry_signal_from_enriched(
 def exit_signal_from_enriched(
     enriched: pd.DataFrame, entry_price: float, entry_date: str,
     trailing_stop_price: Optional[float] = None, cfg: Optional[TimingConfig] = None,
+    partial_exit_done: bool = False,
 ) -> dict:
-    """与 exit_signal 同, 但接收已 enrich 的 df."""
+    """与 exit_signal 同, 但接收已 enrich 的 df。
+    partial_exit_done: 当前持仓已完成过一次部分出场，不再触发 take_profit_partial。
+    """
     cfg = cfg or TimingConfig()
     df = enriched
     today = df.iloc[-1]
@@ -356,6 +400,21 @@ def exit_signal_from_enriched(
     if a is not None:
         target = entry_price + cfg.atr_target_mult * a
         if close >= target:
+            if cfg.partial_exit_enabled and not partial_exit_done:
+                wide_mult = cfg.atr_stop_mult * cfg.partial_exit_trail_mult
+                new_stop_wide = close - wide_mult * a
+                rs = (
+                    f"take_profit_partial: close={close:.2f} >= target={target:.2f} "
+                    f"(出场{cfg.partial_exit_pct*100:.0f}%，剩余切换{wide_mult:.1f}×ATR trailing)"
+                )
+                return {
+                    "signal": True, "reason": rs, "exit_price": close,
+                    "exit_layer": exit_layer_from_reason(rs),
+                    "partial": True,
+                    "partial_exit_pct": cfg.partial_exit_pct,
+                    "new_stop_wide": new_stop_wide,
+                    "new_trail_mult": wide_mult,
+                }
             rs = f"take_profit: close={close:.2f} >= target={target:.2f}"
             return {"signal": True, "reason": rs, "exit_price": close, "exit_layer": exit_layer_from_reason(rs)}
     r = today["rsi"]
@@ -371,12 +430,15 @@ def exit_signal_from_enriched(
 def trailing_stop_from_enriched(
     enriched: pd.DataFrame, entry_price: float,
     prev_stop: Optional[float] = None, cfg: Optional[TimingConfig] = None,
+    trail_mult_override: Optional[float] = None,
 ) -> float:
+    """trail_mult_override：部分出场后传入扩展倍数（如 3.0），使剩余仓位有更大呼吸空间。"""
     cfg = cfg or TimingConfig()
+    mult = trail_mult_override if trail_mult_override is not None else cfg.atr_stop_mult
     today = enriched.iloc[-1]
     a = float(today["atr"]) if pd.notna(today["atr"]) else 0.0
-    candidate = float(today["close"]) - cfg.atr_stop_mult * a
-    base = prev_stop if prev_stop is not None else (entry_price - cfg.atr_stop_mult * a)
+    candidate = float(today["close"]) - mult * a
+    base = prev_stop if prev_stop is not None else (entry_price - mult * a)
     return max(base, candidate)
 
 
@@ -509,39 +571,13 @@ def exit_signal(
     entry_date: str,
     trailing_stop_price: Optional[float] = None,
     cfg: Optional[TimingConfig] = None,
+    partial_exit_done: bool = False,
 ) -> dict:
     cfg = cfg or TimingConfig()
     df = enrich(price_df, cfg)
-    today = df.iloc[-1]
-    close = float(today["close"])
-    a = float(today["atr"]) if pd.notna(today["atr"]) else None
-    today_date = pd.to_datetime(today["date"])
-    hold_days = (today_date - pd.to_datetime(entry_date)).days
-
-    if trailing_stop_price is not None and close <= trailing_stop_price:
-        rs = f"trailing_stop: close={close:.2f} <= stop={trailing_stop_price:.2f}"
-        return {"signal": True, "reason": rs, "exit_price": close, "exit_layer": exit_layer_from_reason(rs)}
-
-    if pd.notna(today["ma_long"]) and close < float(today["ma_long"]):
-        rs = f"break_ma{cfg.ma_long}: close={close:.2f} < MA{cfg.ma_long}={today['ma_long']:.2f}"
-        return {"signal": True, "reason": rs, "exit_price": close, "exit_layer": exit_layer_from_reason(rs)}
-
-    if a is not None:
-        target = entry_price + cfg.atr_target_mult * a
-        if close >= target:
-            rs = f"take_profit: close={close:.2f} >= target={target:.2f}"
-            return {"signal": True, "reason": rs, "exit_price": close, "exit_layer": exit_layer_from_reason(rs)}
-
-    r = today["rsi"]
-    if pd.notna(r) and r >= cfg.rsi_overbought:
-        rs = f"overbought: RSI={r:.1f} >= {cfg.rsi_overbought}"
-        return {"signal": True, "reason": rs, "exit_price": close, "exit_layer": exit_layer_from_reason(rs)}
-
-    if hold_days >= cfg.max_hold_days:
-        rs = f"time_stop: 持有 {hold_days} 天 >= {cfg.max_hold_days}"
-        return {"signal": True, "reason": rs, "exit_price": close, "exit_layer": exit_layer_from_reason(rs)}
-
-    return {"signal": False, "reason": "持有", "exit_price": close, "exit_layer": ""}
+    return exit_signal_from_enriched(
+        df, entry_price, entry_date, trailing_stop_price, cfg, partial_exit_done,
+    )
 
 
 # ---------- Trailing stop ----------

@@ -110,6 +110,7 @@ def write_report(out_dir: Path, strategy_name: str, args, metrics, admission_pas
     lines.append(f"  年化收益:      {metrics.annual_return*100:>+8.2f}%")
     lines.append(f"  年化波动:      {metrics.annual_volatility*100:>8.2f}%")
     lines.append(f"  Sharpe:        {metrics.sharpe_ratio:>+8.2f}")
+    lines.append(f"  Sortino:       {metrics.sortino_ratio:>+8.2f}  (仅惩罚下行波动)")
     lines.append(f"  最大回撤:      {metrics.max_drawdown*100:>+8.2f}%")
     lines.append(f"  Calmar:        {metrics.calmar_ratio:>+8.2f}")
     lines.append("")
@@ -218,6 +219,7 @@ def main() -> None:
         min_sharpe=adm.get("min_sharpe", 0.5),
         max_drawdown=adm.get("max_drawdown", 0.25),
         min_win_rate=adm.get("min_win_rate", 0.40),
+        min_sortino=adm.get("min_sortino", 0.0),
     )
 
     # CSV 输出

@@ -98,7 +98,9 @@ class Backtester:
         cash = self.initial_capital
         positions: dict[str, Position] = {}
         pending_buys: list[BuySignal] = []
-        pending_sells: list[tuple[Position, str]] = []
+        # pending_sells: (pos, reason, sell_fraction)
+        # sell_fraction=1.0 表示全量出场，0<sell_fraction<1.0 表示部分出场
+        pending_sells: list[tuple[Position, str, float]] = []
         closed: list[ClosedTrade] = []
         equity_history: list[tuple[str, float]] = []
         position_history: list[dict] = []
@@ -123,31 +125,59 @@ class Backtester:
             day_dt = datetime.strptime(day_str, "%Y-%m-%d").date()
 
             # ===== Step 1: 执行 T+1 卖单 (今日开盘) =====
-            still_pending_sells: list[tuple[Position, str]] = []
-            for pos, reason in pending_sells:
+            still_pending_sells: list[tuple[Position, str, float]] = []
+            for pos, reason, sell_fraction in pending_sells:
                 # 防御: 该 symbol 可能已被前一笔 pending_sells 卖掉 (重复加入), 跳过避免双扣
                 if pos.symbol not in positions:
                     continue
                 bar = get_today(pos.symbol, pos.market, day_str)
                 if bar is None:
-                    still_pending_sells.append((pos, reason))   # 停牌, 留到明天
+                    still_pending_sells.append((pos, reason, sell_fraction))   # 停牌, 留到明天
                     continue
                 exec_price = float(bar["open"]) * (1.0 - self.slippage)
-                gross = exec_price * pos.size
-                fees = gross * (self.commission + self.stamp_tax)
-                cash += gross - fees
 
-                pnl = (exec_price - pos.entry_price) * pos.size - fees
-                pnl_pct = exec_price / pos.entry_price - 1.0
-                hold_days = (day_dt - pos.entry_date).days
-                closed.append(ClosedTrade(
-                    symbol=pos.symbol, market=pos.market,
-                    entry_date=pos.entry_date, entry_price=pos.entry_price,
-                    size=pos.size, exit_date=day_dt, exit_price=exec_price,
-                    pnl=pnl, pnl_pct=pnl_pct, hold_days=hold_days,
-                    exit_reason=reason,
-                ))
-                positions.pop(pos.symbol, None)
+                if sell_fraction < 1.0:
+                    # ---- 部分出场（M5 partial exit）----
+                    sell_size = int(pos.size * sell_fraction / 100) * 100
+                    if sell_size <= 0:
+                        sell_size = pos.size   # 仓位太小无法按手拆分时，退化为全出
+                    sell_size = min(sell_size, pos.size)
+                    gross = exec_price * sell_size
+                    fees = gross * (self.commission + self.stamp_tax)
+                    cash += gross - fees
+                    pnl = (exec_price - pos.entry_price) * sell_size - fees
+                    pnl_pct = exec_price / pos.entry_price - 1.0
+                    hold_days = (day_dt - pos.entry_date).days
+                    closed.append(ClosedTrade(
+                        symbol=pos.symbol, market=pos.market,
+                        entry_date=pos.entry_date, entry_price=pos.entry_price,
+                        size=sell_size, exit_date=day_dt, exit_price=exec_price,
+                        pnl=pnl, pnl_pct=pnl_pct, hold_days=hold_days,
+                        exit_reason=reason,
+                    ))
+                    remaining = pos.size - sell_size
+                    if remaining <= 0:
+                        positions.pop(pos.symbol, None)
+                    else:
+                        pos.size = remaining
+                        pos.partial_exit_done = True
+                        # stop_loss 和 atr_stop_mult_override 已在 Step 3 (信号日) 由 evaluate() 写入
+                else:
+                    # ---- 全量出场 ----
+                    gross = exec_price * pos.size
+                    fees = gross * (self.commission + self.stamp_tax)
+                    cash += gross - fees
+                    pnl = (exec_price - pos.entry_price) * pos.size - fees
+                    pnl_pct = exec_price / pos.entry_price - 1.0
+                    hold_days = (day_dt - pos.entry_date).days
+                    closed.append(ClosedTrade(
+                        symbol=pos.symbol, market=pos.market,
+                        entry_date=pos.entry_date, entry_price=pos.entry_price,
+                        size=pos.size, exit_date=day_dt, exit_price=exec_price,
+                        pnl=pnl, pnl_pct=pnl_pct, hold_days=hold_days,
+                        exit_reason=reason,
+                    ))
+                    positions.pop(pos.symbol, None)
             pending_sells = still_pending_sells
 
             # ===== Step 2: 执行 T+1 买单 (今日开盘) =====
@@ -182,7 +212,7 @@ class Backtester:
             pending_buys = still_pending_buys
 
             # ===== Step 3: 评估持仓 (今日盘后) =====
-            already_pending = {p.symbol for p, _ in pending_sells}
+            already_pending = {p.symbol for p, _, _f in pending_sells}
             for sym, pos in list(positions.items()):
                 # A 股 T+1: 当日买的不能当日卖
                 if pos.entry_date == day_dt:
@@ -190,9 +220,9 @@ class Backtester:
                 if sym in already_pending:
                     continue   # 已在卖出队列, 不重复评估 / append
                 ex = strategy.evaluate(pos, day_dt)
+                nxt = trading_days[i + 1] if (i + 1) < len(trading_days) else ""
                 if ex.action == "EXIT":
                     if diagnostics is not None:
-                        nxt = trading_days[i + 1] if (i + 1) < len(trading_days) else ""
                         diagnostics.exit_rows.append({
                             "decision_date": day_str,
                             "planned_exec_date": nxt,
@@ -202,7 +232,24 @@ class Backtester:
                             "exit_layer": getattr(ex, "exit_layer", None)
                             or exit_layer_from_reason(ex.reason),
                         })
-                    pending_sells.append((pos, ex.reason))
+                    pending_sells.append((pos, ex.reason, 1.0))
+                elif ex.action == "PARTIAL_EXIT":
+                    if diagnostics is not None:
+                        diagnostics.exit_rows.append({
+                            "decision_date": day_str,
+                            "planned_exec_date": nxt,
+                            "symbol": sym,
+                            "reason": ex.reason,
+                            "event": "partial_exit",
+                            "exit_layer": getattr(ex, "exit_layer", None)
+                            or exit_layer_from_reason(ex.reason),
+                        })
+                    # 立即写入宽松止损和 trail_mult（T+1 执行时 partial_exit_done 才置 True）
+                    if ex.new_stop is not None:
+                        pos.stop_loss = ex.new_stop
+                    if ex.new_trail_mult is not None:
+                        pos.atr_stop_mult_override = ex.new_trail_mult
+                    pending_sells.append((pos, ex.reason, float(ex.partial_exit_pct)))
                 elif ex.new_stop is not None:
                     pos.stop_loss = ex.new_stop
 

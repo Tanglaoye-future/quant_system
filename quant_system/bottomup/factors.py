@@ -25,6 +25,8 @@ class FactorWeights:
     revenue_growth: float = 0.20
     momentum_3m: float = 0.20
     momentum_6m: float = 0.0    # 默认关闭；US/动量市场可设 >0 启用6个月动量
+    fcf_yield: float = 0.0      # A股 Level2：每股企业自由现金流量/收盘价（现金流质量）
+    rev_accel: float = 0.0      # A股 Level2：营收增速加速度（本期增速 − 上期增速）
 
     def as_series(self) -> pd.Series:
         return pd.Series({
@@ -34,6 +36,8 @@ class FactorWeights:
             "revenue_growth": self.revenue_growth,
             "momentum_3m": self.momentum_3m,
             "momentum_6m": self.momentum_6m,
+            "fcf_yield": self.fcf_yield,
+            "rev_accel": self.rev_accel,
         })
 
 
@@ -47,12 +51,16 @@ def _safe_latest(df: pd.DataFrame, col: str) -> float:
 def compute_raw_factors(
     loader: DataLoader, market: Market, code: str, asof: str
 ) -> dict[str, float]:
-    """对单只股票, 拉取最新一期的 5 个因子原始值."""
+    """对单只股票, 拉取最新一期的因子原始值.
+    Level2 新增: fcf_yield（每股企业自由现金流量/收盘价）、rev_accel（营收增速加速度）。
+    """
     factors: dict[str, float] = {
         "pe_inverse": np.nan, "pb_inverse": np.nan,
         "roe": np.nan, "revenue_growth": np.nan,
         "momentum_3m": np.nan, "momentum_6m": np.nan,
+        "fcf_yield": np.nan, "rev_accel": np.nan,
     }
+    _fcf_per_share: float | None = None   # 暂存，待有 close 价后计算 fcf_yield
 
     if market == "a_share":
         try:
@@ -71,6 +79,21 @@ def compute_raw_factors(
             rev_g = loader.latest_indicator_value(abstract, "营业总收入增长率", asof=asof)
             factors["roe"] = float(roe) if roe is not None else np.nan
             factors["revenue_growth"] = float(rev_g) if rev_g is not None else np.nan
+
+            # rev_accel: 营收增速加速度 = 本期增速 − 上期增速（两期均来自已缓存的 abstract）
+            rev_vals = loader.latest_n_indicator_values(
+                abstract, "营业总收入增长率", asof=asof, n=2
+            )
+            if len(rev_vals) >= 2:
+                factors["rev_accel"] = rev_vals[0] - rev_vals[1]
+
+            # 预取 fcf_yield 分子（每股经营现金流）；asof 截断规则同其他财务指标
+            # 注：企业自由现金流在银行/金融股中为 NaN（资本结构特殊），用经营现金流覆盖率更高
+            fcf_vals = loader.latest_n_indicator_values(
+                abstract, "每股经营现金流", asof=asof, n=1
+            )
+            if fcf_vals:
+                _fcf_per_share = fcf_vals[0]
         except Exception:
             pass
 
@@ -85,6 +108,11 @@ def compute_raw_factors(
             factors["momentum_3m"] = float(px["close"].iloc[-1] / px["close"].iloc[-60] - 1.0)
         if len(px) >= 120:
             factors["momentum_6m"] = float(px["close"].iloc[-1] / px["close"].iloc[-120] - 1.0)
+        # fcf_yield = 每股企业自由现金流量 / 收盘价（需要 close 价才能算，统一在价格 block 里完成）
+        if market == "a_share" and _fcf_per_share is not None and len(px) > 0:
+            close_at_asof = float(px["close"].iloc[-1])
+            if close_at_asof > 0:
+                factors["fcf_yield"] = _fcf_per_share / close_at_asof
     except Exception:
         pass
 
