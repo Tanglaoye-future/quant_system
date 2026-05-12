@@ -6,7 +6,12 @@ markets:
     enabled: true
     universe: hs300        # 本项目仅支持 hs300
     benchmark: sh000300
-    # A 股使用全局 strategy.timing 和 factors.weights，无需市场级覆盖
+    # timing / factors 用全局默认（实验证明 L1/L2 不可从 HK 移植：A 股震荡市 + 真价值 alpha）
+    # --- L3 移植：on-regime HS300 做空 overlay（HK 验证 +0.13 Sharpe）---
+    hedge:
+      ratio: 0.3                  # 与 HK 最优一致
+      ma_days: 60                 # 与策略默认 m2_regime_ma_days 对齐
+      borrow_cost: 0.03
 
   hk_share:
     enabled: true
