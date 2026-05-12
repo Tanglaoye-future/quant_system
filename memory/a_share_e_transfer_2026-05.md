@@ -12,9 +12,11 @@ type: project
 | L1 (HK 配置) | 0.50 | ❌ DD 变深 |
 | L1 (tight runner) | 0.30 | ❌ FAIL（DD 突破 25%）|
 | L2 (drop PE, boost ROE+Mom) | 0.53 | ❌ |
-| **L3 (HS300 hedge, MA60, r=0.3)** | **0.63** | ✅ +0.05 |
+| **L3 (HS300 hedge, MA60, r=0.3)** | 0.63 | ✅ +0.05 |
+| L2-B (北向资金) | 0.63 | 零效应（候选已足）|
+| **L2-add (fcf_yield 0.20)** | **0.65** | ✅ +0.02 |
 
-A 股最终 final = baseline + L3 hedge only。
+A 股最终 final = baseline + L3 hedge + fcf_yield 因子。Sharpe 0.65。
 
 ## 关键洞察（不要重做）
 
