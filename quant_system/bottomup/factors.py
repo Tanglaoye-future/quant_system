@@ -24,7 +24,8 @@ class FactorWeights:
     roe: float = 0.25
     revenue_growth: float = 0.20
     momentum_3m: float = 0.20
-    momentum_6m: float = 0.0    # 默认关闭；US/动量市场可设 >0 启用6个月动量
+    momentum_6m: float = 0.0     # 默认关闭；US/动量市场可设 >0
+    fcf_yield: float = 0.0       # 默认关闭；现金流质量因子（每股 FCF / price），A 股有数据
 
     def as_series(self) -> pd.Series:
         return pd.Series({
@@ -34,6 +35,7 @@ class FactorWeights:
             "revenue_growth": self.revenue_growth,
             "momentum_3m": self.momentum_3m,
             "momentum_6m": self.momentum_6m,
+            "fcf_yield": self.fcf_yield,
         })
 
 
@@ -52,6 +54,7 @@ def compute_raw_factors(
         "pe_inverse": np.nan, "pb_inverse": np.nan,
         "roe": np.nan, "revenue_growth": np.nan,
         "momentum_3m": np.nan, "momentum_6m": np.nan,
+        "fcf_yield": np.nan,
     }
 
     if market == "a_share":
@@ -69,8 +72,21 @@ def compute_raw_factors(
             abstract = loader.get_a_share_abstract(code)
             roe = loader.latest_indicator_value(abstract, "净资产收益率(ROE)", asof=asof)
             rev_g = loader.latest_indicator_value(abstract, "营业总收入增长率", asof=asof)
+            fcf_ps = loader.latest_indicator_value(abstract, "每股企业自由现金流量", asof=asof)
             factors["roe"] = float(roe) if roe is not None else np.nan
             factors["revenue_growth"] = float(rev_g) if rev_g is not None else np.nan
+            # FCF yield = 每股自由现金流 / asof 当日收盘价（对市值规模归一化）
+            if fcf_ps is not None:
+                try:
+                    end_dt = pd.to_datetime(asof)
+                    start_dt = max(end_dt - pd.Timedelta(days=30), pd.Timestamp("2018-01-01"))
+                    px_recent = loader.get_daily("a_share", code, start_dt.strftime("%Y-%m-%d"), asof)
+                    if not px_recent.empty:
+                        last_close = float(px_recent["close"].iloc[-1])
+                        if last_close > 0:
+                            factors["fcf_yield"] = float(fcf_ps) / last_close
+                except Exception:
+                    pass
         except Exception:
             pass
 

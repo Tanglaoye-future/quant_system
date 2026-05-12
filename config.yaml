@@ -6,7 +6,15 @@ markets:
     enabled: true
     universe: hs300        # 本项目仅支持 hs300
     benchmark: sh000300
-    # factors 用全局默认（实验证明 L2 quality 套路不适合 A 股，A 股 PE/PB 有真 alpha）
+    # --- L2 因子增强（v9）：加入 fcf_yield（每股自由现金流/收盘价）作为现金流质量因子 ---
+    factors:
+      weights:
+        pe_inverse: 0.15
+        pb_inverse: 0.10
+        roe: 0.20
+        revenue_growth: 0.15
+        momentum_3m: 0.20
+        fcf_yield: 0.20         # 新增（A 股 abstract 有「每股企业自由现金流量」字段）
     # --- L1 出场层：A 股 timing 用全局默认（HK 的 TP runner 不可移植，A 股震荡市需要 4×ATR TP 出场）---
     # 北向资金信号实验：基础设施已就绪（loader.get_a_share_northbound_flow），
     # 但 vol_relax 在 A 股拉入弱候选（v6 Sharpe 0.63→0.53），RSI 上沿放宽零效果（v7=v5）
