@@ -145,6 +145,7 @@ class BottomupTimingStrategy:
                 atr_pct_median_window=self.tcfg.m3_reg_index_atr_pct_median_window,
                 southbound_enabled=self.tcfg.m3_southbound_widen_enabled,
                 southbound_ma_window=self.tcfg.m3_southbound_ma_window,
+                marginal_flow_market=self.market,
             )
 
         hits = []

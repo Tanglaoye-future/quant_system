@@ -422,16 +422,16 @@ class DataLoader:
                     continue
         return None
 
-    # ---------- HK 资金流向 ----------
+    # ---------- 边际资金流向（HK 南向 / A 股北向）----------
 
-    def get_hk_southbound_flow(self) -> pd.DataFrame:
-        """港股通南向资金日级数据（akshare stock_hsgt_hist_em 全量）。
-        返回 [date(str YYYY-MM-DD), net_buy(亿元)]，按日期升序。"""
-        cache = self.cache_dir / "hk_southbound_flow.parquet"
+    def _fetch_hsgt_flow(self, symbol: str, cache_filename: str) -> pd.DataFrame:
+        """通用：拉取沪股通/深股通/南向/北向日级数据并缓存。
+        symbol 必须是 akshare stock_hsgt_hist_em 接受的字符串。"""
+        cache = self.cache_dir / cache_filename
         if self._is_fresh(cache):
             return pd.read_parquet(cache)
         try:
-            raw = ak.stock_hsgt_hist_em(symbol="南向资金")
+            raw = ak.stock_hsgt_hist_em(symbol=symbol)
         except Exception:
             df = pd.DataFrame(columns=["date", "net_buy"])
             df.to_parquet(cache)
@@ -446,6 +446,22 @@ class DataLoader:
         df = df.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
         df.to_parquet(cache)
         return df
+
+    def get_hk_southbound_flow(self) -> pd.DataFrame:
+        """港股通南向资金日级（HK 边际买盘信号）。[date, net_buy(亿元)] 升序。"""
+        return self._fetch_hsgt_flow("南向资金", "hk_southbound_flow.parquet")
+
+    def get_a_share_northbound_flow(self) -> pd.DataFrame:
+        """陆股通北向资金日级（A 股边际买盘信号）。[date, net_buy(亿元)] 升序。"""
+        return self._fetch_hsgt_flow("北向资金", "a_share_northbound_flow.parquet")
+
+    def get_marginal_flow(self, market: "Market") -> pd.DataFrame:
+        """按市场分发：HK→南向；A 股→北向；其他→空。"""
+        if market == "hk_share":
+            return self.get_hk_southbound_flow()
+        if market == "a_share":
+            return self.get_a_share_northbound_flow()
+        return pd.DataFrame(columns=["date", "net_buy"])
 
     # ---------- fundamentals (HK 港股) ----------
 

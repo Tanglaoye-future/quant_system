@@ -75,6 +75,7 @@ def build_timing_regime_context(
     atr_pct_median_window: int = 20,
     southbound_enabled: bool = False,
     southbound_ma_window: int = 20,
+    marginal_flow_market: str | None = None,   # "hk_share" / "a_share"，None 时禁用
 ) -> TimingRegimeContext:
     """
     为 M3 单票 RSI 入场带提供指数侧上下文（仅用 date <= asof 的指数日线）。
@@ -116,11 +117,11 @@ def build_timing_regime_context(
         if m0 and m0 > 0 and not pd.isna(m0):
             rel = last_atr_pct / m0 - 1.0
 
-    # 南向资金强度信号（仅 HK 启用；A 股/美股 disabled 时直接 None）
+    # 边际资金强度信号（按市场分发：HK→南向，A 股→北向）
     sb_strength: float | None = None
-    if southbound_enabled:
+    if southbound_enabled and marginal_flow_market:
         try:
-            sb_df = loader.get_hk_southbound_flow()
+            sb_df = loader.get_marginal_flow(marginal_flow_market)
             if sb_df is not None and not sb_df.empty:
                 sb_sub = sb_df[sb_df["date"] <= asof_str].copy()
                 w = max(2, int(southbound_ma_window))
