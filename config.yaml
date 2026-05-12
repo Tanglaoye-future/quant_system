@@ -29,15 +29,14 @@ markets:
       tp_runner_lock_atr_mult: 1.0  # promote 时把 stop 拉到 target - 1×ATR（锁定约 4×ATR 收益）
     factors:
       weights:
-        # L2 修正：港股财务数据 akshare 覆盖窄（factors.py:77），PE/PB/ROE/RevGrowth 实际全 NaN→score 贡献 0。
-        # 之前 0.40 PB 等权重是"装饰性"的，实际 ranking 完全由 momentum_3m 决定。
-        # 现明确归零死权重 + 启用多周期动量（momentum_6m 默认关闭，HK 趋势市场需要）。
-        pe_inverse: 0.0
+        # L2-A：HK 财务数据接入 stock_financial_hk_analysis_indicator_em（90 天披露滞后）
+        # 2018-2026 期间 HK 价值股（H 股银行）跑输动量股 → drop value，保留 quality + momentum
+        pe_inverse: 0.0             # 价值陷阱：H 股银行长期破净但不修复
         pb_inverse: 0.0
-        roe: 0.0
-        revenue_growth: 0.0
-        momentum_3m: 0.5            # 3 个月动量：入场时机
-        momentum_6m: 0.5            # 6 个月动量：趋势强度（HK 修复行情普遍持续 6+ 月）
+        roe: 0.30                   # 质量过滤 — 避开僵尸国企
+        revenue_growth: 0.10        # 成长
+        momentum_3m: 0.30           # 主信号
+        momentum_6m: 0.30           # 主信号
     # --- L3：HSCHK100 做空对冲 overlay；仅 regime ON 时维持，避免熊市反弹打损 ---
     # 分析显示纯多头策略 beta=0.155 已很低，但 on-regime hedge 仍能拉 Sharpe 0.52→0.78
     hedge:

@@ -74,7 +74,29 @@ def compute_raw_factors(
         except Exception:
             pass
 
-    # 港股财务在 akshare 覆盖窄, 暂时只算动量, 估值/质量后续接补丁
+    elif market == "hk_share":
+        # HK 财务（东财年度指标），带 90 天公告滞后避免未来信息
+        try:
+            fin = loader.get_hk_financial_indicator(code)
+            eps_ttm = loader.latest_hk_indicator(fin, "eps_ttm", asof)
+            bps = loader.latest_hk_indicator(fin, "bps", asof)
+            roe = loader.latest_hk_indicator(fin, "roe_avg", asof)
+            rev_yoy = loader.latest_hk_indicator(fin, "revenue_yoy", asof)
+            # PE/PB 用最新收盘价 + EPS_TTM / BPS 反推
+            end_dt = pd.to_datetime(asof)
+            start_dt = max(end_dt - pd.Timedelta(days=30), pd.Timestamp("2018-01-01"))
+            px_recent = loader.get_daily(market, code, start_dt.strftime("%Y-%m-%d"), asof)
+            latest_close = float(px_recent["close"].iloc[-1]) if not px_recent.empty else None
+            if eps_ttm is not None and latest_close and latest_close > 0:
+                factors["pe_inverse"] = eps_ttm / latest_close   # 直接 EPS/P 而非 1/PE，处理负 EPS 时也能给出有意义信号
+            if bps is not None and latest_close and latest_close > 0 and bps > 0:
+                factors["pb_inverse"] = bps / latest_close
+            if roe is not None:
+                factors["roe"] = float(roe)
+            if rev_yoy is not None:
+                factors["revenue_growth"] = float(rev_yoy)
+        except Exception:
+            pass
 
     try:
         end_dt = pd.to_datetime(asof)

@@ -422,6 +422,56 @@ class DataLoader:
                     continue
         return None
 
+    # ---------- fundamentals (HK 港股) ----------
+
+    def get_hk_financial_indicator(self, code: str) -> pd.DataFrame:
+        """HK 年度财务分析指标 (东财 stock_financial_hk_analysis_indicator_em).
+        返回 [report_date, eps_ttm, bps, roe_avg, revenue_yoy]，按 report_date 升序。
+        失败时返回空 DataFrame 并缓存以避免反复重试。"""
+        cache = self.cache_dir / f"hk_fin_{code}.parquet"
+        if self._is_fresh(cache):
+            return pd.read_parquet(cache)
+        cols = ["report_date", "eps_ttm", "bps", "roe_avg", "revenue_yoy"]
+        try:
+            raw = ak.stock_financial_hk_analysis_indicator_em(symbol=code, indicator="年度")
+        except Exception:
+            df = pd.DataFrame(columns=cols)
+            df.to_parquet(cache)
+            return df
+        if raw is None or raw.empty:
+            df = pd.DataFrame(columns=cols)
+            df.to_parquet(cache)
+            return df
+        df = raw.rename(columns={
+            "REPORT_DATE": "report_date", "EPS_TTM": "eps_ttm", "BPS": "bps",
+            "ROE_AVG": "roe_avg", "OPERATE_INCOME_YOY": "revenue_yoy",
+        })
+        for c in cols:
+            if c not in df.columns:
+                df[c] = None
+        df = df[cols].copy()
+        df["report_date"] = pd.to_datetime(df["report_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+        for c in ["eps_ttm", "bps", "roe_avg", "revenue_yoy"]:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+        df = df.dropna(subset=["report_date"]).sort_values("report_date").reset_index(drop=True)
+        df.to_parquet(cache)
+        return df
+
+    @staticmethod
+    def latest_hk_indicator(
+        df: pd.DataFrame, col: str, asof: str, publication_lag_days: int = 90
+    ) -> float | None:
+        """HK 年度财务取 asof 之前 publication_lag_days 天的最新有效值。
+        默认 90 天滞后保守模拟 HK 年报披露窗口（FY-end 起 3-4 个月）。"""
+        if df is None or df.empty or col not in df.columns:
+            return None
+        cutoff = (pd.to_datetime(asof) - pd.Timedelta(days=publication_lag_days)).strftime("%Y-%m-%d")
+        eligible = df[df["report_date"] <= cutoff]
+        if eligible.empty:
+            return None
+        s = pd.to_numeric(eligible[col], errors="coerce").dropna()
+        return float(s.iloc[-1]) if len(s) else None
+
     def get_a_share_industry_map(self) -> dict[str, str]:
         """
         A 股 code -> 行业名称（东财 A 股实时行情整表，单日 parquet 缓存）。
