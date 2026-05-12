@@ -66,6 +66,10 @@ class Backtester:
         stamp_tax: float = 0.001,          # 卖出
         slippage: float = 0.001,           # 单边
         cash_buffer_pct: float = 0.05,     # 留 5% 现金不动
+        # --- L3：基准做空对冲 overlay（仅在 regime ON 时做空基准，隔离 alpha）---
+        benchmark_hedge_ratio: float = 0.0,        # 0=关闭；建议 0.3-0.5
+        benchmark_hedge_ma_days: int = 200,         # regime 判别 MA 窗口
+        benchmark_hedge_borrow_cost: float = 0.03,  # 年化借券成本
     ):
         self.loader = loader
         self.initial_capital = initial_capital
@@ -75,6 +79,9 @@ class Backtester:
         self.stamp_tax = stamp_tax
         self.slippage = slippage
         self.cash_buffer_pct = cash_buffer_pct
+        self.benchmark_hedge_ratio = benchmark_hedge_ratio
+        self.benchmark_hedge_ma_days = benchmark_hedge_ma_days
+        self.benchmark_hedge_borrow_cost = benchmark_hedge_borrow_cost
 
     def run(
         self,
@@ -93,6 +100,9 @@ class Backtester:
             raise ValueError(f"基准 {benchmark_symbol} 在 [{start}, {end}] 数据不足")
         trading_days = idx["date"].tolist()
         bench_close = idx.set_index("date")["close"]
+        bench_ma = bench_close.rolling(
+            self.benchmark_hedge_ma_days, min_periods=self.benchmark_hedge_ma_days
+        ).mean() if self.benchmark_hedge_ratio > 0 else None
 
         # 状态
         cash = self.initial_capital
@@ -102,6 +112,10 @@ class Backtester:
         closed: list[ClosedTrade] = []
         equity_history: list[tuple[str, float]] = []
         position_history: list[dict] = []
+        # L3 hedge state
+        hedge_short: Optional[dict] = None   # {entry_price, size, entry_date_str}
+        hedge_trades: list[dict] = []        # 历史 short 交易记录
+        hedge_borrow_cost_accum: float = 0.0
 
         # 缓存当日 OHLC, 避免反复 fetch (引擎只查每日开盘 + 收盘)
         # 不预读全部 universe (可能上千只), 按需缓存
@@ -181,6 +195,41 @@ class Backtester:
                 )
             pending_buys = still_pending_buys
 
+            # ===== Step 2.5: L3 基准对冲 overlay（仅 ratio > 0 启用）=====
+            # 决策：用「昨日 close vs MA」（无未来信息）；执行：今日 close（基准没有 open/high/low）
+            if self.benchmark_hedge_ratio > 0 and bench_ma is not None and i >= 1:
+                prev_day = trading_days[i - 1]
+                prev_c = bench_close.get(prev_day)
+                prev_m = bench_ma.get(prev_day) if bench_ma is not None else None
+                today_c = bench_close.get(day_str)
+                if (prev_c is not None and prev_m is not None and not pd.isna(prev_m)
+                        and today_c is not None and not pd.isna(today_c)):
+                    regime_on_yest = float(prev_c) > float(prev_m)
+                    if regime_on_yest and hedge_short is None:
+                        # 开空（按今日 close 成交）
+                        ep = float(today_c)
+                        size = self.initial_capital * self.benchmark_hedge_ratio / ep
+                        hedge_short = {"entry_price": ep, "size": size, "entry_date_str": day_str}
+                    elif (not regime_on_yest) and hedge_short is not None:
+                        # 平空
+                        cp = float(today_c)
+                        size = hedge_short["size"]
+                        ep = hedge_short["entry_price"]
+                        pnl = (ep - cp) * size
+                        # 借券成本（按持有天数线性扣）
+                        entry_dt = datetime.strptime(hedge_short["entry_date_str"], "%Y-%m-%d").date()
+                        days_held = max(0, (day_dt - entry_dt).days)
+                        cost = ep * size * self.benchmark_hedge_borrow_cost * (days_held / 365.0)
+                        cash += pnl - cost
+                        hedge_borrow_cost_accum += cost
+                        hedge_trades.append({
+                            "entry_date": hedge_short["entry_date_str"],
+                            "exit_date": day_str,
+                            "entry_price": ep, "exit_price": cp,
+                            "size": size, "pnl": pnl - cost, "days_held": days_held,
+                        })
+                        hedge_short = None
+
             # ===== Step 3: 评估持仓 (今日盘后) =====
             already_pending = {p.symbol for p, _ in pending_sells}
             for sym, pos in list(positions.items()):
@@ -203,6 +252,10 @@ class Backtester:
                             or exit_layer_from_reason(ex.reason),
                         })
                     pending_sells.append((pos, ex.reason))
+                elif ex.action == "PROMOTE_RUNNER":
+                    if ex.new_stop is not None:
+                        pos.stop_loss = ex.new_stop
+                    pos.runner_active = True
                 elif ex.new_stop is not None:
                     pos.stop_loss = ex.new_stop
 
@@ -255,6 +308,16 @@ class Backtester:
                     mv += pos.size * float(bar["close"])
                 else:
                     mv += pos.size * pos.entry_price   # 停牌按成本估
+            # L3 short overlay MTM（短仓未实现盈亏，扣已累计借券成本估算）
+            if hedge_short is not None:
+                today_c = bench_close.get(day_str)
+                if today_c is not None and not pd.isna(today_c):
+                    ep = hedge_short["entry_price"]; size = hedge_short["size"]
+                    mv += (ep - float(today_c)) * size
+                    # 实时减去借券成本（持有期内估算，不入 cash 直到平仓）
+                    entry_dt = datetime.strptime(hedge_short["entry_date_str"], "%Y-%m-%d").date()
+                    days_held = max(0, (day_dt - entry_dt).days)
+                    mv -= ep * size * self.benchmark_hedge_borrow_cost * (days_held / 365.0)
             equity_history.append((day_str, mv))
             position_history.append({
                 "date": day_str, "n_positions": len(positions),
@@ -303,6 +366,25 @@ class Backtester:
                 exit_reason="backtest_end_close",
             ))
             positions.pop(pos.symbol, None)
+
+        # L3：末日强平 short
+        if hedge_short is not None:
+            cp = bench_close.get(last_day_str)
+            if cp is not None and not pd.isna(cp):
+                cp_f = float(cp); ep = hedge_short["entry_price"]; size = hedge_short["size"]
+                pnl = (ep - cp_f) * size
+                entry_dt = datetime.strptime(hedge_short["entry_date_str"], "%Y-%m-%d").date()
+                days_held = max(0, (last_day_dt - entry_dt).days)
+                cost = ep * size * self.benchmark_hedge_borrow_cost * (days_held / 365.0)
+                cash += pnl - cost
+                hedge_borrow_cost_accum += cost
+                hedge_trades.append({
+                    "entry_date": hedge_short["entry_date_str"],
+                    "exit_date": last_day_str,
+                    "entry_price": ep, "exit_price": cp_f,
+                    "size": size, "pnl": pnl - cost, "days_held": days_held,
+                })
+                hedge_short = None
 
         # 末值
         equity_history[-1] = (last_day_str, cash)

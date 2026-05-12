@@ -52,6 +52,7 @@ class Position:
     size: int
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
+    runner_active: bool = False    # M5 L1：TP 命中后已 promote 为 runner，TP 出场被跳过 + 可换 runner trail 倍数
 
 
 class Strategy(Protocol):
@@ -211,15 +212,28 @@ class BottomupTimingStrategy:
         if len(sub) < self.tcfg.ma_long + 5:
             return ExitSignal(action="HOLD", reason="insufficient history", exit_layer="")
 
+        stop_override: Optional[float] = None
+        if position.runner_active and self.tcfg.atr_stop_mult_runner > 0:
+            stop_override = float(self.tcfg.atr_stop_mult_runner)
         new_stop = trailing_stop_from_enriched(
-            sub, position.entry_price, position.stop_loss, self.tcfg
+            sub, position.entry_price, position.stop_loss, self.tcfg,
+            atr_stop_mult_override=stop_override,
         )
         ex = exit_signal_from_enriched(
             sub,
             entry_price=position.entry_price,
             entry_date=position.entry_date.strftime("%Y-%m-%d"),
             trailing_stop_price=new_stop, cfg=self.tcfg,
+            runner_active=position.runner_active,
         )
+        if ex.get("promote_runner"):
+            promote_stop = float(ex.get("new_stop") or new_stop)
+            return ExitSignal(
+                action="PROMOTE_RUNNER",
+                new_stop=max(promote_stop, new_stop),
+                reason=str(ex.get("reason", "promote_runner")),
+                exit_layer="",
+            )
         if ex["signal"]:
             layer = str(ex.get("exit_layer") or exit_layer_from_reason(str(ex.get("reason", ""))))
             return ExitSignal(action="EXIT", new_stop=new_stop, reason=str(ex["reason"]), exit_layer=layer)

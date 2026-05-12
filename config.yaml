@@ -20,13 +20,30 @@ markets:
       rsi_entry_high: 72.0
       ma_long: 80                 # 更长趋势均线，减少港股低流动性带来的误穿
       max_hold_days: 80           # 港股中线持仓稍长
+      # --- L1：放宽 trail + TP runner（让赢家奔跑）---
+      # 基线 v1: atr_stop_mult=2.0, atr_target_mult=4.0, runner 全关 → Sharpe 0.42 (trail 主导,47 笔 TP 砍早)
+      atr_stop_mult: 2.5          # 加宽基础 trail（港股波动大，2×ATR 经常被随机噪声触发）
+      atr_target_mult: 5.0        # 略提高 TP 阈值（first lock-in 节点更高）
+      tp_runner_enabled: true     # TP 命中后不全平，启动 runner 模式
+      atr_stop_mult_runner: 2.0   # runner 阶段 trail 收紧到 2×（锁利但保留上行空间）
+      tp_runner_lock_atr_mult: 1.0  # promote 时把 stop 拉到 target - 1×ATR（锁定约 4×ATR 收益）
     factors:
       weights:
-        pe_inverse: 0.10
-        pb_inverse: 0.40          # 港股折价修复为主线，PB 权重大幅提升
-        roe: 0.20
-        revenue_growth: 0.10
-        momentum_3m: 0.20
+        # L2 修正：港股财务数据 akshare 覆盖窄（factors.py:77），PE/PB/ROE/RevGrowth 实际全 NaN→score 贡献 0。
+        # 之前 0.40 PB 等权重是"装饰性"的，实际 ranking 完全由 momentum_3m 决定。
+        # 现明确归零死权重 + 启用多周期动量（momentum_6m 默认关闭，HK 趋势市场需要）。
+        pe_inverse: 0.0
+        pb_inverse: 0.0
+        roe: 0.0
+        revenue_growth: 0.0
+        momentum_3m: 0.5            # 3 个月动量：入场时机
+        momentum_6m: 0.5            # 6 个月动量：趋势强度（HK 修复行情普遍持续 6+ 月）
+    # --- L3：HSCHK100 做空对冲 overlay；仅 regime ON 时维持，避免熊市反弹打损 ---
+    # 分析显示纯多头策略 beta=0.155 已很低，但 on-regime hedge 仍能拉 Sharpe 0.52→0.78
+    hedge:
+      ratio: 0.3                    # 做空规模 = initial_capital × ratio（轻仓对冲，减少借券成本）
+      ma_days: 200                  # 用基准 MA200 判定 regime（与策略 m2_regime_ma_days 对齐）
+      borrow_cost: 0.03             # 年化借券成本估算（HK 指数 ETF/期货约 2-4%）
 
   us_share:
     enabled: true
@@ -75,7 +92,7 @@ strategy:
   hold_days_min: 20
   hold_days_max: 60
   position_max_count: 10           # 同时持仓最多 N 只
-  single_position_pct_max: 0.15    # 单只最大仓位
+  single_position_pct_max: 0.20    # 单只最大仓位（v5：从 0.15 提到 0.20 提升资金利用率）
   cash_buffer_pct_min: 0.10        # 最低现金占比
 
   # 择时 + M2（字段必须被 timing_config_from_yaml_node 识别；未知键忽略）

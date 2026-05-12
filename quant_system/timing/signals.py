@@ -86,6 +86,11 @@ class TimingConfig:
     # --- M5：为 true 时技术出场未触发且指数市况门不通过则强制 EXIT（REGIME 层）---
     m5_regime_exit_enabled: bool = False
 
+    # --- M5 L1 partial exit：TP 命中时不全平，锁定大部分利润后切换 runner 模式 ---
+    tp_runner_enabled: bool = False          # True：首次触及 TP 不出场，仅上移 stop + 启用 runner trail
+    atr_stop_mult_runner: float = 0.0        # runner 模式下使用的 trail 倍数；<=0 表示沿用 atr_stop_mult
+    tp_runner_lock_atr_mult: float = 1.0     # promote 时把 stop 拉到 target - 这个倍数 × ATR
+
 
 def timing_config_from_yaml_node(node: dict | None) -> TimingConfig:
     """从 config.yaml `strategy.timing` 映射到 TimingConfig；未知键忽略。"""
@@ -337,8 +342,16 @@ def entry_signal_from_enriched(
 def exit_signal_from_enriched(
     enriched: pd.DataFrame, entry_price: float, entry_date: str,
     trailing_stop_price: Optional[float] = None, cfg: Optional[TimingConfig] = None,
+    runner_active: bool = False,
 ) -> dict:
-    """与 exit_signal 同, 但接收已 enrich 的 df."""
+    """与 exit_signal 同, 但接收已 enrich 的 df.
+
+    runner_active=True 表示该持仓已经经过 TP runner 提升（仅 TP 检查会跳过；其余出场规则不变）。
+    返回字典里若包含 promote_runner=True，调用方应：
+      - 不平仓
+      - 将 pos.stop_loss 提升至 returned new_stop
+      - 标记 pos.runner_active=True
+    """
     cfg = cfg or TimingConfig()
     df = enriched
     today = df.iloc[-1]
@@ -356,10 +369,39 @@ def exit_signal_from_enriched(
     if a is not None:
         target = entry_price + cfg.atr_target_mult * a
         if close >= target:
-            rs = f"take_profit: close={close:.2f} >= target={target:.2f}"
-            return {"signal": True, "reason": rs, "exit_price": close, "exit_layer": exit_layer_from_reason(rs)}
+            if cfg.tp_runner_enabled:
+                if not runner_active:
+                    lock_stop = target - cfg.tp_runner_lock_atr_mult * a
+                    if trailing_stop_price is not None:
+                        lock_stop = max(lock_stop, trailing_stop_price)
+                    return {
+                        "signal": False,
+                        "promote_runner": True,
+                        "new_stop": float(lock_stop),
+                        "reason": f"promote_runner: close={close:.2f} >= target={target:.2f}",
+                        "exit_price": close,
+                        "exit_layer": "",
+                    }
+                # runner_active 后 TP 永久解除：trail / break_ma / time_stop 兜底
+            else:
+                rs = f"take_profit: close={close:.2f} >= target={target:.2f}"
+                return {"signal": True, "reason": rs, "exit_price": close, "exit_layer": exit_layer_from_reason(rs)}
     r = today["rsi"]
-    if pd.notna(r) and r >= cfg.rsi_overbought:
+    # runner 模式下跳过 overbought 出场：trail / break_ma 已是 runner 的兜底，RSI 不再强制砍
+    if not runner_active and pd.notna(r) and r >= cfg.rsi_overbought:
+        # 若 runner 已配置 + 已有浮盈 + ATR 可用：RSI 超买改为 promote（强动量股不砍，锁利后让其奔跑）
+        if cfg.tp_runner_enabled and a is not None and close > entry_price:
+            lock_stop = close - cfg.tp_runner_lock_atr_mult * a
+            if trailing_stop_price is not None:
+                lock_stop = max(lock_stop, trailing_stop_price)
+            return {
+                "signal": False,
+                "promote_runner": True,
+                "new_stop": float(lock_stop),
+                "reason": f"promote_runner_rsi: RSI={r:.1f} >= {cfg.rsi_overbought}, lock@{close:.2f}",
+                "exit_price": close,
+                "exit_layer": "",
+            }
         rs = f"overbought: RSI={r:.1f} >= {cfg.rsi_overbought}"
         return {"signal": True, "reason": rs, "exit_price": close, "exit_layer": exit_layer_from_reason(rs)}
     if hold_days >= cfg.max_hold_days:
@@ -371,12 +413,14 @@ def exit_signal_from_enriched(
 def trailing_stop_from_enriched(
     enriched: pd.DataFrame, entry_price: float,
     prev_stop: Optional[float] = None, cfg: Optional[TimingConfig] = None,
+    atr_stop_mult_override: Optional[float] = None,
 ) -> float:
     cfg = cfg or TimingConfig()
     today = enriched.iloc[-1]
     a = float(today["atr"]) if pd.notna(today["atr"]) else 0.0
-    candidate = float(today["close"]) - cfg.atr_stop_mult * a
-    base = prev_stop if prev_stop is not None else (entry_price - cfg.atr_stop_mult * a)
+    mult = float(atr_stop_mult_override) if (atr_stop_mult_override is not None and atr_stop_mult_override > 0) else cfg.atr_stop_mult
+    candidate = float(today["close"]) - mult * a
+    base = prev_stop if prev_stop is not None else (entry_price - mult * a)
     return max(base, candidate)
 
 
@@ -509,6 +553,7 @@ def exit_signal(
     entry_date: str,
     trailing_stop_price: Optional[float] = None,
     cfg: Optional[TimingConfig] = None,
+    runner_active: bool = False,
 ) -> dict:
     cfg = cfg or TimingConfig()
     df = enrich(price_df, cfg)
@@ -529,11 +574,40 @@ def exit_signal(
     if a is not None:
         target = entry_price + cfg.atr_target_mult * a
         if close >= target:
-            rs = f"take_profit: close={close:.2f} >= target={target:.2f}"
-            return {"signal": True, "reason": rs, "exit_price": close, "exit_layer": exit_layer_from_reason(rs)}
+            if cfg.tp_runner_enabled:
+                if not runner_active:
+                    lock_stop = target - cfg.tp_runner_lock_atr_mult * a
+                    if trailing_stop_price is not None:
+                        lock_stop = max(lock_stop, trailing_stop_price)
+                    return {
+                        "signal": False,
+                        "promote_runner": True,
+                        "new_stop": float(lock_stop),
+                        "reason": f"promote_runner: close={close:.2f} >= target={target:.2f}",
+                        "exit_price": close,
+                        "exit_layer": "",
+                    }
+                # runner_active 后 TP 永久解除：trail / break_ma / time_stop 兜底
+            else:
+                rs = f"take_profit: close={close:.2f} >= target={target:.2f}"
+                return {"signal": True, "reason": rs, "exit_price": close, "exit_layer": exit_layer_from_reason(rs)}
 
     r = today["rsi"]
-    if pd.notna(r) and r >= cfg.rsi_overbought:
+    # runner 模式下跳过 overbought 出场：trail / break_ma 已是 runner 的兜底，RSI 不再强制砍
+    if not runner_active and pd.notna(r) and r >= cfg.rsi_overbought:
+        # 若 runner 已配置 + 已有浮盈 + ATR 可用：RSI 超买改为 promote（强动量股不砍，锁利后让其奔跑）
+        if cfg.tp_runner_enabled and a is not None and close > entry_price:
+            lock_stop = close - cfg.tp_runner_lock_atr_mult * a
+            if trailing_stop_price is not None:
+                lock_stop = max(lock_stop, trailing_stop_price)
+            return {
+                "signal": False,
+                "promote_runner": True,
+                "new_stop": float(lock_stop),
+                "reason": f"promote_runner_rsi: RSI={r:.1f} >= {cfg.rsi_overbought}, lock@{close:.2f}",
+                "exit_price": close,
+                "exit_layer": "",
+            }
         rs = f"overbought: RSI={r:.1f} >= {cfg.rsi_overbought}"
         return {"signal": True, "reason": rs, "exit_price": close, "exit_layer": exit_layer_from_reason(rs)}
 
@@ -551,14 +625,17 @@ def trailing_stop(
     entry_price: float,
     prev_stop: Optional[float] = None,
     cfg: Optional[TimingConfig] = None,
+    atr_stop_mult_override: Optional[float] = None,
 ) -> float:
-    """当前应设的浮动止损 = max(prev_stop, close - ATR * 2). 只上调, 不下调."""
+    """当前应设的浮动止损 = max(prev_stop, close - ATR * mult). 只上调, 不下调.
+    runner 模式下传入 atr_stop_mult_override 覆盖 cfg.atr_stop_mult。"""
     cfg = cfg or TimingConfig()
     df = enrich(price_df, cfg)
     today = df.iloc[-1]
     a = float(today["atr"]) if pd.notna(today["atr"]) else 0.0
-    candidate = float(today["close"]) - cfg.atr_stop_mult * a
-    base = prev_stop if prev_stop is not None else (entry_price - cfg.atr_stop_mult * a)
+    mult = float(atr_stop_mult_override) if (atr_stop_mult_override is not None and atr_stop_mult_override > 0) else cfg.atr_stop_mult
+    candidate = float(today["close"]) - mult * a
+    base = prev_stop if prev_stop is not None else (entry_price - mult * a)
     return max(base, candidate)
 
 
