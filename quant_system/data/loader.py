@@ -422,6 +422,31 @@ class DataLoader:
                     continue
         return None
 
+    # ---------- HK 资金流向 ----------
+
+    def get_hk_southbound_flow(self) -> pd.DataFrame:
+        """港股通南向资金日级数据（akshare stock_hsgt_hist_em 全量）。
+        返回 [date(str YYYY-MM-DD), net_buy(亿元)]，按日期升序。"""
+        cache = self.cache_dir / "hk_southbound_flow.parquet"
+        if self._is_fresh(cache):
+            return pd.read_parquet(cache)
+        try:
+            raw = ak.stock_hsgt_hist_em(symbol="南向资金")
+        except Exception:
+            df = pd.DataFrame(columns=["date", "net_buy"])
+            df.to_parquet(cache)
+            return df
+        if raw is None or raw.empty:
+            df = pd.DataFrame(columns=["date", "net_buy"])
+            df.to_parquet(cache)
+            return df
+        df = raw.rename(columns={"日期": "date", "当日成交净买额": "net_buy"})[["date", "net_buy"]]
+        df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+        df["net_buy"] = pd.to_numeric(df["net_buy"], errors="coerce")
+        df = df.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
+        df.to_parquet(cache)
+        return df
+
     # ---------- fundamentals (HK 港股) ----------
 
     def get_hk_financial_indicator(self, code: str) -> pd.DataFrame:

@@ -134,7 +134,8 @@ class BottomupTimingStrategy:
         self._ensure_enriched(codes)
 
         regime_ctx = None
-        if self.tcfg.m3_regime_rsi_band or self.tcfg.m3_reg_vol_tighten_hi:
+        if (self.tcfg.m3_regime_rsi_band or self.tcfg.m3_reg_vol_tighten_hi
+                or self.tcfg.m3_southbound_widen_enabled):
             regime_ctx = build_timing_regime_context(
                 self.loader,
                 self._regime_benchmark_symbol,
@@ -142,6 +143,8 @@ class BottomupTimingStrategy:
                 self.tcfg.m2_regime_ma_days,
                 atr_period=self.tcfg.atr_period,
                 atr_pct_median_window=self.tcfg.m3_reg_index_atr_pct_median_window,
+                southbound_enabled=self.tcfg.m3_southbound_widen_enabled,
+                southbound_ma_window=self.tcfg.m3_southbound_ma_window,
             )
 
         hits = []

@@ -27,6 +27,13 @@ markets:
       tp_runner_enabled: true     # TP 命中后不全平，启动 runner 模式
       atr_stop_mult_runner: 2.0   # runner 阶段 trail 收紧到 2×（锁利但保留上行空间）
       tp_runner_lock_atr_mult: 1.0  # promote 时把 stop 拉到 target - 1×ATR（锁定约 4×ATR 收益）
+      # --- L2-B：南向资金信号联动（HK 通过港股通南向净买入识别边际买盘）---
+      m3_southbound_widen_enabled: true
+      m3_southbound_ma_window: 20
+      m3_southbound_threshold: 2.0     # 严格阈值：仅 today_net_buy > 3×MA20 时触发（top 10% 强买日）
+      m3_southbound_widen_lo_pts: 3.0
+      m3_southbound_widen_hi_pts: 3.0
+      m3_southbound_vol_relax: 0.2     # 1.5× → 1.2×（仍要求量能确认，但宽松）
     factors:
       weights:
         # L2-A：HK 财务数据接入 stock_financial_hk_analysis_indicator_em（90 天披露滞后）

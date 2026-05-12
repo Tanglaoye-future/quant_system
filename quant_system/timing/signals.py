@@ -83,6 +83,14 @@ class TimingConfig:
     m3_mtf_rsi_period: int = 28
     m3_mtf_rsi_min: float = 48.0
 
+    # --- M3 南向资金联动（仅 HK）：南向今日强 → 放宽 RSI 带 + 量能门槛 ---
+    m3_southbound_widen_enabled: bool = False
+    m3_southbound_ma_window: int = 20
+    m3_southbound_threshold: float = 0.5      # strength = (today-MA20)/|MA20|；>threshold 触发
+    m3_southbound_widen_lo_pts: float = 5.0   # RSI 下沿放宽点数（接受更深超卖入场）
+    m3_southbound_widen_hi_pts: float = 3.0   # RSI 上沿放宽点数（追高动量也宽松）
+    m3_southbound_vol_relax: float = 0.3      # 量能门槛 vol_breakout_mult × (1-relax)（南向强买时 1.5×→1.05×）
+
     # --- M5：为 true 时技术出场未触发且指数市况门不通过则强制 EXIT（REGIME 层）---
     m5_regime_exit_enabled: bool = False
 
@@ -127,10 +135,26 @@ def _effective_rsi_entry_band(
             if rel is not None and rel > 0:
                 tight_hi = min(cfg.m3_reg_vol_hi_tighten_cap, rel * cfg.m3_reg_vol_hi_tighten_k)
                 hi -= tight_hi
+        # 南向强买放宽 RSI 带（下沿优先：HK 折价策略可吃更深超卖；上沿次之）
+        if cfg.m3_southbound_widen_enabled:
+            sb = getattr(regime_ctx, "southbound_strength", None)
+            if sb is not None and sb > cfg.m3_southbound_threshold:
+                lo -= float(cfg.m3_southbound_widen_lo_pts)
+                hi += float(cfg.m3_southbound_widen_hi_pts)
 
     lo = float(max(1.0, min(lo, 92.0)))
     hi = float(max(lo + 2.0, min(hi, 99.0)))
     return lo, hi
+
+
+def _effective_vol_breakout_mult(cfg: TimingConfig, regime_ctx: TimingRegimeContext | None) -> float:
+    """量能门槛 — 启用南向信号且当日强买时，降低 vol_breakout_mult 阈值（让更多候选过量能筛）。"""
+    base = float(cfg.vol_breakout_mult)
+    if regime_ctx is not None and cfg.m3_southbound_widen_enabled:
+        sb = getattr(regime_ctx, "southbound_strength", None)
+        if sb is not None and sb > cfg.m3_southbound_threshold:
+            base = base * max(0.1, 1.0 - float(cfg.m3_southbound_vol_relax))
+    return base
 
 
 def _m2_volume_quality_fail(df: pd.DataFrame, today: pd.Series, cfg: TimingConfig, reasons: list[str]) -> bool:
@@ -299,11 +323,12 @@ def entry_signal_from_enriched(
         float(today["volume"]) / float(today["vol_ma"])
         if pd.notna(today["vol_ma"]) and today["vol_ma"] > 0 else 0.0
     )
-    if vol_mult < cfg.vol_breakout_mult:
-        reasons.append(f"量能 X: 量比={vol_mult:.2f} < {cfg.vol_breakout_mult}")
+    vol_thr = _effective_vol_breakout_mult(cfg, regime_ctx)
+    if vol_mult < vol_thr:
+        reasons.append(f"量能 X: 量比={vol_mult:.2f} < {vol_thr:.2f}")
         return {"signal": False, "reasons": reasons,
                 "entry_price": close, "stop_loss": None, "take_profit": None}
-    reasons.append(f"量能 OK: 量比={vol_mult:.2f}")
+    reasons.append(f"量能 OK: 量比={vol_mult:.2f} (阈={vol_thr:.2f})")
 
     if _m2_volume_quality_fail(df, today, cfg, reasons):
         return {"signal": False, "reasons": reasons,
@@ -504,11 +529,12 @@ def entry_signal(
         float(today["volume"]) / float(today["vol_ma"])
         if pd.notna(today["vol_ma"]) and today["vol_ma"] > 0 else 0.0
     )
-    if vol_mult < cfg.vol_breakout_mult:
-        reasons.append(f"量能 X: 量比={vol_mult:.2f} < {cfg.vol_breakout_mult}")
+    vol_thr = _effective_vol_breakout_mult(cfg, regime_ctx)
+    if vol_mult < vol_thr:
+        reasons.append(f"量能 X: 量比={vol_mult:.2f} < {vol_thr:.2f}")
         return {"signal": False, "reasons": reasons,
                 "entry_price": close, "stop_loss": None, "take_profit": None}
-    reasons.append(f"量能 OK: 量比={vol_mult:.2f}")
+    reasons.append(f"量能 OK: 量比={vol_mult:.2f} (阈={vol_thr:.2f})")
 
     if _m2_volume_quality_fail(df, today, cfg, reasons):
         return {"signal": False, "reasons": reasons,
