@@ -69,7 +69,12 @@ markets:
       borrow_cost: 0.03             # 年化借券成本估算（HK 指数 ETF/期货约 2-4%）
 
   us_share:
-    enabled: true
+    # ⚠️ DEPRECATED FOR PRODUCTION (2026-05-15)
+    # 8 年回测 Sharpe -0.05，总收益 +6.98% vs QQQ 被动 +241%（超额 -317pp）
+    # 根本原因：NASDAQ100 = MAG7 集中市场，均权 momentum 策略无法 capture 集中度 alpha
+    # 实盘用 QQQ ETF 被动持有替代（详见 memory/three_universe_2026-05.md）
+    # 本配置保留供研究 / 后续因子实验；daily_run 不应跑此市场
+    enabled: false               # 改为 false 防止 daily_run 误用（如需研究改回 true）
     universe: nasdaq100    # NASDAQ 100（QQQ 成份）
     benchmark: NDX         # QQQ ETF 作 NDX 基准代理
     # --- 美股适配 v3：仅保留 MA200 门控（ma_long 回归默认 60）---
