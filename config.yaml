@@ -6,7 +6,24 @@ markets:
     enabled: true
     universe: hs300        # 本项目仅支持 hs300
     benchmark: sh000300
-    # A 股使用全局 strategy.timing 和 factors.weights，无需市场级覆盖
+    # --- L2 因子增强（v9）：加入 fcf_yield（每股自由现金流/收盘价）作为现金流质量因子 ---
+    factors:
+      weights:
+        pe_inverse: 0.15
+        pb_inverse: 0.10
+        roe: 0.20
+        revenue_growth: 0.15
+        momentum_3m: 0.20
+        fcf_yield: 0.20         # 新增（A 股 abstract 有「每股企业自由现金流量」字段）
+    # --- L1 出场层：A 股 timing 用全局默认（HK 的 TP runner 不可移植，A 股震荡市需要 4×ATR TP 出场）---
+    # 北向资金信号实验：基础设施已就绪（loader.get_a_share_northbound_flow），
+    # 但 vol_relax 在 A 股拉入弱候选（v6 Sharpe 0.63→0.53），RSI 上沿放宽零效果（v7=v5）
+    # 当前框架下北向信号对 A 股无价值，禁用（保留 loader 代码备未来使用）
+    # --- L3：on-regime HS300 做空 overlay（HK 验证 +0.13；A 股初测 +0.05）---
+    hedge:
+      ratio: 0.3
+      ma_days: 60
+      borrow_cost: 0.03
 
   hk_share:
     enabled: true
@@ -20,16 +37,44 @@ markets:
       rsi_entry_high: 72.0
       ma_long: 80                 # 更长趋势均线，减少港股低流动性带来的误穿
       max_hold_days: 80           # 港股中线持仓稍长
+      # --- L1：放宽 trail + TP runner（让赢家奔跑）---
+      # 基线 v1: atr_stop_mult=2.0, atr_target_mult=4.0, runner 全关 → Sharpe 0.42 (trail 主导,47 笔 TP 砍早)
+      atr_stop_mult: 2.5          # 加宽基础 trail（港股波动大，2×ATR 经常被随机噪声触发）
+      atr_target_mult: 5.0        # 略提高 TP 阈值（first lock-in 节点更高）
+      tp_runner_enabled: true     # TP 命中后不全平，启动 runner 模式
+      atr_stop_mult_runner: 2.0   # runner 阶段 trail 收紧到 2×（锁利但保留上行空间）
+      tp_runner_lock_atr_mult: 1.0  # promote 时把 stop 拉到 target - 1×ATR（锁定约 4×ATR 收益）
+      # --- L2-B：南向资金信号联动（HK 通过港股通南向净买入识别边际买盘）---
+      m3_southbound_widen_enabled: true
+      m3_southbound_ma_window: 20
+      m3_southbound_threshold: 2.0     # 严格阈值：仅 today_net_buy > 3×MA20 时触发（top 10% 强买日）
+      m3_southbound_widen_lo_pts: 3.0
+      m3_southbound_widen_hi_pts: 3.0
+      m3_southbound_vol_relax: 0.2     # 1.5× → 1.2×（仍要求量能确认，但宽松）
     factors:
       weights:
-        pe_inverse: 0.10
-        pb_inverse: 0.40          # 港股折价修复为主线，PB 权重大幅提升
-        roe: 0.20
-        revenue_growth: 0.10
-        momentum_3m: 0.20
+        # L2-A：HK 财务数据接入 stock_financial_hk_analysis_indicator_em（90 天披露滞后）
+        # 2018-2026 期间 HK 价值股（H 股银行）跑输动量股 → drop value，保留 quality + momentum
+        pe_inverse: 0.0             # 价值陷阱：H 股银行长期破净但不修复
+        pb_inverse: 0.0
+        roe: 0.30                   # 质量过滤 — 避开僵尸国企
+        revenue_growth: 0.10        # 成长
+        momentum_3m: 0.30           # 主信号
+        momentum_6m: 0.30           # 主信号
+    # --- L3：HSCHK100 做空对冲 overlay；仅 regime ON 时维持，避免熊市反弹打损 ---
+    # 分析显示纯多头策略 beta=0.155 已很低，但 on-regime hedge 仍能拉 Sharpe 0.52→0.78
+    hedge:
+      ratio: 0.3                    # 做空规模 = initial_capital × ratio（轻仓对冲，减少借券成本）
+      ma_days: 200                  # 用基准 MA200 判定 regime（与策略 m2_regime_ma_days 对齐）
+      borrow_cost: 0.03             # 年化借券成本估算（HK 指数 ETF/期货约 2-4%）
 
   us_share:
-    enabled: true
+    # ⚠️ DEPRECATED FOR PRODUCTION (2026-05-15)
+    # 8 年回测 Sharpe -0.05，总收益 +6.98% vs QQQ 被动 +241%（超额 -317pp）
+    # 根本原因：NASDAQ100 = MAG7 集中市场，均权 momentum 策略无法 capture 集中度 alpha
+    # 实盘用 QQQ ETF 被动持有替代（详见 memory/three_universe_2026-05.md）
+    # 本配置保留供研究 / 后续因子实验；daily_run 不应跑此市场
+    enabled: false               # 改为 false 防止 daily_run 误用（如需研究改回 true）
     universe: nasdaq100    # NASDAQ 100（QQQ 成份）
     benchmark: NDX         # QQQ ETF 作 NDX 基准代理
     # --- 美股适配 v3：仅保留 MA200 门控（ma_long 回归默认 60）---
@@ -75,7 +120,7 @@ strategy:
   hold_days_min: 20
   hold_days_max: 60
   position_max_count: 10           # 同时持仓最多 N 只
-  single_position_pct_max: 0.15    # 单只最大仓位
+  single_position_pct_max: 0.20    # 单只最大仓位（v5：从 0.15 提到 0.20 提升资金利用率）
   cash_buffer_pct_min: 0.10        # 最低现金占比
 
   # 择时 + M2（字段必须被 timing_config_from_yaml_node 识别；未知键忽略）

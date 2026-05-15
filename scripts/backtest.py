@@ -168,6 +168,8 @@ def main() -> None:
 
     strategy = build_strategy(args.strategy, loader, cfg, args.market)
 
+    # L3：基准对冲 overlay（从 markets.<market>.hedge 读，关闭默认）
+    hedge_cfg = (market_cfg_bt.get("hedge") or {}) if isinstance(market_cfg_bt, dict) else {}
     bt = Backtester(
         loader=loader,
         initial_capital=args.capital or bt_cfg.get("initial_capital", 1_000_000),
@@ -177,6 +179,9 @@ def main() -> None:
         stamp_tax=0.0 if args.market == "us_share" else bt_cfg.get("stamp_tax", 0.001),
         slippage=bt_cfg.get("slippage", 0.001),
         cash_buffer_pct=bt_cfg.get("cash_buffer_pct", 0.05),
+        benchmark_hedge_ratio=float(hedge_cfg.get("ratio", 0.0)),
+        benchmark_hedge_ma_days=int(hedge_cfg.get("ma_days", 200)),
+        benchmark_hedge_borrow_cost=float(hedge_cfg.get("borrow_cost", 0.03)),
     )
 
     # ---------- 固定输出目录（同策略+市场+区间覆盖写入，不产生历史 run_id 子目录） ----------

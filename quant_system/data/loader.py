@@ -448,6 +448,97 @@ class DataLoader:
                     continue
         return None
 
+    # ---------- 边际资金流向（HK 南向 / A 股北向）----------
+
+    def _fetch_hsgt_flow(self, symbol: str, cache_filename: str) -> pd.DataFrame:
+        """通用：拉取沪股通/深股通/南向/北向日级数据并缓存。
+        symbol 必须是 akshare stock_hsgt_hist_em 接受的字符串。"""
+        cache = self.cache_dir / cache_filename
+        if self._is_fresh(cache):
+            return pd.read_parquet(cache)
+        try:
+            raw = ak.stock_hsgt_hist_em(symbol=symbol)
+        except Exception:
+            df = pd.DataFrame(columns=["date", "net_buy"])
+            df.to_parquet(cache)
+            return df
+        if raw is None or raw.empty:
+            df = pd.DataFrame(columns=["date", "net_buy"])
+            df.to_parquet(cache)
+            return df
+        df = raw.rename(columns={"日期": "date", "当日成交净买额": "net_buy"})[["date", "net_buy"]]
+        df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+        df["net_buy"] = pd.to_numeric(df["net_buy"], errors="coerce")
+        df = df.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
+        df.to_parquet(cache)
+        return df
+
+    def get_hk_southbound_flow(self) -> pd.DataFrame:
+        """港股通南向资金日级（HK 边际买盘信号）。[date, net_buy(亿元)] 升序。"""
+        return self._fetch_hsgt_flow("南向资金", "hk_southbound_flow.parquet")
+
+    def get_a_share_northbound_flow(self) -> pd.DataFrame:
+        """陆股通北向资金日级（A 股边际买盘信号）。[date, net_buy(亿元)] 升序。"""
+        return self._fetch_hsgt_flow("北向资金", "a_share_northbound_flow.parquet")
+
+    def get_marginal_flow(self, market: "Market") -> pd.DataFrame:
+        """按市场分发：HK→南向；A 股→北向；其他→空。"""
+        if market == "hk_share":
+            return self.get_hk_southbound_flow()
+        if market == "a_share":
+            return self.get_a_share_northbound_flow()
+        return pd.DataFrame(columns=["date", "net_buy"])
+
+    # ---------- fundamentals (HK 港股) ----------
+
+    def get_hk_financial_indicator(self, code: str) -> pd.DataFrame:
+        """HK 年度财务分析指标 (东财 stock_financial_hk_analysis_indicator_em).
+        返回 [report_date, eps_ttm, bps, roe_avg, revenue_yoy]，按 report_date 升序。
+        失败时返回空 DataFrame 并缓存以避免反复重试。"""
+        cache = self.cache_dir / f"hk_fin_{code}.parquet"
+        if self._is_fresh(cache):
+            return pd.read_parquet(cache)
+        cols = ["report_date", "eps_ttm", "bps", "roe_avg", "revenue_yoy"]
+        try:
+            raw = ak.stock_financial_hk_analysis_indicator_em(symbol=code, indicator="年度")
+        except Exception:
+            df = pd.DataFrame(columns=cols)
+            df.to_parquet(cache)
+            return df
+        if raw is None or raw.empty:
+            df = pd.DataFrame(columns=cols)
+            df.to_parquet(cache)
+            return df
+        df = raw.rename(columns={
+            "REPORT_DATE": "report_date", "EPS_TTM": "eps_ttm", "BPS": "bps",
+            "ROE_AVG": "roe_avg", "OPERATE_INCOME_YOY": "revenue_yoy",
+        })
+        for c in cols:
+            if c not in df.columns:
+                df[c] = None
+        df = df[cols].copy()
+        df["report_date"] = pd.to_datetime(df["report_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+        for c in ["eps_ttm", "bps", "roe_avg", "revenue_yoy"]:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+        df = df.dropna(subset=["report_date"]).sort_values("report_date").reset_index(drop=True)
+        df.to_parquet(cache)
+        return df
+
+    @staticmethod
+    def latest_hk_indicator(
+        df: pd.DataFrame, col: str, asof: str, publication_lag_days: int = 90
+    ) -> float | None:
+        """HK 年度财务取 asof 之前 publication_lag_days 天的最新有效值。
+        默认 90 天滞后保守模拟 HK 年报披露窗口（FY-end 起 3-4 个月）。"""
+        if df is None or df.empty or col not in df.columns:
+            return None
+        cutoff = (pd.to_datetime(asof) - pd.Timedelta(days=publication_lag_days)).strftime("%Y-%m-%d")
+        eligible = df[df["report_date"] <= cutoff]
+        if eligible.empty:
+            return None
+        s = pd.to_numeric(eligible[col], errors="coerce").dropna()
+        return float(s.iloc[-1]) if len(s) else None
+
     def get_a_share_industry_map(self) -> dict[str, str]:
         """
         A 股 code -> 行业名称（东财 A 股实时行情整表，单日 parquet 缓存）。

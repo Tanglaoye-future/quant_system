@@ -83,15 +83,29 @@ class TimingConfig:
     m3_mtf_rsi_period: int = 28
     m3_mtf_rsi_min: float = 48.0
 
+    # --- M3 南向资金联动（仅 HK）：南向今日强 → 放宽 RSI 带 + 量能门槛 ---
+    m3_southbound_widen_enabled: bool = False
+    m3_southbound_ma_window: int = 20
+    m3_southbound_threshold: float = 0.5      # strength = (today-MA20)/|MA20|；>threshold 触发
+    m3_southbound_widen_lo_pts: float = 5.0   # RSI 下沿放宽点数（接受更深超卖入场）
+    m3_southbound_widen_hi_pts: float = 3.0   # RSI 上沿放宽点数（追高动量也宽松）
+    m3_southbound_vol_relax: float = 0.3      # 量能门槛 vol_breakout_mult × (1-relax)（南向强买时 1.5×→1.05×）
+
     # --- M5：为 true 时技术出场未触发且指数市况门不通过则强制 EXIT（REGIME 层）---
     m5_regime_exit_enabled: bool = False
 
-    # --- M5 部分出场：ATR 止盈触发 → 出场 partial_exit_pct，剩余切换到更宽松 trailing stop ---
+    # --- M5 部分出场 (main HEAD): ATR 止盈触发 → 卖 partial_exit_pct，剩余切换到更宽松 trailing stop ---
     partial_exit_enabled: bool = False
     partial_exit_pct: float = 0.5          # 首次止盈时出场比例（0.5 = 50%）
     partial_exit_trail_mult: float = 1.5   # 剩余仓位的 trailing stop 倍数扩展（相对 atr_stop_mult）
 
-    # --- Level 3：入场信号替换（突破+量能）---
+    # --- M5 L1 (worktree HK): TP 命中时不卖任何仓，仅上移 stop + 启用 runner trail ---
+    # 注：与 partial_exit_enabled 互斥使用——同时启用时 partial_exit 优先（main 主线）
+    tp_runner_enabled: bool = False
+    atr_stop_mult_runner: float = 0.0        # runner 模式下使用的 trail 倍数；<=0 沿用 atr_stop_mult
+    tp_runner_lock_atr_mult: float = 1.0     # promote 时把 stop 拉到 target - 这个倍数 × ATR
+
+    # --- Level 3 (main HEAD): 入场信号替换（突破+量能）---
     # True  → 取消 MA20/60 金叉要求，改为「收盘创 m2_structure_lookback 日新高 + 量能确认」
     # False → 原 MA20/60 金叉逻辑（默认）
     m2_breakout_mode: bool = False
@@ -134,10 +148,26 @@ def _effective_rsi_entry_band(
             if rel is not None and rel > 0:
                 tight_hi = min(cfg.m3_reg_vol_hi_tighten_cap, rel * cfg.m3_reg_vol_hi_tighten_k)
                 hi -= tight_hi
+        # 南向强买放宽 RSI 带（下沿优先：HK 折价策略可吃更深超卖；上沿次之）
+        if cfg.m3_southbound_widen_enabled:
+            sb = getattr(regime_ctx, "southbound_strength", None)
+            if sb is not None and sb > cfg.m3_southbound_threshold:
+                lo -= float(cfg.m3_southbound_widen_lo_pts)
+                hi += float(cfg.m3_southbound_widen_hi_pts)
 
     lo = float(max(1.0, min(lo, 92.0)))
     hi = float(max(lo + 2.0, min(hi, 99.0)))
     return lo, hi
+
+
+def _effective_vol_breakout_mult(cfg: TimingConfig, regime_ctx: TimingRegimeContext | None) -> float:
+    """量能门槛 — 启用南向信号且当日强买时，降低 vol_breakout_mult 阈值（让更多候选过量能筛）。"""
+    base = float(cfg.vol_breakout_mult)
+    if regime_ctx is not None and cfg.m3_southbound_widen_enabled:
+        sb = getattr(regime_ctx, "southbound_strength", None)
+        if sb is not None and sb > cfg.m3_southbound_threshold:
+            base = base * max(0.1, 1.0 - float(cfg.m3_southbound_vol_relax))
+    return base
 
 
 def _m2_volume_quality_fail(df: pd.DataFrame, today: pd.Series, cfg: TimingConfig, reasons: list[str]) -> bool:
@@ -332,11 +362,12 @@ def entry_signal_from_enriched(
         float(today["volume"]) / float(today["vol_ma"])
         if pd.notna(today["vol_ma"]) and today["vol_ma"] > 0 else 0.0
     )
-    if vol_mult < cfg.vol_breakout_mult:
-        reasons.append(f"量能 X: 量比={vol_mult:.2f} < {cfg.vol_breakout_mult}")
+    vol_thr = _effective_vol_breakout_mult(cfg, regime_ctx)
+    if vol_mult < vol_thr:
+        reasons.append(f"量能 X: 量比={vol_mult:.2f} < {vol_thr:.2f}")
         return {"signal": False, "reasons": reasons,
                 "entry_price": close, "stop_loss": None, "take_profit": None}
-    reasons.append(f"量能 OK: 量比={vol_mult:.2f}")
+    reasons.append(f"量能 OK: 量比={vol_mult:.2f} (阈={vol_thr:.2f})")
 
     if _m2_volume_quality_fail(df, today, cfg, reasons):
         return {"signal": False, "reasons": reasons,
@@ -379,9 +410,13 @@ def exit_signal_from_enriched(
     enriched: pd.DataFrame, entry_price: float, entry_date: str,
     trailing_stop_price: Optional[float] = None, cfg: Optional[TimingConfig] = None,
     partial_exit_done: bool = False,
+    runner_active: bool = False,
 ) -> dict:
-    """与 exit_signal 同, 但接收已 enrich 的 df。
-    partial_exit_done: 当前持仓已完成过一次部分出场，不再触发 take_profit_partial。
+    """与 exit_signal 同, 但接收已 enrich 的 df.
+
+    partial_exit_done (main): 已完成 partial_exit_enabled 路径的部分卖出（不再重复）。
+    runner_active (worktree HK): tp_runner_enabled 路径已 promote 为 runner（跳过 TP 与 RSI overbought）。
+    promote 返回字典含 promote_runner=True / new_stop 时，调用方应锁 stop 并置 pos.runner_active=True，不卖。
     """
     cfg = cfg or TimingConfig()
     df = enriched
@@ -400,6 +435,7 @@ def exit_signal_from_enriched(
     if a is not None:
         target = entry_price + cfg.atr_target_mult * a
         if close >= target:
+            # 优先级 1：partial_exit_enabled (main) — 卖一部分，剩余切宽 trail
             if cfg.partial_exit_enabled and not partial_exit_done:
                 wide_mult = cfg.atr_stop_mult * cfg.partial_exit_trail_mult
                 new_stop_wide = close - wide_mult * a
@@ -415,10 +451,41 @@ def exit_signal_from_enriched(
                     "new_stop_wide": new_stop_wide,
                     "new_trail_mult": wide_mult,
                 }
-            rs = f"take_profit: close={close:.2f} >= target={target:.2f}"
-            return {"signal": True, "reason": rs, "exit_price": close, "exit_layer": exit_layer_from_reason(rs)}
+            # 优先级 2：tp_runner_enabled (worktree HK) — 不卖，锁 stop 标 runner
+            if cfg.tp_runner_enabled:
+                if not runner_active:
+                    lock_stop = target - cfg.tp_runner_lock_atr_mult * a
+                    if trailing_stop_price is not None:
+                        lock_stop = max(lock_stop, trailing_stop_price)
+                    return {
+                        "signal": False,
+                        "promote_runner": True,
+                        "new_stop": float(lock_stop),
+                        "reason": f"promote_runner: close={close:.2f} >= target={target:.2f}",
+                        "exit_price": close,
+                        "exit_layer": "",
+                    }
+                # runner_active 后 TP 永久解除（trail / break_ma / time_stop 兜底）
+            else:
+                # 默认：全平 TP
+                rs = f"take_profit: close={close:.2f} >= target={target:.2f}"
+                return {"signal": True, "reason": rs, "exit_price": close, "exit_layer": exit_layer_from_reason(rs)}
     r = today["rsi"]
-    if pd.notna(r) and r >= cfg.rsi_overbought:
+    # runner 模式下跳过 overbought 出场：trail / break_ma 已是 runner 的兜底，RSI 不再强制砍
+    if not runner_active and pd.notna(r) and r >= cfg.rsi_overbought:
+        # 若 runner 已配置 + 已有浮盈 + ATR 可用：RSI 超买改为 promote（强动量股不砍，锁利后让其奔跑）
+        if cfg.tp_runner_enabled and a is not None and close > entry_price:
+            lock_stop = close - cfg.tp_runner_lock_atr_mult * a
+            if trailing_stop_price is not None:
+                lock_stop = max(lock_stop, trailing_stop_price)
+            return {
+                "signal": False,
+                "promote_runner": True,
+                "new_stop": float(lock_stop),
+                "reason": f"promote_runner_rsi: RSI={r:.1f} >= {cfg.rsi_overbought}, lock@{close:.2f}",
+                "exit_price": close,
+                "exit_layer": "",
+            }
         rs = f"overbought: RSI={r:.1f} >= {cfg.rsi_overbought}"
         return {"signal": True, "reason": rs, "exit_price": close, "exit_layer": exit_layer_from_reason(rs)}
     if hold_days >= cfg.max_hold_days:
@@ -432,9 +499,9 @@ def trailing_stop_from_enriched(
     prev_stop: Optional[float] = None, cfg: Optional[TimingConfig] = None,
     trail_mult_override: Optional[float] = None,
 ) -> float:
-    """trail_mult_override：部分出场后传入扩展倍数（如 3.0），使剩余仓位有更大呼吸空间。"""
+    """trail_mult_override：partial_exit 或 runner 模式后传入扩展倍数，让剩余/继续仓位有不同呼吸空间。"""
     cfg = cfg or TimingConfig()
-    mult = trail_mult_override if trail_mult_override is not None else cfg.atr_stop_mult
+    mult = float(trail_mult_override) if (trail_mult_override is not None and trail_mult_override > 0) else cfg.atr_stop_mult
     today = enriched.iloc[-1]
     a = float(today["atr"]) if pd.notna(today["atr"]) else 0.0
     candidate = float(today["close"]) - mult * a
@@ -522,11 +589,12 @@ def entry_signal(
         float(today["volume"]) / float(today["vol_ma"])
         if pd.notna(today["vol_ma"]) and today["vol_ma"] > 0 else 0.0
     )
-    if vol_mult < cfg.vol_breakout_mult:
-        reasons.append(f"量能 X: 量比={vol_mult:.2f} < {cfg.vol_breakout_mult}")
+    vol_thr = _effective_vol_breakout_mult(cfg, regime_ctx)
+    if vol_mult < vol_thr:
+        reasons.append(f"量能 X: 量比={vol_mult:.2f} < {vol_thr:.2f}")
         return {"signal": False, "reasons": reasons,
                 "entry_price": close, "stop_loss": None, "take_profit": None}
-    reasons.append(f"量能 OK: 量比={vol_mult:.2f}")
+    reasons.append(f"量能 OK: 量比={vol_mult:.2f} (阈={vol_thr:.2f})")
 
     if _m2_volume_quality_fail(df, today, cfg, reasons):
         return {"signal": False, "reasons": reasons,
@@ -572,11 +640,14 @@ def exit_signal(
     trailing_stop_price: Optional[float] = None,
     cfg: Optional[TimingConfig] = None,
     partial_exit_done: bool = False,
+    runner_active: bool = False,
 ) -> dict:
+    """非 enriched 版 wrapper — enrich 后直接委托给 exit_signal_from_enriched。"""
     cfg = cfg or TimingConfig()
     df = enrich(price_df, cfg)
     return exit_signal_from_enriched(
-        df, entry_price, entry_date, trailing_stop_price, cfg, partial_exit_done,
+        df, entry_price, entry_date, trailing_stop_price, cfg,
+        partial_exit_done=partial_exit_done, runner_active=runner_active,
     )
 
 
@@ -587,15 +658,13 @@ def trailing_stop(
     entry_price: float,
     prev_stop: Optional[float] = None,
     cfg: Optional[TimingConfig] = None,
+    trail_mult_override: Optional[float] = None,
 ) -> float:
-    """当前应设的浮动止损 = max(prev_stop, close - ATR * 2). 只上调, 不下调."""
+    """当前应设的浮动止损 = max(prev_stop, close - ATR * mult). 只上调, 不下调.
+    partial_exit / runner 模式下传入 trail_mult_override 覆盖 cfg.atr_stop_mult。"""
     cfg = cfg or TimingConfig()
     df = enrich(price_df, cfg)
-    today = df.iloc[-1]
-    a = float(today["atr"]) if pd.notna(today["atr"]) else 0.0
-    candidate = float(today["close"]) - cfg.atr_stop_mult * a
-    base = prev_stop if prev_stop is not None else (entry_price - cfg.atr_stop_mult * a)
-    return max(base, candidate)
+    return trailing_stop_from_enriched(df, entry_price, prev_stop, cfg, trail_mult_override=trail_mult_override)
 
 
 # ---------- 全市场单日扫描 (daily_run 用) ----------

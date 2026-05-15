@@ -6,23 +6,21 @@
   "end": "2026-05-04",
   "price_adjust": "",
   "metrics": {
-    "n_trades": 187,
-    "win_rate": 0.47593582887700536,
-    "avg_win_pct": 0.08676679898045343,
-    "avg_loss_pct": -0.043859510511221486,
-    "win_loss_ratio": 1.9782892688292562,
-    "avg_hold_days": 20.005347593582886,
-    "total_return": 0.4724100338891031,
-    "annual_return": 0.04875830952317073,
-    "annual_volatility": 0.07222162999683493,
-    "sharpe_ratio": 0.418613236171673,
-    "max_drawdown": -0.13235772288427697,
-    "calmar_ratio": 0.36838280729414713,
+    "n_trades": 155,
+    "win_rate": 0.4645161290322581,
+    "avg_win_pct": 0.11749941892092745,
+    "avg_loss_pct": -0.047240311469855516,
+    "win_loss_ratio": 2.487270199221801,
+    "avg_hold_days": 29.903225806451612,
+    "total_return": 0.808379056851195,
+    "annual_return": 0.07561949533165402,
+    "annual_volatility": 0.08578564302639935,
+    "sharpe_ratio": 0.6601186319266219,
+    "max_drawdown": -0.13110208010836955,
+    "calmar_ratio": 0.5767985928914828,
     "benchmark_total_return": -0.22117297035152061,
-    "excess_return": 0.6935830042406237
+    "excess_return": 1.0295520272027157
   },
-  "admission_pass": false,
-  "fails": [
-    "Sharpe 0.42 < 门槛 0.5"
-  ]
+  "admission_pass": true,
+  "fails": []
 }

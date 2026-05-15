@@ -25,12 +25,14 @@ class TimingRegimeContext:
     index_close_vs_ma: (收盘/SMA(ma_days)-1)，在均线之上为正。
     index_atr_pct: 指数当日 ATR/收盘。
     index_atr_pct_rel: ATR%/近端 median(ATR%)-1，>0 表示相对近期偏波动。
+    southbound_strength: (net_buy_today / MA(net_buy, 20) - 1)，>0 表示南向今日活跃于近 20 日均值。
     字段为 None 表示样本不足，单票侧跳过对应 M3 调节。
     """
 
     index_close_vs_ma: float | None
     index_atr_pct: float | None
     index_atr_pct_rel: float | None
+    southbound_strength: float | None = None
 
 
 
@@ -71,6 +73,9 @@ def build_timing_regime_context(
     *,
     atr_period: int = 14,
     atr_pct_median_window: int = 20,
+    southbound_enabled: bool = False,
+    southbound_ma_window: int = 20,
+    marginal_flow_market: str | None = None,   # "hk_share" / "a_share"，None 时禁用
 ) -> TimingRegimeContext:
     """
     为 M3 单票 RSI 入场带提供指数侧上下文（仅用 date <= asof 的指数日线）。
@@ -112,4 +117,23 @@ def build_timing_regime_context(
         if m0 and m0 > 0 and not pd.isna(m0):
             rel = last_atr_pct / m0 - 1.0
 
-    return TimingRegimeContext(vs_ma, last_atr_pct, rel)
+    # 边际资金强度信号（按市场分发：HK→南向，A 股→北向）
+    sb_strength: float | None = None
+    if southbound_enabled and marginal_flow_market:
+        try:
+            sb_df = loader.get_marginal_flow(marginal_flow_market)
+            if sb_df is not None and not sb_df.empty:
+                sb_sub = sb_df[sb_df["date"] <= asof_str].copy()
+                w = max(2, int(southbound_ma_window))
+                if len(sb_sub) >= w + 1:
+                    nb = pd.to_numeric(sb_sub["net_buy"], errors="coerce")
+                    ma = nb.rolling(w, min_periods=w).mean()
+                    last_nb = float(nb.iloc[-1])
+                    last_ma = float(ma.iloc[-1])
+                    if pd.notna(last_ma) and abs(last_ma) > 1e-9:
+                        # 标准化偏差：(today - MA20) / |MA20|，>0 = 强于近期均值
+                        sb_strength = (last_nb - last_ma) / abs(last_ma)
+        except Exception:
+            sb_strength = None
+
+    return TimingRegimeContext(vs_ma, last_atr_pct, rel, sb_strength)

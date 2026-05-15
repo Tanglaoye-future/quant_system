@@ -54,8 +54,9 @@ class Position:
     size: int
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
-    partial_exit_done: bool = False          # 已完成过一次部分出场
-    atr_stop_mult_override: Optional[float] = None  # 部分出场后使用的宽松 ATR 倍数
+    partial_exit_done: bool = False          # main: 已完成过一次部分出场 (PARTIAL_EXIT 后)
+    atr_stop_mult_override: Optional[float] = None  # main: 部分出场后使用的宽松 ATR 倍数
+    runner_active: bool = False              # worktree HK L1: TP 命中后 promote 为 runner（无卖出）
 
 
 class Strategy(Protocol):
@@ -137,7 +138,8 @@ class BottomupTimingStrategy:
         self._ensure_enriched(codes)
 
         regime_ctx = None
-        if self.tcfg.m3_regime_rsi_band or self.tcfg.m3_reg_vol_tighten_hi:
+        if (self.tcfg.m3_regime_rsi_band or self.tcfg.m3_reg_vol_tighten_hi
+                or self.tcfg.m3_southbound_widen_enabled):
             regime_ctx = build_timing_regime_context(
                 self.loader,
                 self._regime_benchmark_symbol,
@@ -145,6 +147,9 @@ class BottomupTimingStrategy:
                 self.tcfg.m2_regime_ma_days,
                 atr_period=self.tcfg.atr_period,
                 atr_pct_median_window=self.tcfg.m3_reg_index_atr_pct_median_window,
+                southbound_enabled=self.tcfg.m3_southbound_widen_enabled,
+                southbound_ma_window=self.tcfg.m3_southbound_ma_window,
+                marginal_flow_market=self.market,
             )
 
         hits = []
@@ -215,9 +220,15 @@ class BottomupTimingStrategy:
         if len(sub) < self.tcfg.ma_long + 5:
             return ExitSignal(action="HOLD", reason="insufficient history", exit_layer="")
 
+        # trail_mult 优先级：(1) PARTIAL_EXIT 后存在 pos.atr_stop_mult_override
+        #                   (2) runner_active 且 cfg.atr_stop_mult_runner > 0
+        #                   (3) cfg.atr_stop_mult 默认
+        trail_override: Optional[float] = position.atr_stop_mult_override
+        if trail_override is None and position.runner_active and self.tcfg.atr_stop_mult_runner > 0:
+            trail_override = float(self.tcfg.atr_stop_mult_runner)
         new_stop = trailing_stop_from_enriched(
             sub, position.entry_price, position.stop_loss, self.tcfg,
-            trail_mult_override=position.atr_stop_mult_override,
+            trail_mult_override=trail_override,
         )
         ex = exit_signal_from_enriched(
             sub,
@@ -225,7 +236,16 @@ class BottomupTimingStrategy:
             entry_date=position.entry_date.strftime("%Y-%m-%d"),
             trailing_stop_price=new_stop, cfg=self.tcfg,
             partial_exit_done=position.partial_exit_done,
+            runner_active=position.runner_active,
         )
+        if ex.get("promote_runner"):
+            promote_stop = float(ex.get("new_stop") or new_stop)
+            return ExitSignal(
+                action="PROMOTE_RUNNER",
+                new_stop=max(promote_stop, new_stop),
+                reason=str(ex.get("reason", "promote_runner")),
+                exit_layer="",
+            )
         if ex["signal"]:
             layer = str(ex.get("exit_layer") or exit_layer_from_reason(str(ex.get("reason", ""))))
             if ex.get("partial"):
