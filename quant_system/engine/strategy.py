@@ -65,6 +65,151 @@ class Strategy(Protocol):
     def evaluate(self, position: Position, asof: date) -> ExitSignal: ...
 
 
+# ---------- 多策略叠加：mean-reversion 策略（与 momentum 正交）----------
+
+@dataclass
+class MeanReversionConfig:
+    rsi_period: int = 14
+    rsi_entry_max: float = 30.0       # 入场上限：RSI < 30（深度超卖）
+    rsi_exit_min: float = 55.0        # 出场下限：RSI > 55（回归到均值之上）
+    ma_long: int = 200                # 长期趋势门：close > MA200
+    max_hold_days: int = 10           # 时间止损：10 个交易日
+    stop_loss_pct: float = 0.05       # 价格止损：跌破入场价 5%
+    vol_ma_period: int = 20
+    vol_mult: float = 1.0             # 量能确认（量 >= MA20）
+
+
+class MeanReversionStrategy:
+    """超卖反弹策略 — 与 momentum 策略互补。
+    入场：RSI<30 + 收盘>MA200（长期趋势正常的深度回调）
+    出场：RSI>55（mean-reverted）/ 持有>10 日 / 5% 止损 / MA200 跌破
+    """
+    name = "mean_reversion"
+
+    def __init__(
+        self,
+        loader: DataLoader,
+        market: str,
+        universe_codes: list[str],
+        cfg: Optional[MeanReversionConfig] = None,
+        history_start: str = "2018-01-01",
+    ):
+        self.loader = loader
+        self.market = market
+        self.universe_codes = universe_codes
+        self.cfg = cfg or MeanReversionConfig()
+        self.history_start = history_start
+        self._enriched: dict[str, pd.DataFrame] = {}
+        self._universe_filter = UniverseFilter(loader, UniverseFilterConfig())
+        self._filtered_cache: dict[str, list[str]] = {}
+        # m4_cfg dummy for backtester compat
+        self.m4_cfg: M4Config = M4Config(m4_enabled=False)
+
+    def _filtered_universe_codes(self, asof_str: str) -> list[str]:
+        if asof_str in self._filtered_cache:
+            return self._filtered_cache[asof_str]
+        if self.market != "a_share":
+            self._filtered_cache[asof_str] = self.universe_codes
+            return self.universe_codes
+        uni_df = pd.DataFrame({"code": self.universe_codes})
+        uni_df["name"] = ""
+        filtered_df, _ = self._universe_filter.filter_a_share(uni_df, asof_str)
+        codes = filtered_df["code"].astype(str).tolist()
+        self._filtered_cache[asof_str] = codes
+        return codes
+
+    def _ensure_enriched(self, codes: list[str]) -> None:
+        # 复用 momentum 用的 TimingConfig 来 enrich（共享 RSI / ATR / MA 计算）
+        tmp_tcfg = TimingConfig(
+            rsi_period=self.cfg.rsi_period,
+            ma_long=self.cfg.ma_long,
+            vol_ma_period=self.cfg.vol_ma_period,
+        )
+        for code in codes:
+            if code in self._enriched:
+                continue
+            try:
+                px = self.loader.get_daily(self.market, code, self.history_start, "2030-01-01")
+            except Exception:
+                continue
+            if len(px) < self.cfg.ma_long + 5:
+                continue
+            self._enriched[code] = enrich(px, tmp_tcfg)
+
+    def screen(self, asof: date) -> list[BuySignal]:
+        asof_str = asof.strftime("%Y-%m-%d") if isinstance(asof, date) else asof
+        codes = self._filtered_universe_codes(asof_str)
+        self._ensure_enriched(codes)
+        hits: list[BuySignal] = []
+        for code in codes:
+            enr = self._enriched.get(code)
+            if enr is None:
+                continue
+            sub = enr[enr["date"] <= asof_str]
+            if len(sub) < self.cfg.ma_long + 1:
+                continue
+            today = sub.iloc[-1]
+            close = float(today["close"])
+            rsi_v = today["rsi"]
+            ma_l = today["ma_long"]
+            vol = today["volume"]
+            vol_ma = today["vol_ma"]
+            if pd.isna(rsi_v) or pd.isna(ma_l) or pd.isna(vol_ma) or vol_ma <= 0:
+                continue
+            if float(rsi_v) >= self.cfg.rsi_entry_max:
+                continue
+            if close <= float(ma_l):
+                continue
+            if float(vol) < float(vol_ma) * self.cfg.vol_mult:
+                continue
+            # 用 RSI 越低越优先（更深超卖）作排序信号
+            hits.append(BuySignal(
+                symbol=code, market=self.market,
+                score=-float(rsi_v),                       # 负数：RSI 越小 score 越大
+                entry_price=close,
+                stop_loss=close * (1.0 - self.cfg.stop_loss_pct),
+                take_profit=None,
+                reasons={"timing": f"oversold-bounce: RSI={float(rsi_v):.1f}, close>{float(ma_l):.2f}"},
+            ))
+        hits.sort(key=lambda s: -s.score)
+        return hits
+
+    def evaluate(self, position: Position, asof: date) -> ExitSignal:
+        asof_str = asof.strftime("%Y-%m-%d") if isinstance(asof, date) else asof
+        enr = self._enriched.get(position.symbol)
+        if enr is None:
+            self._ensure_enriched([position.symbol])
+            enr = self._enriched.get(position.symbol)
+        if enr is None:
+            return ExitSignal(action="HOLD", reason="not in cache", exit_layer="")
+        sub = enr[enr["date"] <= asof_str]
+        if len(sub) < self.cfg.ma_long + 1:
+            return ExitSignal(action="HOLD", reason="insufficient history", exit_layer="")
+        today = sub.iloc[-1]
+        close = float(today["close"])
+        rsi_v = today["rsi"]
+        ma_l = today["ma_long"]
+        hold_days = (asof - position.entry_date).days if isinstance(asof, date) else 0
+
+        # 价格止损
+        if position.stop_loss is not None and close <= position.stop_loss:
+            rs = f"stop_loss_5pct: close={close:.2f} <= stop={position.stop_loss:.2f}"
+            return ExitSignal(action="EXIT", reason=rs, exit_layer=exit_layer_from_reason("trailing_stop:"))
+        # MA200 跌破（趋势破坏）
+        if pd.notna(ma_l) and close < float(ma_l):
+            rs = f"break_ma{self.cfg.ma_long}: close={close:.2f} < MA={float(ma_l):.2f}"
+            return ExitSignal(action="EXIT", reason=rs, exit_layer=exit_layer_from_reason("break_ma"))
+        # RSI 回归（目标达成）
+        if pd.notna(rsi_v) and float(rsi_v) >= self.cfg.rsi_exit_min:
+            rs = f"rsi_revert: RSI={float(rsi_v):.1f} >= {self.cfg.rsi_exit_min}"
+            return ExitSignal(action="EXIT", reason=rs, exit_layer=exit_layer_from_reason("overbought:"))
+        # 时间止损
+        if hold_days >= self.cfg.max_hold_days:
+            rs = f"time_stop: 持有 {hold_days} 天 >= {self.cfg.max_hold_days}"
+            return ExitSignal(action="EXIT", reason=rs, exit_layer=exit_layer_from_reason("time_stop"))
+        return ExitSignal(action="HOLD", reason="持有", exit_layer="")
+
+
 # ---------- 第一个具体实现 ----------
 
 class BottomupTimingStrategy:

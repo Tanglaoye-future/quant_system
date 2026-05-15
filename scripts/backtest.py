@@ -57,6 +57,15 @@ def build_strategy(name: str, loader: DataLoader, cfg, market: str) -> object:
     """
     market_cfg = cfg.get("markets", market) or {}
     universe = loader.get_universe(market, market_cfg["universe"])
+    if name == "mean_reversion":
+        from quant_system.engine.strategy import MeanReversionStrategy, MeanReversionConfig
+        mr_node = (market_cfg.get("mean_reversion") or {}) if isinstance(market_cfg, dict) else {}
+        return MeanReversionStrategy(
+            loader=loader, market=market,
+            universe_codes=universe["code"].tolist(),
+            cfg=MeanReversionConfig(**mr_node),
+        )
+
     if name == "bottomup_timing":
         # 全局默认
         global_timing = cfg.get("strategy", "timing", default=None) or {}

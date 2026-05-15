@@ -1,0 +1,113 @@
+﻿decision_date,planned_exec_date,symbol,reason,event,exit_layer
+2019-08-02,2019-08-05,600436,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2019-08-09,2019-08-12,600887,break_ma200: close=27.40 < MA=27.49,exit_signal,STOP_TREND
+2019-08-16,2019-08-19,600600,rsi_revert: RSI=69.5 >= 55.0,exit_signal,OVERBOUGHT
+2019-08-19,2019-08-20,300033,time_stop: 持有 12 天 >= 10,exit_signal,TIME_STOP
+2019-08-23,2019-08-26,600887,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2019-10-08,2019-10-09,000876,time_stop: 持有 11 天 >= 10,exit_signal,TIME_STOP
+2019-11-04,2019-11-05,000596,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2019-11-11,2019-11-12,600009,time_stop: 持有 12 天 >= 10,exit_signal,TIME_STOP
+2019-11-25,2019-11-26,601888,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2019-12-16,2019-12-17,600406,time_stop: 持有 11 天 >= 10,exit_signal,TIME_STOP
+2020-02-11,2020-02-12,600585,rsi_revert: RSI=55.6 >= 55.0,exit_signal,OVERBOUGHT
+2020-02-12,2020-02-13,601877,rsi_revert: RSI=65.0 >= 55.0,exit_signal,OVERBOUGHT
+2020-02-14,2020-02-17,601808,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2020-02-14,2020-02-17,300124,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2020-02-14,2020-02-17,600690,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2020-02-14,2020-02-17,000651,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2020-02-14,2020-02-17,600426,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2020-02-17,2020-02-18,601872,time_stop: 持有 12 天 >= 10,exit_signal,TIME_STOP
+2020-03-17,2020-03-18,601808,stop_loss_5pct: close=12.67 <= stop=13.02,exit_signal,STOP_TRAIL
+2020-03-23,2020-03-24,002241,stop_loss_5pct: close=15.34 <= stop=16.37,exit_signal,STOP_TRAIL
+2020-03-23,2020-03-24,300433,stop_loss_5pct: close=14.15 <= stop=14.43,exit_signal,STOP_TRAIL
+2020-03-23,2020-03-24,603259,break_ma200: close=86.60 < MA=87.26,exit_signal,STOP_TREND
+2020-03-30,2020-03-31,300347,break_ma200: close=63.58 < MA=64.70,exit_signal,STOP_TREND
+2020-04-03,2020-04-07,002050,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2020-04-03,2020-04-07,002475,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2020-09-28,2020-09-29,000876,break_ma200: close=27.50 < MA=28.32,exit_signal,STOP_TREND
+2020-11-12,2020-11-13,000157,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2020-11-12,2020-11-13,300033,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2020-12-07,2020-12-08,300413,time_stop: 持有 11 天 >= 10,exit_signal,TIME_STOP
+2020-12-21,2020-12-22,600886,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2021-03-08,2021-03-09,601100,stop_loss_5pct: close=86.10 <= stop=90.25,exit_signal,STOP_TRAIL
+2021-03-15,2021-03-16,600438,stop_loss_5pct: close=31.10 <= stop=32.09,exit_signal,STOP_TRAIL
+2021-03-15,2021-03-16,601100,break_ma200: close=83.90 < MA=83.91,exit_signal,STOP_TREND
+2021-03-19,2021-03-22,300760,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2021-03-19,2021-03-22,002594,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2021-03-22,2021-03-23,600809,time_stop: 持有 12 天 >= 10,exit_signal,TIME_STOP
+2021-03-22,2021-03-23,600436,time_stop: 持有 12 天 >= 10,exit_signal,TIME_STOP
+2021-03-22,2021-03-23,000568,time_stop: 持有 12 天 >= 10,exit_signal,TIME_STOP
+2021-06-16,2021-06-17,000425,break_ma200: close=6.05 < MA=6.21,exit_signal,STOP_TREND
+2021-07-02,2021-07-05,601888,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2021-07-28,2021-07-29,000963,break_ma200: close=35.30 < MA=35.82,exit_signal,STOP_TREND
+2021-08-09,2021-08-10,601919,time_stop: 持有 12 天 >= 10,exit_signal,TIME_STOP
+2021-10-25,2021-10-26,603893,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2021-11-03,2021-11-04,600018,stop_loss_5pct: close=4.84 <= stop=4.84,exit_signal,STOP_TRAIL
+2021-11-05,2021-11-08,601600,stop_loss_5pct: close=5.49 <= stop=5.61,exit_signal,STOP_TRAIL
+2022-01-07,2022-01-10,300014,break_ma200: close=105.39 < MA=106.44,exit_signal,STOP_TREND
+2022-01-07,2022-01-10,002371,break_ma200: close=293.35 < MA=297.62,exit_signal,STOP_TREND
+2022-01-11,2022-01-12,300316,break_ma200: close=56.45 < MA=57.26,exit_signal,STOP_TREND
+2022-02-24,2022-02-25,002920,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2022-03-14,2022-03-15,002028,break_ma200: close=38.44 < MA=38.87,exit_signal,STOP_TREND
+2022-03-28,2022-03-29,600900,time_stop: 持有 12 天 >= 10,exit_signal,TIME_STOP
+2022-09-15,2022-09-16,600085,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2022-11-11,2022-11-14,600188,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2022-11-11,2022-11-14,605117,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2023-05-08,2023-05-09,600584,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2023-05-25,2023-05-26,601899,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2023-06-05,2023-06-06,600050,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2023-08-17,2023-08-18,603501,break_ma200: close=88.00 < MA=91.81,exit_signal,STOP_TREND
+2023-08-28,2023-08-29,002230,break_ma200: close=51.32 < MA=52.27,exit_signal,STOP_TREND
+2023-10-20,2023-10-23,000786,stop_loss_5pct: close=26.25 <= stop=26.74,exit_signal,STOP_TRAIL
+2024-01-10,2024-01-11,300782,break_ma200: close=119.73 < MA=120.34,exit_signal,STOP_TREND
+2024-01-17,2024-01-18,300782,break_ma200: close=118.34 < MA=120.30,exit_signal,STOP_TREND
+2024-01-22,2024-01-23,600161,break_ma200: close=26.68 < MA=27.15,exit_signal,STOP_TREND
+2024-04-02,2024-04-03,300832,break_ma200: close=67.05 < MA=67.26,exit_signal,STOP_TREND
+2024-07-11,2024-07-12,605499,rsi_revert: RSI=61.8 >= 55.0,exit_signal,OVERBOUGHT
+2024-07-15,2024-07-16,002028,time_stop: 持有 12 天 >= 10,exit_signal,TIME_STOP
+2024-07-15,2024-07-16,600690,time_stop: 持有 11 天 >= 10,exit_signal,TIME_STOP
+2024-07-15,2024-07-16,300979,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2024-07-15,2024-07-16,000651,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2024-07-17,2024-07-18,600027,break_ma200: close=5.96 < MA=6.00,exit_signal,STOP_TREND
+2024-07-17,2024-07-18,688169,break_ma200: close=331.99 < MA=334.12,exit_signal,STOP_TREND
+2024-07-19,2024-07-22,600233,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2024-07-23,2024-07-24,688169,break_ma200: close=320.67 < MA=335.03,exit_signal,STOP_TREND
+2024-08-05,2024-08-06,600066,time_stop: 持有 11 天 >= 10,exit_signal,TIME_STOP
+2024-08-05,2024-08-06,603993,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2024-08-05,2024-08-06,601899,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2024-08-05,2024-08-06,601857,break_ma200: close=8.42 < MA=8.74,exit_signal,STOP_TREND
+2024-08-16,2024-08-19,601138,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2024-09-04,2024-09-05,600489,stop_loss_5pct: close=12.49 <= stop=12.80,exit_signal,STOP_TRAIL
+2024-09-23,2024-09-24,600025,time_stop: 持有 11 天 >= 10,exit_signal,TIME_STOP
+2024-09-23,2024-09-24,600900,time_stop: 持有 11 天 >= 10,exit_signal,TIME_STOP
+2024-09-23,2024-09-24,601298,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2024-09-23,2024-09-24,300476,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2025-01-06,2025-01-07,300015,break_ma200: close=12.40 < MA=12.46,exit_signal,STOP_TREND
+2025-01-08,2025-01-09,603260,break_ma200: close=51.80 < MA=52.07,exit_signal,STOP_TREND
+2025-01-08,2025-01-09,000963,break_ma200: close=31.29 < MA=31.85,exit_signal,STOP_TREND
+2025-01-09,2025-01-10,600196,break_ma200: close=23.98 < MA=24.15,exit_signal,STOP_TREND
+2025-01-20,2025-01-21,603288,time_stop: 持有 11 天 >= 10,exit_signal,TIME_STOP
+2025-02-17,2025-02-18,603288,time_stop: 持有 11 天 >= 10,exit_signal,TIME_STOP
+2025-04-18,2025-04-21,603019,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2025-04-18,2025-04-21,600570,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2025-04-18,2025-04-21,603986,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2025-04-18,2025-04-21,300033,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2025-04-18,2025-04-21,300251,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2025-04-18,2025-04-21,688256,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2025-04-21,2025-04-22,603259,time_stop: 持有 12 天 >= 10,exit_signal,TIME_STOP
+2025-06-13,2025-06-16,688256,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2025-06-30,2025-07-01,688256,time_stop: 持有 12 天 >= 10,exit_signal,TIME_STOP
+2025-08-06,2025-08-07,601728,break_ma200: close=7.35 < MA=7.40,exit_signal,STOP_TREND
+2025-12-22,2025-12-23,600660,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2026-02-02,2026-02-03,300750,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2026-02-05,2026-02-06,688256,stop_loss_5pct: close=1058.33 <= stop=1071.60,exit_signal,STOP_TRAIL
+2026-02-24,2026-02-25,688256,time_stop: 持有 14 天 >= 10,exit_signal,TIME_STOP
+2026-03-20,2026-03-23,603799,stop_loss_5pct: close=57.41 <= stop=57.61,exit_signal,STOP_TRAIL
+2026-03-23,2026-03-24,600362,stop_loss_5pct: close=42.45 <= stop=43.39,exit_signal,STOP_TRAIL
+2026-03-23,2026-03-24,603993,stop_loss_5pct: close=16.49 <= stop=16.96,exit_signal,STOP_TRAIL
+2026-03-30,2026-03-31,000408,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2026-04-02,2026-04-03,601899,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2026-04-03,2026-04-07,600489,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2026-04-03,2026-04-07,000630,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2026-04-03,2026-04-07,000157,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
+2026-04-03,2026-04-07,002050,time_stop: 持有 10 天 >= 10,exit_signal,TIME_STOP
