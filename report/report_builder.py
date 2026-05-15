@@ -55,14 +55,18 @@ def color_class(v, positive_good=True):
 
 def render(q: dict, o: dict, z: dict, report_date: str) -> str:
     # ── quant helpers ──────────────────────────────────────────────────────
-    q_status_text = "空仓待机" if not q.get("signals") and not q.get("positions") else f"{len(q.get('signals',[]))}只信号"
+    q_signals = q.get("signals", [])
+    # 按策略来源统计
+    from collections import Counter
+    q_src_counts = Counter(s.get("_source", "未知") for s in q_signals)
+    q_status_text = "空仓待机" if not q_signals and not q.get("positions") else \
+        f"{len(q_signals)}只信号 (HK {q_src_counts.get('HK 港股 · momentum',0)} · A_mom {q_src_counts.get('A 股 · momentum',0)} · A_mr {q_src_counts.get('A 股 · mean-reversion',0)})"
     q_status_badge = "badge-idle" if not q.get("signals") else "badge-pass"
     q_bench = q.get("benchmark_close", "—")
     q_ma60  = q.get("benchmark_ma60", "—")
     q_gate  = q.get("market_gate", None)
     q_gate_txt = ("通过 · close > MA60" if q_gate else "关闭 · close < MA60") if q_gate is not None else "—"
     q_gate_cls = "pos" if q_gate else "neg"
-    q_signals = q.get("signals", [])
     q_positions = q.get("positions", [])
     q_missing = q.get("_missing", False)
 
@@ -90,13 +94,16 @@ def render(q: dict, o: dict, z: dict, report_date: str) -> str:
     # ── quant signals rows ──────────────────────────────────────────────────
     def signal_rows(signals):
         if not signals:
-            return "<tr><td colspan='5' style='color:var(--muted);text-align:center;padding:20px'>今日无买入信号</td></tr>"
+            return "<tr><td colspan='6' style='color:var(--muted);text-align:center;padding:20px'>今日无买入信号</td></tr>"
         rows = ""
         for s in signals:
+            source = s.get("_source", "")
+            source_badge = f"<span class='badge badge-idle' style='font-size:11px'>{source}</span>" if source else ""
             rows += f"""
             <tr>
               <td><strong>{s.get('code','—')}</strong></td>
               <td>{s.get('name','—')}</td>
+              <td>{source_badge}</td>
               <td class='{color_class(s.get("score",0))}'>{fmt(s.get('score',0))}</td>
               <td>{s.get('reason','—')}</td>
               <td class='pos'>{s.get('suggested_action','买入')}</td>
@@ -285,7 +292,7 @@ def render(q: dict, o: dict, z: dict, report_date: str) -> str:
     <div class="card-header"><div class="card-title">今日买入候选</div></div>
     <div class="table-wrap">
     <table>
-      <thead><tr><th>代码</th><th>名称</th><th>评分</th><th>入场理由</th><th>建议</th></tr></thead>
+      <thead><tr><th>代码</th><th>名称</th><th>策略</th><th>评分</th><th>入场理由</th><th>建议</th></tr></thead>
       <tbody>{signal_rows(q_signals)}</tbody>
     </table>
     </div>
@@ -369,13 +376,69 @@ def render(q: dict, o: dict, z: dict, report_date: str) -> str:
 </html>"""
 
 
+def load_quant_multi() -> dict:
+    """加载 quant_system 的 3 个子策略 JSON，合并为统一 dict 传入 render。
+    兼容旧版定量系统只输出一个 quant.json 的情况（降级读取）。"""
+    sources = [
+        ("quant_hk_share_bottomup_timing.json",   "HK 港股 · momentum"),
+        ("quant_a_share_bottomup_timing.json",    "A 股 · momentum"),
+        ("quant_a_share_mean_reversion.json",     "A 股 · mean-reversion"),
+    ]
+    # 旧版兼容：如果三个文件都不存在，fallback 到旧的 quant.json
+    any_found = any((DATA / f).exists() for f, _ in sources)
+    if not any_found and (DATA / "quant.json").exists():
+        return load("quant")
+
+    merged_signals = []
+    merged_positions = []
+    merged_market = ""
+    merged_gate = None
+    merged_gate_msg = ""
+    merged_date = ""
+
+    for filename, label in sources:
+        path = DATA / filename
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        merged_date = data.get("date", merged_date)
+        merged_market = merged_market or data.get("market", "")
+        if data.get("market_gate") is not None:
+            merged_gate = data["market_gate"]
+            merged_gate_msg = data.get("market_gate_msg", "")
+        for s in data.get("signals", []):
+            s = dict(s)
+            s.setdefault("name", "")
+            s["_source"] = label  # strategy label for display
+            merged_signals.append(s)
+        for p in data.get("positions", []):
+            p = dict(p)
+            p.setdefault("name", "")
+            p["_source"] = label
+            merged_positions.append(p)
+
+    return {
+        "date": merged_date,
+        "market": merged_market,
+        "market_gate": merged_gate,
+        "market_gate_msg": merged_gate_msg,
+        "benchmark_close": "—",
+        "benchmark_ma60": "—",
+        "signals": merged_signals,
+        "positions": merged_positions,
+    }
+
+
 def main():
     p = argparse.ArgumentParser(description="量化策略日报生成器")
     p.add_argument("--date", default=date.today().strftime("%Y-%m-%d"))
     p.add_argument("--open", action="store_true", dest="open_browser")
     args = p.parse_args()
 
-    q = load("quant")
+    q = load_quant_multi()
     o = load("options")
     z = load("zhuang")
 

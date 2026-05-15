@@ -41,6 +41,9 @@ from quant_system.timing.signals import scan_today_entries, timing_config_from_y
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--market", default="a_share", choices=["a_share", "hk_share"])
+    parser.add_argument("--strategy", default="bottomup_timing",
+                        choices=["bottomup_timing", "mean_reversion"],
+                        help="子策略：bottomup_timing 默认 momentum；mean_reversion 是超卖反弹")
     parser.add_argument("--top", type=int, default=30,
                         help="从因子打分前 N 名里挑择时信号")
     parser.add_argument("--limit", type=int, default=0,
@@ -137,7 +140,27 @@ def main() -> None:
             atr_pct_median_window=tcfg.m3_reg_index_atr_pct_median_window,
         )
 
-    if tcfg.m2_regime_enabled and args.market == "a_share":
+    if args.strategy == "mean_reversion":
+        # mean_reversion 子策略：直接调用 Strategy 类的 screen()，输出转 dict 格式
+        from quant_system.engine.strategy import MeanReversionStrategy, MeanReversionConfig
+        mr_node = (market_cfg.get("mean_reversion") or {}) if isinstance(market_cfg, dict) else {}
+        mr_strat = MeanReversionStrategy(
+            loader=loader, market=args.market,
+            universe_codes=universe["code"].tolist(),
+            cfg=MeanReversionConfig(**mr_node),
+        )
+        from datetime import date as _date
+        asof_dt = datetime.strptime(args.asof, "%Y-%m-%d").date()
+        signals = mr_strat.screen(asof_dt)
+        hits = [{
+            "code": s.symbol,
+            "entry_price": s.entry_price,
+            "stop_loss": s.stop_loss,
+            "take_profit": s.take_profit if s.take_profit else s.entry_price * 1.10,
+            "reasons": list(s.reasons.values()),
+            "score": s.score,
+        } for s in signals]
+    elif tcfg.m2_regime_enabled and args.market == "a_share":
         gate = MarketRegimeGate(loader, str(bench), tcfg.m2_regime_ma_days)
         ok, msg = gate.allows_long_entries(args.asof)
         print(f"  M2市况门: {msg}", flush=True)
@@ -253,6 +276,7 @@ def main() -> None:
     report_payload = {
         "date": args.asof,
         "market": args.market,
+        "strategy": args.strategy,
         "market_gate": gate_ok,
         "market_gate_msg": gate_msg_str,
         "benchmark_close": "—",
@@ -261,10 +285,12 @@ def main() -> None:
         "positions": report_positions,
     }
     _REPORT_DATA.mkdir(parents=True, exist_ok=True)
-    (_REPORT_DATA / "quant.json").write_text(
+    # 按 market + strategy 分文件输出，report_builder 会合并
+    json_filename = f"quant_{args.market}_{args.strategy}.json"
+    (_REPORT_DATA / json_filename).write_text(
         json.dumps(report_payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    print(f"[report] quant.json → {_REPORT_DATA / 'quant.json'}")
+    print(f"[report] {json_filename} → {_REPORT_DATA / json_filename}")
 
 
 if __name__ == "__main__":

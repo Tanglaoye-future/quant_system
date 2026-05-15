@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.quant.daily</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/franktang/Documents/workplace/projects/quant_system/run_daily.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/franktang/Documents/workplace/projects/quant_system</string>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key><integer>16</integer>
+        <key>Minute</key><integer>30</integer>
+        <key>Weekday</key><integer>1</integer>  <!-- 1=Mon, 5=Fri -->
+    </dict>
+    <dict>
+        <key>Hour</key><integer>16</integer>
+        <key>Minute</key><integer>30</integer>
+        <key>Weekday</key><integer>2</integer>
+    </dict>
+    <dict>
+        <key>Hour</key><integer>16</integer>
+        <key>Minute</key><integer>30</integer>
+        <key>Weekday</key><integer>3</integer>
+    </dict>
+    <dict>
+        <key>Hour</key><integer>16</integer>
+        <key>Minute</key><integer>30</integer>
+        <key>Weekday</key><integer>4</integer>
+    </dict>
+    <dict>
+        <key>Hour</key><integer>16</integer>
+        <key>Minute</key><integer>30</integer>
+        <key>Weekday</key><integer>5</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/franktang/Documents/workplace/projects/quant_system/logs/launchd_stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/franktang/Documents/workplace/projects/quant_system/logs/launchd_stderr.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/franktang</string>
+    </dict>
+</dict>
+</plist>
