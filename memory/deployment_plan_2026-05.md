@@ -1,49 +1,55 @@
 ---
-name: 实盘部署计划 2026-05-15（三 universe 45/35/20 配置）
-description: 8 年回测 Sharpe 1.014 后的实盘部署蓝图；分账户配资 + QQQ 被动 + 季度再平衡
+name: 实盘部署计划 2026-05-15（四 universe 35/30/15/20 配置）
+description: 8 年回测 Sharpe 1.198 后的实盘部署蓝图；4 账户配资（HK + A + QQQ + GLD）+ 季度再平衡
 type: project
 ---
 
-## 资金配置（基础资金 = 100%）
+## 资金配置（基础资金 = 100%，v2 2026-05-15 升级为 4-asset）
 
 | 账户 | 占比 | 标的 | 策略 |
 |---|---|---|---|
-| **HK 港股账户** | 45% | HSCHK100 成份股 | `daily_run --market hk_share` |
-| **A 股账户** | 35% | HS300 成份股 | `daily_run --market a_share` |
-| **US ETF 账户** | 20% | QQQ ETF | 被动买入持有 |
+| **HK 港股账户** | 35% | HSCHK100 成份股 | `daily_run --market hk_share` |
+| **A 股账户** | 30% | HS300 成份股 | `daily_run --market a_share` |
+| **US ETF 账户** | 15% | QQQ ETF | 被动买入持有 |
+| **黄金 ETF 账户** | 20% | GLD（境外）或 518880（华安黄金 ETF，境内）| 被动买入持有 |
+
+**升级原因**（详见 `memory/four_universe_2026-05.md`）：4-asset 8 年回测 Sharpe 1.198，比前 3-asset 1.014 高 18%，且 DD 更小、波动更低。GLD 与 HK / A / QQQ 相关性近零（0.01-0.12），是天然 diversifier。
 
 ## 启动准备清单
 
 ### 1. 券商账户（用户操作）
 
-- [ ] HK 港股账户（支持 hs100 成份，融资 / 期货可选）
+- [ ] HK 港股账户（支持 hs100 成份；可选融资 / 期货）
 - [ ] A 股账户（支持 hs300 成份）
-- [ ] US 美股账户（持有 QQQ 即可，0 操作）
+- [ ] US 美股账户（持有 QQQ，0 操作）
+- [ ] 黄金 ETF 通道（境内直接走 A 股账户买 518880；境外走 US 账户买 GLD）
 
 ### 2. 资金转入
 
-按 45 / 35 / 20 分配。**注意**：HKD / CNY / USD 汇率波动会让账户占比漂移，初始配置以本币计价（按 transfer 时即期汇率换算）。
+按 35 / 30 / 15 / 20 分配。**注意**：HKD / CNY / USD 汇率波动会让账户占比漂移，初始配置以本币计价（按 transfer 时即期汇率换算）。
 
 ### 3. 策略服务端
 
-每个账户独立跑 `scripts/daily_run.py`：
+只有 HK + A 两个账户跑策略：
 
 ```bash
-# HK
-python scripts/daily_run.py --market hk_share --capital 450000
+# HK（35% 资金）
+python scripts/daily_run.py --market hk_share --capital 350000
 
-# A 股
-python scripts/daily_run.py --market a_share --capital 350000
+# A 股（30% 资金）
+python scripts/daily_run.py --market a_share --capital 300000
 ```
 
-US 账户**不跑策略**，季度再平衡时买卖 QQQ。
+US 账户买入 QQQ 后**不动**；黄金账户买入 GLD/518880 后**不动**。再平衡时调整。
 
-### 4. 风控阈值（依据回测 v9/v14 admission_pass）
+### 4. 风控阈值
 
 | 触发条件 | 行动 |
 |---|---|
 | HK 账户 30 天 DD > 15% | 暂停 daily_run，等 MA200 恢复 |
 | A 股账户 30 天 DD > 15% | 暂停 daily_run，等 MA60 恢复 |
+| GLD 30 天 DD > 20% | 维持仓位（被动持有）；下次再平衡评估 |
+| QQQ 30 天 DD > 25% | 维持仓位（被动持有）；下次再平衡评估 |
 | 单仓最大 20% | 已写在 strategy.single_position_pct_max |
 | 持仓上限 10 只 | strategy.position_max_count |
 
@@ -54,7 +60,7 @@ US 账户**不跑策略**，季度再平衡时买卖 QQQ。
 **逻辑**：
 
 ```
-target = {HK: 0.45, A: 0.35, QQQ: 0.20}
+target = {HK: 0.35, A: 0.30, QQQ: 0.15, GLD: 0.20}
 current = {账户实际市值占比}
 
 for market, target_w in target.items():
@@ -70,46 +76,47 @@ for market, target_w in target.items():
 ### 月度 KPI
 
 - 各账户单独 Sharpe（YTD）
-- 组合 Sharpe（按 45/35/20 加权 daily return 重算）
-- 与回测 Sharpe 1.014 的偏离度
+- 组合 Sharpe（按 35/30/15/20 加权 daily return 重算）
+- 与回测 Sharpe 1.198 的偏离度
 
 ### 警报阈值
 
-- 实盘组合 Sharpe 连续 3 月 < 0.3 → 停盘检视
-- 任一账户 max DD > 20% → 该账户暂停
-- HK-A 实盘日收益相关性 60 天滚动 > 0.5 → 重新评估配比（历史 ρ=0.007）
+- 实盘组合 Sharpe 连续 3 月 < 0.5 → 停盘检视
+- 任一主动账户（HK / A）max DD > 20% → 该账户暂停
+- 跨账户日收益相关性 60 天滚动 > 0.5 → 重新评估配比（历史 ρ ≤ 0.12）
 
-## 已验证的关键不变量（来自回测）
+## 已验证的关键不变量（来自回测 + 多 universe 分析）
 
 1. HK 策略对 HSCHK100 beta = 0.155（MA200 门控已剥离大半 beta）
 2. A 股策略对 HS300 beta ≈ 0.16（类似）
-3. 三市场日收益相关性 ≤ 0.05（独立性极强）
+3. 4 个 universe 日收益相关性：HK↔A 0.00, HK↔QQQ -0.04, HK↔GLD 0.01, A↔QQQ 0.00, A↔GLD 0.04, QQQ↔GLD 0.12
 4. HK on-regime hedge r=0.3 + A 股 on-regime hedge r=0.3 已生效（synthetic short overlay）
+5. GLD 8 年单独 Sharpe 0.74 / +165% / DD -22% — 独立 alpha 源
 
 ## us_share 主动策略状态
 
-**归档不上实盘**（config.yaml 已 `enabled: false`）。原因：
-- 8 年 Sharpe -0.05 / 总收益 +7% vs QQQ +241%
-- NASDAQ100 是 MAG7 集中市，均权 momentum 策略不适配
+**归档不上实盘**（config.yaml 已 `enabled: false`）。原因：8 年 Sharpe -0.05 / 总收益 +7% vs QQQ +241%。NASDAQ100 是 MAG7 集中市，均权 momentum 策略不适配。
 
-后续可探索方向（非优先）：
-- 仅交易 MAG7 子集 + 长持
-- 加入 NDX 期权对冲 tail
-- 接 Polygon 实时数据替代 akshare
+## TLT / GBTC 不入选
+
+- **TLT**: 8 年 Sharpe **-0.08**（加息周期长债大跌），即便低相关也无法拉 Sharpe
+- **GBTC**: 73% 年化波动太极端，加入组合反而拖累 Sharpe（虽然总收益 +253%）
 
 ## 实盘交付物（用户验收）
 
-1. ✅ 3 个市场各自 8 年回测全部 PASS（admission_pass=True for HK + A，US 用 QQQ 代替）
-2. ✅ 组合 Sharpe 1.014 / DD -9.1% / 总收益 +94%（grid search 最优）
-3. ✅ memory 文件齐全（项目+M0审计+HK+A+多 universe+部署）
-4. ⏳ 实盘部署后 3 个月数据验证（用户实际跑后）
+1. ✅ HK / A 两个市场各自 8 年回测全部 PASS（admission_pass=True）
+2. ✅ us_share 已 deprecated；QQQ 被动持有替代
+3. ✅ 4-asset 组合 Sharpe 1.198 / DD -8.88% / 总收益 +109%（grid search 最优）
+4. ✅ memory 文件齐全（项目+M0审计+HK+A+多 universe+四 universe+部署）
+5. ⏳ 实盘部署后 3 个月数据验证（用户实际跑后）
 
 ## 风险/限制（明文）
 
 1. **历史 ≠ 未来**：8 年相关性可能在未来漂移（2020 疫情期间所有市场短暂同步暴跌）
-2. **再平衡成本**：3 账户跨市场 transfer 有税务 + 汇率摩擦，季度再平衡是平衡频率
-3. **货币风险**：HKD 与 CNY 联汇制 → HK 对组合影响有限；USD 持有的 QQQ 受 CNY 升贬影响
-4. **黑天鹅**：2020-03 类全市场暴跌会突然把相关性推至接近 1，组合 DD 可能超 -9% 预算
+2. **GLD 牛市可能不持续**：2018-2026 期间金价 1200→2500+，未来若实际利率高企，GLD 可能 underperform
+3. **再平衡成本**：4 账户跨市场 transfer 有税务 + 汇率摩擦，季度再平衡是平衡频率
+4. **货币风险**：HKD/USD/CNY 三币种，HKD 联汇缓冲了汇率冲击，USD 持有的 QQQ/GLD 受 CNY 升贬影响
+5. **黑天鹅**：2020-03 类全市场暴跌会突然把相关性推至接近 1，组合 DD 可能超 -9% 预算
 
-**Why:** 2026-05-15 完成所有可行的算法优化后的正式部署计划；按「测试盘必须先赢」原则，回测 Sharpe 1.014 已具备实盘启动资格。
+**Why:** 2026-05-15 完成多资产扫描后的部署计划升级；加入 GLD 后回测 Sharpe 从 1.014 → 1.198；按「测试盘必须先赢」原则已具备实盘启动资格。
 **How to apply:** 实盘启动前必读本文件；运行中每月检查 KPI 与警报阈值；如需调整配比，先回测验证再实施。
