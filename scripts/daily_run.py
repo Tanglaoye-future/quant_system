@@ -244,7 +244,7 @@ def main() -> None:
     # ---------------- 输出报告 JSON ----------------
     gate_ok = None
     gate_msg_str = ""
-    if tcfg.m2_regime_enabled and args.market == "a_share":
+    if args.strategy != "mean_reversion" and tcfg.m2_regime_enabled and args.market == "a_share":
         gate_ok = ok  # noqa: F821  (defined in the branch above)
         gate_msg_str = msg  # noqa: F821
 
