@@ -4,8 +4,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from quant_system.timing.regime import TimingRegimeContext
-from quant_system.timing.signals import TimingConfig, _effective_rsi_entry_band, enrich
+from quant_system.strategies.equity_factor.timing.regime import TimingRegimeContext
+from quant_system.strategies.equity_factor.timing.signals import TimingConfig, _effective_rsi_entry_band, enrich
 
 
 def test_effective_rsi_band_m3_regime_widen():

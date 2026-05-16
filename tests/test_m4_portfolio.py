@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from quant_system.bottomup.portfolio import M4Config, m4_prioritize_signals
-from quant_system.engine.strategy import BuySignal
+from quant_system.strategies.equity_factor.bottomup.portfolio import M4Config, m4_prioritize_signals
+from quant_system.strategies.equity_factor.engine.strategy import BuySignal
 
 
 @dataclass

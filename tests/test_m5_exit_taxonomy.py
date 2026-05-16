@@ -1,5 +1,5 @@
 """M5: exit_layer_from_reason 与 timing exit 字符串前缀一致."""
-from quant_system.timing.exit_taxonomy import (
+from quant_system.strategies.equity_factor.timing.exit_taxonomy import (
     LAYER_FORCED_CLOSE,
     LAYER_OVERBOUGHT,
     LAYER_REGIME,

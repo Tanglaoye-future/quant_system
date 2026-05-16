@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from quant_system.data.hang_seng_indexes import (
+from quant_system.strategies.equity_factor.data.hang_seng_indexes import (
     HangSengDataError,
     load_hschk100_constituents,
     parse_constituent_lines_from_factsheet_text,
@@ -52,7 +52,7 @@ def test_load_full_constituents_csv(tmp_path: Path) -> None:
 
 
 def test_read_hk_daily_roundtrip(tmp_path: Path) -> None:
-    from quant_system.data.hang_seng_indexes import read_hk_constituent_daily_csv
+    from quant_system.strategies.equity_factor.data.hang_seng_indexes import read_hk_constituent_daily_csv
 
     q = tmp_path / "00700.csv"
     pd.DataFrame({
