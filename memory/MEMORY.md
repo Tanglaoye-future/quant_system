@@ -11,3 +11,4 @@
 - [多策略叠加 + Vol targeting 2026-05](multistrat_2026-05.md) — A 股 mean-reversion 子策略 + 杠杆分析；5-asset 25/25/15/15/20 Sharpe **1.225** / DD -7.94%；杠杆不改 Sharpe
 - [实盘部署计划 2026-05](deployment_plan_2026-05.md) — 5-asset 多策略配置（HK 25% / A_mom 25% / A_mr 15% / QQQ 15% / GLD 20%）；季度再平衡；风控阈值；KPI 监控
 - [部署检查清单 2026-05](deploy_checklist_2026-05.md) — Step 0-6 操作指南；launchd 自动化调度；首月 KPI；紧急停盘流程
+- [Zhuang 叠加分析 2026-05](zhuang_overlay_2026-05.md) — 外部 zhuang_system 与 5-asset 组合相关性近零/负，10% 配比 Sharpe 1.30 → 1.35、DD -7.94% → -7.01%

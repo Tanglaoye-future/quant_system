@@ -97,6 +97,7 @@ python scripts/daily_run.py --market a_share --strategy mean_reversion --capital
 | Pairs trading（AH 套利）| +0.03 | 需衍生品账户 |
 | ML 因子（XGBoost）| +0.0~0.3 | 过拟合风险高 |
 | 加 IEF（中期债，替代 TLT）| +0.0~0.05 | 利率敏感度较低，值得一试 |
+| **加 zhuang_system（A 股小盘跟庄）10%** ⭐ | **+0.05** | **已验证** — 见 zhuang_overlay_2026-05.md |
 
 ## 已穷尽 / 不推荐方向
 
