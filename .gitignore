@@ -1,15 +1,48 @@
+# --- Python ---
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# --- venv ---
 .venv/
 venv/
+
+# --- IDE / OS ---
 .idea/
 .vscode/
+.DS_Store
+.cursor/
 
-# Local data & journal
+# --- 测试缓存 ---
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- Claude / 工具状态 ---
+.claude/
+.deepseek/
+
+# --- 运行时数据（不入仓库） ---
 data/cache/
 data/journal.db
 data/raw/
+data/backtest/
+data/baseline_signals.txt
+data/prefetch_failed.txt
+data/prefetch_progress.txt
+data/today_candidates.txt
 
-# Notebooks
+# --- 日志 ---
+logs/
+
+# --- 报告输出（生成物，不入仓库） ---
+report/data/*.json
+report/strategy_report_*.html
+
+# --- Notebooks ---
 *.ipynb_checkpoints/
