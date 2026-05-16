@@ -1,0 +1,69 @@
+# zhuang_system — 庄股跟庄策略配置
+# 策略逻辑：识别吃货期（主力积累阶段），在低位共振建仓，拉升期持仓，5日止盈/止损退出
+
+universe:
+  market: a_share
+  market_cap_min_cny: 5_000_000_000     # 50亿（下限：流动性保证）→ 注意单位是元
+  market_cap_max_cny: 200_000_000_000   # 2000亿（上限：排除大蓝筹，庄股集中在中小盘）
+  exclude_st: true                       # 排除 ST / *ST（已有风险警示）
+  min_listed_days: 365                   # 上市未满 1 年不纳入（规避次新股陷阱）
+  min_price: 2.0                         # 最低股价 2 元（排除仙股）
+
+data:
+  cache_dir: ./data/cache
+  daily_dir: ./data/prices               # 每只股票一个 {code}_daily.csv
+  start_date: "2020-01-01"
+  refresh_days: 1
+
+strategy:
+  # 最大持仓期（交易日）
+  max_hold_days: 15                      # 延长至15日：吃货期结束到拉升需要时间
+
+  # 仓位管理
+  single_position_pct_max: 0.05          # 单票最大仓位 5%（庄股风险高，严格控仓）
+  position_max_count: 6                  # 同时持仓上限
+
+  # 吃货期积分阈值
+  accumulation_score_entry: 70           # L1-E: 65→70，score >= 70（放宽位置后收紧score保证质量）
+  accumulation_score_confirm: 75         # score >= 75 才可加仓确认
+  entry_price_position_min: 0.4          # L1-E: 价格在近20d区间下0.4段即入场（0.5→0.4放宽）
+
+  # 市场趋势过滤（熊市不入场）
+  market_trend_filter: true              # 开启：指数MA60以上才允许入场
+  market_trend_index: sh.000905         # 中证500（小盘股基准，比沪深300更贴近庄股）
+  market_trend_ma: 60                   # MA周期
+
+  # 入场过滤
+  volume_spike_ratio_min: 2.0            # 放量倍数：当日成交量 >= 近20日均量 × 2.0
+  consolidation_days_min: 10             # 横盘天数（高低振幅 <= 8%）达到 N 日
+  consolidation_range_pct: 0.08          # 横盘振幅上限
+
+  # 出场参数
+  stop_loss_atr_mult: 2.0                # P0: ATR×3→2，收紧止损
+  max_stop_loss_pct: 0.06                # P0: 单笔最大止损上限6%（防止ATR过大导致止损过深）
+  momentum_stop_pct: 0.05                # P0: 持有≥3日从入场价下跌5%提前离场
+  take_profit_pct: 0.15                  # 止盈目标 = 入场价 × (1 + 15%)
+  distribution_turnover_thresh: 8.0      # 换手率 > 8%（BaoStock turn 单位是%）
+  extend_hold_days: 25                   # P3: 浮盈≥5%时最长持有延至25日
+  extend_profit_pct: 0.05                # P3: 触发延长的浮盈门槛
+
+accumulation_weights:
+  # 吃货期五维信号权重（总和须 = 1.0）
+  ma_convergence: 0.20        # MA5/MA10/MA20 收敛程度（趋势趋平）
+  volume_asymmetry: 0.30      # 上涨日成交量 vs 下跌日成交量之比（正向积累特征）
+  price_consolidation: 0.20   # 价格振幅收窄（横盘整理）
+  turnover_decline: 0.15      # 换手率近期趋势下降（浮筹减少）
+  vp_divergence: 0.15         # 量价背离：成交量下降但股价未跌（资金锁仓特征）
+
+backtest:
+  initial_capital: 1_000_000
+  commission: 0.0003
+  stamp_tax: 0.001
+  slippage: 0.002             # 小票滑点适当放大
+  output_dir: ./data/backtest
+  benchmark_symbol: sh000300
+
+  admission:
+    min_sharpe: 0.3            # 庄股策略Sharpe预期低于主策略，门槛适当降低
+    max_drawdown: 0.30
+    min_win_rate: 0.40
