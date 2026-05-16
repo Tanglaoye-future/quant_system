@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "quant_system"
-version = "0.1.0"
-description = "多市场（A/HK/US）量化策略系统：bottom-up 选股 + 择时 + 风控"
+version = "0.2.0"
+description = "多市场量化策略系统 monorepo：equity_factor（A/HK/US 选股+择时）+ options（QQQ Bull Call Spread）+ zhuang（吃货期）+ 联合 HTML 日报"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Tanglaoye" }]
@@ -14,9 +14,11 @@ dependencies = [
     "numpy>=1.24",
     "PyYAML>=6.0",
     "python-dateutil>=2.8",
-    "akshare>=1.12.0",
+    "akshare>=1.14.0",
     "pypdf>=4.0",
     "requests>=2.28",
+    "yfinance>=0.2.36",
+    "ib_insync>=0.9.86",
 ]
 
 [project.optional-dependencies]
@@ -26,3 +28,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

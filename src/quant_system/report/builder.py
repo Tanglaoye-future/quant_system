@@ -23,8 +23,10 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
-HERE = Path(__file__).parent          # quant_system/report/
-DATA = HERE / "data"                  # quant_system/report/data/
+from quant_system.config import PROJECT_ROOT
+
+REPORT_DIR = PROJECT_ROOT / "report"   # repo_root/report/
+DATA = REPORT_DIR / "data"             # repo_root/report/data/
 
 
 def load(system: str) -> dict:
@@ -444,7 +446,8 @@ def main():
 
     html = render(q, o, z, args.date)
 
-    out = HERE / f"strategy_report_{args.date}.html"
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    out = REPORT_DIR / f"strategy_report_{args.date}.html"
     out.write_text(html, encoding="utf-8")
     print(f"[report] 已生成 → {out}")
 

@@ -1,3 +1,6 @@
+# quant_system 统一依赖（合并自原 equity_factor / options / zhuang 三套）
+# 安装：pip install -e .
+
 # Core
 pandas>=2.0
 numpy>=1.24
@@ -5,11 +8,13 @@ PyYAML>=6.0
 python-dateutil>=2.8
 
 # Data sources
-akshare>=1.12.0
+akshare>=1.14.0
 pypdf>=4.0
 requests>=2.28
+yfinance>=0.2.36         # options: VXN/QQQ 历史价
 
-# Analytics (added when respective modules are built out)
-# talipp>=2.0          # technical indicators
-# gs-quant>=1.0        # GS risk analytics (optional, only for risk module)
-# scipy>=1.11          # for factor stats
+# Broker
+ib_insync>=0.9.86        # options: IBKR Gateway
+
+# Dev
+pytest>=7.0

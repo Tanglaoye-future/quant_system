@@ -8,7 +8,7 @@ import yaml
 
 # src/quant_system/config.py → parents[0]=quant_system, [1]=src, [2]=repo root
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config.yaml"
+DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config" / "equity_factor.yaml"
 
 
 @dataclass(frozen=True)
