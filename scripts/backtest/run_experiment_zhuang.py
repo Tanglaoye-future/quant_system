@@ -16,13 +16,12 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pandas as pd
 import yaml
 
-from zhuang_system.data.loader import ZhuangDataLoader
-from zhuang_system.engine.backtest import ZhuangBacktester
+from quant_system.strategies.zhuang.data.loader import ZhuangDataLoader
+from quant_system.strategies.zhuang.engine.backtest import ZhuangBacktester
 
 
 def parse_overrides(items):
@@ -46,7 +45,7 @@ def main():
     p.add_argument("--start", required=True)
     p.add_argument("--end", required=True)
     p.add_argument("--universe-file", required=True)
-    p.add_argument("--config", default="config.yaml")
+    p.add_argument("--config", default="config/zhuang.yaml")
     p.add_argument("--refresh-days", type=int, default=9999)
     p.add_argument("--strategy", nargs="*", default=[],
                    help="override strategy.* params, e.g. entry_price_position_min=0.66")
@@ -54,7 +53,7 @@ def main():
                    help="override accumulation_weights.* params")
     args = p.parse_args()
 
-    root = Path(__file__).parent.parent
+    root = Path(__file__).resolve().parents[2]
     with open(root / args.config, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 

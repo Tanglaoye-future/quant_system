@@ -14,22 +14,20 @@ import sys
 from datetime import date
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import yaml
 import pandas as pd
 
-from zhuang_system.data.loader import ZhuangDataLoader
-from zhuang_system.signals.accumulation import accumulation_score_detail
-from zhuang_system.signals.entry import check_entry_signal
+from quant_system.strategies.zhuang.data.loader import ZhuangDataLoader
+from quant_system.strategies.zhuang.signals.accumulation import accumulation_score_detail
+from quant_system.strategies.zhuang.signals.entry import check_entry_signal
 
-# quant_system/report/data/ — 相对于 zhuang_system/ 的兄弟目录
-_REPORT_DATA = Path(__file__).resolve().parent.parent.parent / "quant_system" / "report" / "data"
+_REPORT_DATA = Path(__file__).resolve().parents[2] / "report" / "data"
 
 
 def parse_args():
     p = argparse.ArgumentParser(description="今日吃货期候选扫描")
-    p.add_argument("--config", default="config.yaml")
+    p.add_argument("--config", default="config/zhuang.yaml")
     p.add_argument("--date", default=date.today().strftime("%Y-%m-%d"), help="扫描日期")
     p.add_argument("--top", type=int, default=15, help="显示 TOP N")
     p.add_argument("--min-score", type=float, default=50.0, help="最低评分")
@@ -41,7 +39,7 @@ def main():
     args = parse_args()
     config_path = Path(args.config)
     if not config_path.is_absolute():
-        config_path = Path(__file__).parent.parent / args.config
+        config_path = Path(__file__).resolve().parents[2] / args.config
     with open(config_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 

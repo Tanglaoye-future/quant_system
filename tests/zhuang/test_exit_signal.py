@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from zhuang_system.signals.exit import check_exit_signal
+from quant_system.strategies.zhuang.signals.exit import check_exit_signal
 
 
 def _make_position_df(n: int, entry_price: float = 10.0, drift: float = 0.0) -> pd.DataFrame:

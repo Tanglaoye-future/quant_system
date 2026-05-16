@@ -13,20 +13,19 @@ import sys
 from pathlib import Path
 
 # 把项目根目录加入 sys.path
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pandas as pd
 import yaml
 
-from zhuang_system.data.loader import ZhuangDataLoader
-from zhuang_system.engine.backtest import ZhuangBacktester
+from quant_system.strategies.zhuang.data.loader import ZhuangDataLoader
+from quant_system.strategies.zhuang.engine.backtest import ZhuangBacktester
 
 
 def parse_args():
     p = argparse.ArgumentParser(description="庄股策略回测")
     p.add_argument("--start", required=True, help="开始日期 yyyy-mm-dd")
     p.add_argument("--end", required=True, help="结束日期 yyyy-mm-dd")
-    p.add_argument("--config", default="config.yaml", help="配置文件路径")
+    p.add_argument("--config", default="config/zhuang.yaml", help="配置文件路径")
     p.add_argument("--universe", nargs="*", default=None, help="指定 universe 股票代码列表")
     p.add_argument("--universe-file", default=None, help="从 CSV 文件读取 universe（含 code 列）")
     p.add_argument("--sample", type=int, default=None, help="随机抽样 N 只（配合 --universe-file）")
@@ -40,7 +39,7 @@ def main():
 
     config_path = Path(args.config)
     if not config_path.is_absolute():
-        config_path = Path(__file__).parent.parent / args.config
+        config_path = Path(__file__).resolve().parents[2] / args.config
     with open(config_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
@@ -49,7 +48,7 @@ def main():
     if universe is None and args.universe_file:
         uf = Path(args.universe_file)
         if not uf.is_absolute():
-            uf = Path(__file__).parent.parent / uf
+            uf = Path(__file__).resolve().parents[2] / uf
         df_u = pd.read_csv(uf, dtype={"code": str})
         universe = df_u["code"].str.zfill(6).tolist()
         if args.sample and args.sample < len(universe):

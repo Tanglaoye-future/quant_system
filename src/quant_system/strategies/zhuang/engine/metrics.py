@@ -6,7 +6,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from zhuang_system.engine.position import ClosedTrade
+from quant_system.strategies.zhuang.engine.position import ClosedTrade
 
 
 def compute_metrics(

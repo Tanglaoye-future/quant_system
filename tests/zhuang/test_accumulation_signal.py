@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from zhuang_system.signals.accumulation import (
+from quant_system.strategies.zhuang.signals.accumulation import (
     accumulation_score,
     accumulation_score_detail,
     _ma_convergence_score,

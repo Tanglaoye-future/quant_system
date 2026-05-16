@@ -16,7 +16,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from zhuang_system.signals.accumulation import accumulation_score
+from quant_system.strategies.zhuang.signals.accumulation import accumulation_score
 
 
 @dataclass

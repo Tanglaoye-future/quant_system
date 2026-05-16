@@ -17,12 +17,12 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from zhuang_system.data.loader import ZhuangDataLoader
-from zhuang_system.engine.metrics import compute_metrics
-from zhuang_system.engine.position import ClosedTrade, Position
-from zhuang_system.signals.accumulation import accumulation_score
-from zhuang_system.signals.entry import BuySignal, check_entry_signal
-from zhuang_system.signals.exit import check_exit_signal
+from quant_system.strategies.zhuang.data.loader import ZhuangDataLoader
+from quant_system.strategies.zhuang.engine.metrics import compute_metrics
+from quant_system.strategies.zhuang.engine.position import ClosedTrade, Position
+from quant_system.strategies.zhuang.signals.accumulation import accumulation_score
+from quant_system.strategies.zhuang.signals.entry import BuySignal, check_entry_signal
+from quant_system.strategies.zhuang.signals.exit import check_exit_signal
 
 
 class ZhuangBacktester:
