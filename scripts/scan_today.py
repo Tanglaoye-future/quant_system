@@ -9,6 +9,7 @@
   python scripts/scan_today.py --top 20 --min-score 55
 """
 import argparse
+import json
 import sys
 from datetime import date
 from pathlib import Path
@@ -21,6 +22,9 @@ import pandas as pd
 from zhuang_system.data.loader import ZhuangDataLoader
 from zhuang_system.signals.accumulation import accumulation_score_detail
 from zhuang_system.signals.entry import check_entry_signal
+
+# quant_system/report/data/ — 相对于 zhuang_system/ 的兄弟目录
+_REPORT_DATA = Path(__file__).resolve().parent.parent.parent / "quant_system" / "report" / "data"
 
 
 def parse_args():
@@ -70,6 +74,27 @@ def main():
     out_path.parent.mkdir(parents=True, exist_ok=True)
     df_out.to_csv(out_path, index=False)
     print(f"\n已保存 → {out_path}")
+
+    # ── 输出报告 JSON ────────────────────────────────────────────────────────
+    top15 = df_out.head(15).to_dict(orient="records")
+    # 检查市场趋势（从 config 读取，实际判断在 backtest 引擎；这里输出静态布尔）
+    market_trend_ok = None  # scan_today 不运行 backtest engine，设为 None 表示未知
+    report_payload = {
+        "date": args.date,
+        "universe_size": len(universe),
+        "candidates_count": len(df_out),
+        "market_trend": market_trend_ok,
+        "top_candidates": [
+            {k: (float(v) if hasattr(v, "item") else v) for k, v in row.items()}
+            for row in top15
+        ],
+    }
+    _REPORT_DATA.mkdir(parents=True, exist_ok=True)
+    (_REPORT_DATA / "zhuang.json").write_text(
+        json.dumps(report_payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    print(f"[report] zhuang.json → {_REPORT_DATA / 'zhuang.json'}")
+
     loader._logout()
 
 

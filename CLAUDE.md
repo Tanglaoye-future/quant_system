@@ -40,25 +40,33 @@ A股小盘庄股跟庄策略。识别**吃货期**（主力积累阶段），在
 | 最大回撤 | ≤ 30% |
 | 胜率 | ≥ 40% |
 
-## 当前基线（v5，2022-2024）
+## Session 启动
 
-Sharpe **0.97** | 年化 **+5.7%** | 回撤 **-5.5%** | 胜率 **41.1%** | 盈亏比 **2.97** | 90笔
+**每次会话开始时，自动读取 `memory/` 下所有文件。**
+
+## 当前基线（v6 L1-E，2020-2026）
+
+Sharpe **1.35** | 年化 **+6.2%** | 回撤 **-3.8%** | 胜率 **50.3%** | 盈亏比 **2.89** | 141笔
+
+参数改动（vs v5）：
+- `entry_price_position_min`: 0.5 → **0.4**
+- `accumulation_score_entry`: 65 → **70**
 
 ## 关键参数（config.yaml strategy 段）
 
 ```yaml
-accumulation_score_entry: 65     # Phase-A 入场门槛
+accumulation_score_entry: 70     # Phase-A 入场门槛 (v6: 65→70)
 max_hold_days: 15                # 基础最长持仓
 extend_hold_days: 25             # 浮盈≥5%时延长
 extend_profit_pct: 0.05
-stop_loss_atr_mult: 2.0          # ATR止损倍数
-max_stop_loss_pct: 0.06          # 单笔最大止损6%上限
-momentum_stop_pct: 0.05          # 持仓≥3日跌5%提前离场
-distribution_turnover_thresh: 8.0  # 单位%，不是小数！
+entry_price_position_min: 0.4    # v6: 0.5→0.4 放宽位置过滤
+stop_loss_atr_mult: 2.0
+max_stop_loss_pct: 0.06
+momentum_stop_pct: 0.05
+distribution_turnover_thresh: 8.0
 market_trend_filter: true
-market_trend_index: sh.000905    # 中证500（小盘股基准）
+market_trend_index: sh.000905
 market_trend_ma: 60
-# 过滤条件：CSI500 close>MA60 且 MA20>MA60（金叉）
 ```
 
 ## 反模式（禁止）

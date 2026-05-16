@@ -24,8 +24,9 @@ strategy:
   position_max_count: 6                  # 同时持仓上限
 
   # 吃货期积分阈值
-  accumulation_score_entry: 65           # score >= 65（高质量信号，市场过滤已挡熊市）
+  accumulation_score_entry: 70           # L1-E: 65→70，score >= 70（放宽位置后收紧score保证质量）
   accumulation_score_confirm: 75         # score >= 75 才可加仓确认
+  entry_price_position_min: 0.4          # L1-E: 价格在近20d区间下0.4段即入场（0.5→0.4放宽）
 
   # 市场趋势过滤（熊市不入场）
   market_trend_filter: true              # 开启：指数MA60以上才允许入场

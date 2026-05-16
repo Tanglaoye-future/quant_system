@@ -5,5 +5,7 @@ data/cache/
 data/prices/
 data/backtest/
 data/scan_*.csv
+data/backtest/
+logs/
 *.egg-info/
 .DS_Store

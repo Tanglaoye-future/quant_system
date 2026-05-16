@@ -39,6 +39,7 @@ def check_entry_signal(
     volume_spike_ratio: float = 2.0,
     phase: str = "A",
     acc_weights: dict[str, float] | None = None,
+    price_position_min: float = 0.5,
 ) -> Optional[BuySignal]:
     """
     检查单只股票在 asof_date 是否触发入场信号.
@@ -82,13 +83,13 @@ def check_entry_signal(
         # Phase-A：评分达阈值且价格处于20日区间上半段（P1：接近突破点才入场）
         if acc < score_threshold:
             return None
-        # 价格位置确认：close在近20日high-low区间的上50%才考虑入场
-        # 原理：吃货末期主力托价，价格会自然上移到区间上半段
+        # 价格位置确认：close 在近20日 high-low 区间的上 (1 - price_position_min) 段才考虑入场
+        # price_position_min=0.5 → 上半段；0.66 → 上 1/3 段；越高越严格
         recent20 = df.iloc[-20:]
         r_high = float(recent20["high"].astype(float).max())
         r_low = float(recent20["low"].astype(float).min())
         r_range = r_high - r_low
-        if r_range > 0 and close < r_low + r_range * 0.5:
+        if r_range > 0 and close < r_low + r_range * price_position_min:
             return None   # 价格仍在区间下半段，尚未到入场时机
         return BuySignal(
             code=code,

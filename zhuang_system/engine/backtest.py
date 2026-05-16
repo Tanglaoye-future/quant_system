@@ -52,6 +52,17 @@ class ZhuangBacktester:
         self.dist_turnover_thresh = float(strat.get("distribution_turnover_thresh", 8.0))
         self.extend_hold_days = int(strat.get("extend_hold_days", 25))
         self.extend_profit_pct = float(strat.get("extend_profit_pct", 0.05))
+        self.entry_price_position_min = float(strat.get("entry_price_position_min", 0.5))
+        # L2: 相对强度过滤（个股 20d 超额收益 vs 基准）。None=关闭
+        rs_min = strat.get("entry_relative_strength_min", None)
+        self.entry_rs_min: float | None = (
+            float(rs_min) if rs_min is not None else None
+        )
+        # L3: 基准波动 regime 过滤。vol_regime_filter=true 时启用
+        self.vol_regime_filter = bool(strat.get("vol_regime_filter", False))
+        self.vol_regime_lookback = int(strat.get("vol_regime_lookback", 20))
+        self.vol_regime_window = int(strat.get("vol_regime_window", 252))
+        self.vol_regime_pct_max = float(strat.get("vol_regime_pct_max", 0.80))
 
         # 市场趋势过滤
         self.market_trend_filter = bool(strat.get("market_trend_filter", False))
@@ -87,31 +98,51 @@ class ZhuangBacktester:
         if verbose:
             print(f"[backtest] universe size={len(universe)}", flush=True)
 
-        # 加载基准指数（用于市场趋势过滤）
+        # 加载基准指数（用于市场趋势过滤 + L2 相对强度 + L3 vol regime）
         benchmark_ma: dict[str, bool] = {}   # date → 是否处于上升趋势
-        if self.market_trend_filter:
+        bench_close: dict[str, float] = {}   # date → close（L2 用）
+        bench_vol_high: dict[str, bool] = {} # date → 是否处于高 vol regime（L3 用）
+        need_bench = (
+            self.market_trend_filter
+            or self.entry_rs_min is not None
+            or self.vol_regime_filter
+        )
+        if need_bench:
             idx_code = self.market_trend_index.split(".")[-1]   # "000905"
             if verbose:
-                print(f"[backtest] 加载基准指数 {self.market_trend_index} 计算MA{self.market_trend_ma}...", flush=True)
-            # 多取60天历史（MA计算需要）
-            idx_start = (pd.Timestamp(start) - pd.Timedelta(days=120)).strftime("%Y-%m-%d")
+                print(f"[backtest] 加载基准指数 {self.market_trend_index} 计算 MA{self.market_trend_ma}/RS/Vol regime...", flush=True)
+            # 多取一年历史（vol regime percentile 需要 252 天）
+            idx_start = (pd.Timestamp(start) - pd.Timedelta(days=420)).strftime("%Y-%m-%d")
             idx_df = self.loader.get_daily(idx_code, idx_start, end)
             if not idx_df.empty:
                 idx_df = idx_df.sort_values("date").reset_index(drop=True)
                 idx_df["ma60"] = idx_df["close"].rolling(self.market_trend_ma).mean()
                 idx_df["ma20"] = idx_df["close"].rolling(20).mean()
+                # L3 vol regime：基准 N 日收益标准差的滚动 percentile
+                idx_df["ret"] = idx_df["close"].pct_change()
+                idx_df["realized_vol"] = idx_df["ret"].rolling(self.vol_regime_lookback).std()
+                idx_df["vol_rank"] = idx_df["realized_vol"].rolling(
+                    self.vol_regime_window, min_periods=60
+                ).rank(pct=True)
                 for _, row in idx_df.iterrows():
                     d = str(row["date"])[:10]
                     if d >= start:
                         ma60 = row["ma60"]
                         ma20 = row["ma20"]
                         close_idx = float(row["close"])
-                        # P1升级：要求 close>MA60 且 MA20>MA60（金叉态势）
-                        benchmark_ma[d] = (
-                            not pd.isna(ma60) and not pd.isna(ma20)
-                            and close_idx > float(ma60)
-                            and float(ma20) > float(ma60)
-                        )
+                        bench_close[d] = close_idx
+                        if self.market_trend_filter:
+                            benchmark_ma[d] = (
+                                not pd.isna(ma60) and not pd.isna(ma20)
+                                and close_idx > float(ma60)
+                                and float(ma20) > float(ma60)
+                            )
+                        if self.vol_regime_filter:
+                            vol_rank = row["vol_rank"]
+                            bench_vol_high[d] = (
+                                not pd.isna(vol_rank)
+                                and float(vol_rank) > self.vol_regime_pct_max
+                            )
 
         # 预加载所有股票日线
         if verbose:
@@ -242,6 +273,20 @@ class ZhuangBacktester:
                 if not benchmark_ma.get(date, True):
                     continue
 
+            # L3: vol regime gate — 基准 vol percentile > 阈值时停手
+            if self.vol_regime_filter and bench_vol_high.get(date, False):
+                continue
+
+            # L2: 计算当日基准 20d 收益（供下方 relative strength 过滤）
+            bench_20d_ret: float | None = None
+            if self.entry_rs_min is not None and bench_close:
+                bench_dates_sorted = sorted(d for d in bench_close if d <= date)
+                if len(bench_dates_sorted) >= 21:
+                    p_now = bench_close[bench_dates_sorted[-1]]
+                    p_20 = bench_close[bench_dates_sorted[-21]]
+                    if p_20 > 0:
+                        bench_20d_ret = (p_now - p_20) / p_20
+
             already_in = set(positions.keys()) | {c for c, _ in pending_exits}
             candidates: list[BuySignal] = []
             for code in universe:
@@ -251,6 +296,16 @@ class ZhuangBacktester:
                     continue
                 full_df = px_cache[code]
                 df_up_to = full_df[full_df["date"].astype(str).str[:10] <= date]
+
+                # L2: 相对强度过滤 — 个股 20d 超额收益 vs 基准 ≥ 阈值
+                if self.entry_rs_min is not None and bench_20d_ret is not None and len(df_up_to) >= 21:
+                    p_now = float(df_up_to["close"].iloc[-1])
+                    p_20 = float(df_up_to["close"].iloc[-21])
+                    if p_20 > 0:
+                        stock_20d_ret = (p_now - p_20) / p_20
+                        if (stock_20d_ret - bench_20d_ret) < self.entry_rs_min:
+                            continue
+
                 sig = check_entry_signal(
                     code=code,
                     df=df_up_to,
@@ -259,6 +314,7 @@ class ZhuangBacktester:
                     volume_spike_ratio=self.vol_spike_ratio,
                     phase="A",
                     acc_weights=self.acc_weights,
+                    price_position_min=self.entry_price_position_min,
                 )
                 if sig is not None:
                     candidates.append(sig)
