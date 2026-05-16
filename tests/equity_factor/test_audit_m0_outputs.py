@@ -56,9 +56,9 @@ def _minimal_run_dir(tmp: Path) -> Path:
 
 def test_audit_m0_passes_on_minimal_dir(tmp_path: Path) -> None:
     run_dir = _minimal_run_dir(tmp_path)
-    repo = Path(__file__).resolve().parents[1]
+    repo = Path(__file__).resolve().parents[2]
     r = subprocess.run(
-        [sys.executable, str(repo / "scripts" / "audit_m0_outputs.py"), str(run_dir)],
+        [sys.executable, str(repo / "scripts" / "backtest" / "audit_m0_outputs.py"), str(run_dir)],
         capture_output=True,
         text=True,
         cwd=str(repo),
