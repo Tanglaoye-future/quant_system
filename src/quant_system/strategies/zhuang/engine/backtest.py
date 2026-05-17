@@ -80,6 +80,7 @@ class ZhuangBacktester:
         end: str,
         universe: Optional[list[str]] = None,
         verbose: bool = True,
+        px_cache: Optional[dict] = None,
     ) -> dict:
         """
         运行回测，返回绩效指标字典.
@@ -90,6 +91,9 @@ class ZhuangBacktester:
             yyyy-mm-dd
         universe : list[str] | None
             股票代码列表；None 时调用 loader.get_universe(start)
+        px_cache : dict | None
+            预加载的 {code: DataFrame} 行情缓存。L4 sweep 多次回测时可复用,
+            避免重复 disk IO（每次 4min × N 次实验）。
         """
         if universe is None:
             if verbose:
@@ -144,16 +148,20 @@ class ZhuangBacktester:
                                 and float(vol_rank) > self.vol_regime_pct_max
                             )
 
-        # 预加载所有股票日线
-        if verbose:
-            print(f"[backtest] 预加载行情 {start}–{end}...", flush=True)
-        px_cache: dict[str, pd.DataFrame] = {}
-        for i, code in enumerate(universe, 1):
-            df = self.loader.get_daily(code, start, end)
-            if not df.empty:
-                px_cache[code] = df
-            if verbose and i % 100 == 0:
-                print(f"  loaded {i}/{len(universe)}", flush=True)
+        # 预加载所有股票日线（如调用方提供了 px_cache 则复用）
+        if px_cache is None:
+            if verbose:
+                print(f"[backtest] 预加载行情 {start}–{end}...", flush=True)
+            px_cache = {}
+            for i, code in enumerate(universe, 1):
+                df = self.loader.get_daily(code, start, end)
+                if not df.empty:
+                    px_cache[code] = df
+                if verbose and i % 100 == 0:
+                    print(f"  loaded {i}/{len(universe)}", flush=True)
+        else:
+            if verbose:
+                print(f"[backtest] 复用预加载 px_cache: {len(px_cache)} 只", flush=True)
 
         # 生成交易日历（取所有股票日线的日期并集）
         all_dates: list[str] = sorted(
