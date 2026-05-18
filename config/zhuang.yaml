@@ -20,8 +20,15 @@ strategy:
   max_hold_days: 10                      # L4-combo4: 15→10，庄股拉升周期短，缩短窗口避免反向震荡
 
   # 仓位管理
-  single_position_pct_max: 0.05          # 单票最大仓位 5%（庄股风险高，严格控仓）
+  single_position_pct_max: 0.05          # fallback 等权值（L5 启用 tiered 后此值仅在 mode=fixed 时使用）
   position_max_count: 6                  # 同时持仓上限
+
+  # L5-B: score 分级仓位（取代等权 5%）
+  # score >=80 (高分): 8% / 75-80 (中): 5% / 70-75 (低): 3%
+  # 6y 验证: Sharpe 1.627→1.806 (+0.18) / 收益 +48%→+76% / DD -3.1%→-4.9%
+  position_size_mode: tiered
+  tiered_score_thresholds: [75.0, 80.0]
+  tiered_position_pcts: [0.03, 0.05, 0.08]
 
   # 吃货期积分阈值
   accumulation_score_entry: 70           # L1-E: 65→70，score >= 70（放宽位置后收紧score保证质量）

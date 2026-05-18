@@ -69,8 +69,47 @@ class ZhuangBacktester:
         self.market_trend_index = strat.get("market_trend_index", "sh.000905")
         self.market_trend_ma = int(strat.get("market_trend_ma", 60))
 
+        # L5: score-weighted position sizing
+        # mode: 'fixed' (默认, 全部 single_pos_pct_max) |
+        #       'tiered' (按 score 分档) | 'linear' (score 线性映射)
+        self.position_size_mode = str(strat.get("position_size_mode", "fixed"))
+        # tiered: thresholds=[75,80], pcts=[low, mid, high]
+        self.tiered_thresholds = list(strat.get("tiered_score_thresholds", [75.0, 80.0]))
+        self.tiered_pcts = list(strat.get("tiered_position_pcts", [0.04, 0.05, 0.06]))
+        # linear: pct = lin_min + (score - score_min)/(score_max-score_min) * (lin_max-lin_min)
+        self.linear_score_min = float(strat.get("linear_score_min", 70.0))
+        self.linear_score_max = float(strat.get("linear_score_max", 85.0))
+        self.linear_position_min = float(strat.get("linear_position_min", 0.04))
+        self.linear_position_max = float(strat.get("linear_position_max", 0.06))
+
         acc_w_cfg = config.get("accumulation_weights", {})
         self.acc_weights = acc_w_cfg if acc_w_cfg else None
+
+    # ── L5 仓位 sizing ────────────────────────────────────────────────────────
+
+    def _compute_position_pct(self, score: float) -> float:
+        """根据 score 与 position_size_mode 决定单票仓位占比."""
+        if self.position_size_mode == "tiered":
+            # tiered_thresholds=[t1,t2], tiered_pcts=[low, mid, high]
+            t = self.tiered_thresholds
+            p = self.tiered_pcts
+            if len(t) >= 2 and len(p) >= 3:
+                if score < t[0]:
+                    return float(p[0])
+                if score < t[1]:
+                    return float(p[1])
+                return float(p[2])
+            return self.single_pos_pct_max
+        if self.position_size_mode == "linear":
+            lo, hi = self.linear_score_min, self.linear_score_max
+            pmin, pmax = self.linear_position_min, self.linear_position_max
+            if hi <= lo:
+                return self.single_pos_pct_max
+            ratio = (float(score) - lo) / (hi - lo)
+            ratio = max(0.0, min(1.0, ratio))
+            return pmin + ratio * (pmax - pmin)
+        # fixed (默认): 全部用 single_position_pct_max
+        return self.single_pos_pct_max
 
     # ── 主入口 ────────────────────────────────────────────────────────────────
 
@@ -335,7 +374,8 @@ class ZhuangBacktester:
                 code = sig.code
                 # 入场价用当日收盘（回测近似；实盘改用次日开盘）
                 entry_px = sig.price * (1 + self.slippage)
-                max_value = self.initial_capital * self.single_pos_pct_max
+                pos_pct = self._compute_position_pct(sig.accumulation_score)
+                max_value = self.initial_capital * pos_pct
                 raw_size = int(max_value / entry_px / 100) * 100
                 if raw_size < 100:
                     continue

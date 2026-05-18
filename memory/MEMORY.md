@@ -17,3 +17,4 @@
 - [Zhuang L4 出场规则实验 2026-05](zhuang_l4_experiments_2026-05.md) — 单变量+组合+6y 全跑完；combo4 (mh10+tp10+atr15+dt60+ms03) 6y Sharpe 1.39→1.63 已落地 config.yaml
 - [DuckDB 数据层迁移 2026-05](duckdb_migration_2026-05.md) — 三策略统一日线存储到 data/quant.duckdb；loader DB-first + CSV fallback；L4-combo4 验证零回归
 - [Zhuang L4-combo4 后 6-asset overlay 2026-05](zhuang_overlay_combo4_2026-05.md) — 新 zhuang 单资产 Sharpe 2.35；25% 权重把组合 Sharpe 1.91→2.21，DD -7.6%→-5.1%；推荐实盘 zhuang 20-25%
+- [Zhuang L5 仓位 sizing 2026-05](zhuang_l5_experiments_2026-05.md) — score 分级仓位 (3%/5%/8%) 6y Sharpe 1.63→1.81，收益 +48%→+76%；已落地 config
