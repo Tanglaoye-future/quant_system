@@ -112,6 +112,34 @@ class TimingConfig:
     # m2_breakout_mode=True 时，要求收盘价 > MA60（趋势确认，替代金叉）
     m2_breakout_ma_trend: bool = True
 
+    # --- 价格位置过滤（L6 防追高）---
+    # 拒绝在价格区间高位入场。price_position = (close - min_N) / (max_N - min_N).
+    # =1 表示创 N 日新高位置；=0 表示 N 日最低。
+    # entry_price_position_max=1.0 → 不过滤（默认，兼容旧行为）。
+    # 实盘建议 0.6-0.8（避开顶部 20-40%）；与 zhuang 的 entry_price_position_min 互补。
+    entry_price_position_max: float = 1.0
+    entry_price_position_lookback: int = 20
+
+    # --- Pullback 模式（L7 低位识别，与突破/金叉模式互斥）---
+    # 主动识别"大趋势在 + 回调到 MA + 量缩 + RSI 反弹"的低位机会
+    # 与 m2_breakout_mode 互斥；同时启用以 m2_pullback_mode 优先
+    m2_pullback_mode: bool = False
+    # 大趋势过滤：MA60 必须在 MA(pullback_long_trend_ma) 之上
+    pullback_require_long_trend: bool = True
+    pullback_long_trend_ma: int = 200
+    # 价格位置：在近 N 日区间下半段
+    pullback_price_position_max: float = 0.5
+    pullback_price_position_lookback: int = 20
+    # RSI 反弹带（低于追高模式的 50-70）
+    pullback_rsi_low: float = 35.0
+    pullback_rsi_high: float = 55.0
+    # 量缩：当日量 <= 近 N 日均量 × ratio
+    pullback_vol_max_ratio: float = 1.0
+    pullback_vol_lookback: int = 5
+    # 企稳信号：近 N 日内至少 M 个收阳
+    pullback_green_bars_min: int = 2
+    pullback_green_bars_lookback: int = 5
+
 
 def timing_config_from_yaml_node(node: dict | None) -> TimingConfig:
     """从 config.yaml `strategy.timing` 映射到 TimingConfig；未知键忽略。"""
@@ -263,6 +291,116 @@ def _no_entry(reason: str, price, stop, target) -> dict:
     }
 
 
+def _pullback_entry_check(
+    df: pd.DataFrame,
+    cfg: TimingConfig,
+    a: float | None,
+    close: float,
+    reasons: list[str],
+) -> dict:
+    """
+    L7 Pullback 模式：主动识别"大趋势在 + 回调到 MA + 量缩 + RSI 反弹"低位机会.
+
+    入场条件全部需通过:
+      1. 大趋势 OK: MA60 > MA(pullback_long_trend_ma=200)  (require_long_trend=True)
+      2. 价格位置: (close - low_N) / (high_N - low_N) <= pullback_price_position_max (0.5)
+      3. RSI 反弹带: pullback_rsi_low <= RSI <= pullback_rsi_high  (35-55)
+      4. 量缩: 当日 volume <= avg(volume, N) × pullback_vol_max_ratio (1.0×5d)
+      5. 企稳: 近 N 日内至少 M 个收阳 (2/5)
+    """
+    today = df.iloc[-1]
+
+    # 1. 大趋势 OK：MA60 > MA200
+    if cfg.pullback_require_long_trend:
+        n_long = int(cfg.pullback_long_trend_ma)
+        ma_long_trend = sma(df["close"], n_long).iloc[-1]
+        ma60 = float(today["ma_long"]) if pd.notna(today["ma_long"]) else None
+        if pd.isna(ma_long_trend) or ma60 is None:
+            return _no_entry(f"大趋势 X: MA{n_long} 不足", close, None, None)
+        if not (ma60 > float(ma_long_trend)):
+            return _no_entry(
+                f"大趋势 X: MA{cfg.ma_long}({ma60:.2f}) <= MA{n_long}({float(ma_long_trend):.2f})",
+                close, None, None,
+            )
+        reasons.append(f"大趋势 OK: MA{cfg.ma_long}({ma60:.2f}) > MA{n_long}({float(ma_long_trend):.2f})")
+
+    # 2. 价格位置低：近 N 日下半段
+    lb = max(2, int(cfg.pullback_price_position_lookback))
+    if len(df) < lb:
+        return _no_entry(f"价格位置 X: 历史不足 {lb} 日", close, None, None)
+    tail = df.iloc[-lb:]
+    lo = float(pd.to_numeric(tail["low"], errors="coerce").min())
+    hi = float(pd.to_numeric(tail["high"], errors="coerce").max())
+    if hi <= lo:
+        return _no_entry("价格位置 X: 区间退化", close, None, None)
+    pos = (close - lo) / (hi - lo)
+    if pos > cfg.pullback_price_position_max:
+        return _no_entry(
+            f"价格位置 X: pos={pos:.2f} > {cfg.pullback_price_position_max:.2f} "
+            f"(近{lb}日 [{lo:.2f}, {hi:.2f}])",
+            close, None, None,
+        )
+    reasons.append(f"价格位置 OK: pos={pos:.2f} <= {cfg.pullback_price_position_max:.2f}")
+
+    # 3. RSI 反弹带
+    r = today["rsi"]
+    if pd.isna(r) or not (cfg.pullback_rsi_low <= float(r) <= cfg.pullback_rsi_high):
+        return _no_entry(
+            f"RSI X: {r:.1f} 不在反弹带 [{cfg.pullback_rsi_low}, {cfg.pullback_rsi_high}]",
+            close, None, None,
+        )
+    reasons.append(f"RSI OK: {float(r):.1f} 在反弹带")
+
+    # 4. 量缩
+    vlb = max(2, int(cfg.pullback_vol_lookback))
+    if len(df) < vlb + 1:
+        return _no_entry(f"量缩 X: 历史不足 {vlb} 日", close, None, None)
+    vol_tail = df["volume"].iloc[-(vlb + 1):-1]  # 最近 N 日 (不含今日)
+    avg_vol = float(pd.to_numeric(vol_tail, errors="coerce").mean())
+    vol_today = float(today["volume"]) if pd.notna(today["volume"]) else 0.0
+    if avg_vol <= 0:
+        return _no_entry("量缩 X: 均量无效", close, None, None)
+    vol_ratio = vol_today / avg_vol
+    if vol_ratio > cfg.pullback_vol_max_ratio:
+        return _no_entry(
+            f"量缩 X: 量比={vol_ratio:.2f} > {cfg.pullback_vol_max_ratio:.2f}",
+            close, None, None,
+        )
+    reasons.append(f"量缩 OK: 量比={vol_ratio:.2f}")
+
+    # 5. 企稳信号：近 N 日内 >= M 个收阳
+    gbb = max(1, int(cfg.pullback_green_bars_lookback))
+    if len(df) < gbb:
+        return _no_entry(f"企稳 X: 历史不足 {gbb} 日", close, None, None)
+    recent = df.iloc[-gbb:]
+    green_bars = int(((recent["close"] >= recent["open"]) & recent["close"].notna()).sum())
+    if green_bars < int(cfg.pullback_green_bars_min):
+        return _no_entry(
+            f"企稳 X: 近{gbb}日收阳数={green_bars} < {cfg.pullback_green_bars_min}",
+            close, None, None,
+        )
+    reasons.append(f"企稳 OK: 近{gbb}日收阳数={green_bars} >= {cfg.pullback_green_bars_min}")
+
+    if a is None:
+        return _no_entry("ATR 缺失", close, None, None)
+
+    # 通过所有 pullback 检查 → 信号成立
+    stop = close - cfg.atr_stop_mult * a
+    risk_pct = (close - stop) / close if close else 0.0
+    if risk_pct > cfg.max_risk_pct:
+        return _no_entry(
+            f"风险 X: 单笔风险 {risk_pct*100:.1f}% > {cfg.max_risk_pct*100:.0f}%",
+            close, None, None,
+        )
+    return {
+        "signal": True,
+        "reasons": reasons,
+        "entry_price": close,
+        "stop_loss": stop,
+        "take_profit": close + cfg.atr_target_mult * a,
+    }
+
+
 def entry_signal_from_enriched(
     enriched: pd.DataFrame,
     cfg: Optional[TimingConfig] = None,
@@ -273,6 +411,8 @@ def entry_signal_from_enriched(
     min_rows = cfg.ma_long + 5
     if cfg.m3_mtf_rsi_enabled:
         min_rows = max(min_rows, int(cfg.m3_mtf_rsi_period) + 3)
+    if cfg.m2_pullback_mode and cfg.pullback_require_long_trend:
+        min_rows = max(min_rows, int(cfg.pullback_long_trend_ma) + 5)
     if len(enriched) < min_rows:
         return _no_entry("数据不足", None, None, None)
     df = enriched
@@ -280,6 +420,10 @@ def entry_signal_from_enriched(
     close = float(today["close"])
     a = float(today["atr"]) if pd.notna(today["atr"]) else None
     reasons: list[str] = []
+
+    # ── Pullback 模式（L7 低位识别）— 与突破/金叉模式互斥 ────────────────────
+    if cfg.m2_pullback_mode:
+        return _pullback_entry_check(df, cfg, a, close, reasons)
 
     # ── Level 3 突破模式 / 原金叉模式 分支 ──────────────────────────────────
     if cfg.m2_breakout_mode:
@@ -390,6 +534,24 @@ def entry_signal_from_enriched(
                     f"追高 X: close 相对 MA{cfg.ma_short} 偏离 {chase*100:.1f}% > {cfg.chase_max*100:.0f}%",
                     close, None, None,
                 )
+
+    # 价格位置过滤（L6 防追高）：拒绝价格在近 N 日区间高位入场
+    # entry_price_position_max < 1.0 时启用；默认 1.0 = 不过滤
+    if cfg.entry_price_position_max < 1.0:
+        lb = max(2, int(cfg.entry_price_position_lookback))
+        if len(df) >= lb:
+            tail = df.iloc[-lb:]
+            lo = float(pd.to_numeric(tail["low"], errors="coerce").min())
+            hi = float(pd.to_numeric(tail["high"], errors="coerce").max())
+            if hi > lo:
+                pos = (close - lo) / (hi - lo)
+                if pos > cfg.entry_price_position_max:
+                    return _no_entry(
+                        f"价格位置 X: pos={pos:.2f} > {cfg.entry_price_position_max:.2f} "
+                        f"(近{lb}日区间 [{lo:.2f}, {hi:.2f}])",
+                        close, None, None,
+                    )
+                reasons.append(f"价格位置 OK: pos={pos:.2f} <= {cfg.entry_price_position_max:.2f}")
 
     stop = close - cfg.atr_stop_mult * a
     risk_pct = (close - stop) / close if close else 0.0
