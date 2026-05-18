@@ -14,4 +14,4 @@
 - [Zhuang 叠加分析 2026-05](zhuang_overlay_2026-05.md) — 外部 zhuang_system 与 5-asset 组合相关性近零/负，10% 配比 Sharpe 1.30 → 1.35、DD -7.94% → -7.01%
 - [Zhuang 策略优化记录 2026-05](zhuang_optimization_2026-05.md) — zhuang 子策略 v1→L1-E 迭代，Sharpe 0.944→1.346；评分阈值与价格位置过滤的组合最优
 - [Zhuang L1/L2/L3 实验明细 2026-05](zhuang_l1_l2_l3_experiments_2026-05.md) — entry filter / accumulation weight / exit rule 三层实验全记录
-- [Zhuang L4 出场规则实验 2026-05](zhuang_l4_experiments_2026-05.md) — L1-E 后 13 实验全完；6 收紧全胜 / 6 放松全负；最强 max_hold 15→10 Sharpe 1.43→1.62
+- [Zhuang L4 出场规则实验 2026-05](zhuang_l4_experiments_2026-05.md) — 单变量+组合+6y 全跑完；combo4 (mh10+tp10+atr15+dt60+ms03) 6y Sharpe 1.39→1.63 已落地 config.yaml

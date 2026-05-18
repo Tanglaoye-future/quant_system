@@ -17,7 +17,7 @@ data:
 
 strategy:
   # 最大持仓期（交易日）
-  max_hold_days: 15                      # 延长至15日：吃货期结束到拉升需要时间
+  max_hold_days: 10                      # L4-combo4: 15→10，庄股拉升周期短，缩短窗口避免反向震荡
 
   # 仓位管理
   single_position_pct_max: 0.05          # 单票最大仓位 5%（庄股风险高，严格控仓）
@@ -39,13 +39,13 @@ strategy:
   consolidation_range_pct: 0.08          # 横盘振幅上限
 
   # 出场参数
-  stop_loss_atr_mult: 2.0                # P0: ATR×3→2，收紧止损
-  max_stop_loss_pct: 0.06                # P0: 单笔最大止损上限6%（防止ATR过大导致止损过深）
-  momentum_stop_pct: 0.05                # P0: 持有≥3日从入场价下跌5%提前离场
-  take_profit_pct: 0.15                  # 止盈目标 = 入场价 × (1 + 15%)
-  distribution_turnover_thresh: 8.0      # 换手率 > 8%（BaoStock turn 单位是%）
-  extend_hold_days: 25                   # P3: 浮盈≥5%时最长持有延至25日
-  extend_profit_pct: 0.05                # P3: 触发延长的浮盈门槛
+  stop_loss_atr_mult: 1.5                # L4-combo4: 2.0→1.5 收紧 ATR 止损
+  max_stop_loss_pct: 0.06                # 单笔最大止损上限6%（防止ATR过大导致止损过深）
+  momentum_stop_pct: 0.03                # L4-combo4: 0.05→0.03 收紧动量早止
+  take_profit_pct: 0.10                  # L4-combo4: 0.15→0.10 庄股拉升 10-12% 后高位放量出货
+  distribution_turnover_thresh: 6.0      # L4-combo4: 8.0→6.0 提早识别派发信号
+  extend_hold_days: 25                   # 浮盈≥5%时最长持有延至25日
+  extend_profit_pct: 0.05                # 触发延长的浮盈门槛（max_hold=10下少触发）
 
 accumulation_weights:
   # 吃货期五维信号权重（总和须 = 1.0）
