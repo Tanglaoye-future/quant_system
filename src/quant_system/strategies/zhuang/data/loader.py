@@ -42,7 +42,7 @@ def _to_plain_code(bs_code: str) -> str:
 
 
 class ZhuangDataLoader:
-    """庄股策略专用数据加载器（BaoStock 版）."""
+    """庄股策略专用数据加载器（DuckDB 优先 + CSV/BaoStock fallback）."""
 
     def __init__(self, config: dict, refresh_days: int = 1) -> None:
         _require_bs()
@@ -54,6 +54,20 @@ class ZhuangDataLoader:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.daily_dir.mkdir(parents=True, exist_ok=True)
         self._bs_logged_in = False
+
+        # DuckDB 共享 store（lazy）；用 hot path 替代 CSV 读取。
+        # 配置 data.duckdb_path 控制位置；未配置默认 data/quant.duckdb。
+        self._duckdb_path = data_cfg.get("duckdb_path", "data/quant.duckdb")
+        self._store = None  # 延迟初始化
+
+    def _get_store(self):
+        if self._store is None:
+            from quant_system.data import DuckDBStore
+            try:
+                self._store = DuckDBStore(self._duckdb_path)
+            except ImportError:
+                self._store = False  # 标记不可用，避免重试
+        return self._store if self._store else None
 
     def _login(self) -> None:
         if not self._bs_logged_in:
@@ -235,19 +249,41 @@ class ZhuangDataLoader:
     # ── 日线行情 ───────────────────────────────────────────────────────────────
 
     def get_daily(self, code: str, start: str, end: str) -> pd.DataFrame:
-        """获取日线行情，带缓存. 返回 date/open/high/low/close/volume/turnover_rate 列."""
-        code = str(code).zfill(6)
-        csv_path = self.daily_dir / f"{code}_daily.csv"
+        """
+        获取日线行情. 返回 date/open/high/low/close/volume/turnover_rate 列.
 
+        优先级:
+          1. DuckDB (data/quant.duckdb) — 命中即返回, sub-ms 响应
+          2. data/prices/{code}_daily.csv — fallback (灾备)
+          3. BaoStock 远程拉取 — 缓存不存在时
+        """
+        code = str(code).zfill(6)
+
+        # 1. DuckDB hot path
+        store = self._get_store()
+        if store is not None and store.has_code("a_share", code):
+            df = store.get_daily("a_share", code, start, end)
+            if not df.empty:
+                return df.reset_index(drop=True)
+
+        # 2. CSV fallback
+        csv_path = self.daily_dir / f"{code}_daily.csv"
         if csv_path.exists() and self._cache_fresh(csv_path):
             df = pd.read_csv(csv_path, dtype={"date": str})
             df["date"] = pd.to_datetime(df["date"])
             mask = (df["date"] >= pd.to_datetime(start)) & (df["date"] <= pd.to_datetime(end))
             return df[mask].reset_index(drop=True)
 
+        # 3. BaoStock 远程
         df = self._fetch_daily(code)
         if df is not None and not df.empty:
             df.to_csv(csv_path, index=False)
+            # 同时写入 DuckDB 让下次更快
+            if store is not None:
+                try:
+                    store.insert_daily("a_share", code, df, replace=True)
+                except Exception:
+                    pass
             df["date"] = pd.to_datetime(df["date"])
             mask = (df["date"] >= pd.to_datetime(start)) & (df["date"] <= pd.to_datetime(end))
             return df[mask].reset_index(drop=True)

@@ -15,3 +15,4 @@
 - [Zhuang 策略优化记录 2026-05](zhuang_optimization_2026-05.md) — zhuang 子策略 v1→L1-E 迭代，Sharpe 0.944→1.346；评分阈值与价格位置过滤的组合最优
 - [Zhuang L1/L2/L3 实验明细 2026-05](zhuang_l1_l2_l3_experiments_2026-05.md) — entry filter / accumulation weight / exit rule 三层实验全记录
 - [Zhuang L4 出场规则实验 2026-05](zhuang_l4_experiments_2026-05.md) — 单变量+组合+6y 全跑完；combo4 (mh10+tp10+atr15+dt60+ms03) 6y Sharpe 1.39→1.63 已落地 config.yaml
+- [DuckDB 数据层迁移 2026-05](duckdb_migration_2026-05.md) — 三策略统一日线存储到 data/quant.duckdb；loader DB-first + CSV fallback；L4-combo4 验证零回归

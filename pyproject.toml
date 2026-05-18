@@ -19,6 +19,8 @@ dependencies = [
     "requests>=2.28",
     "yfinance>=0.2.36",
     "ib_insync>=0.9.86",
+    "baostock>=0.8.0",
+    "duckdb>=1.0",
 ]
 
 [project.optional-dependencies]

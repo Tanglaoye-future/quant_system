@@ -30,6 +30,7 @@ class DataLoader:
         price_adjust: str = "qfq",
         hang_seng_indexes: dict[str, Any] | None = None,
         us_market: dict[str, Any] | None = None,
+        duckdb_path: str = "data/quant.duckdb",
     ):
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -38,6 +39,21 @@ class DataLoader:
         self.price_adjust = price_adjust
         self._hsi_cfg: dict[str, Any] = hang_seng_indexes or {}
         self._us_cfg: dict[str, Any] = us_market or {}
+        self._duckdb_path = duckdb_path
+        self._store: Any = None  # lazy
+
+    def _get_store(self):
+        """DuckDB store (lazy). 不可用时返回 None, get_daily 自动 fallback."""
+        if self._store is False:
+            return None
+        if self._store is None:
+            try:
+                from quant_system.data import DuckDBStore
+                self._store = DuckDBStore(self._duckdb_path)
+            except ImportError:
+                self._store = False
+                return None
+        return self._store
 
     # ---------- universe ----------
 
@@ -103,11 +119,23 @@ class DataLoader:
         end: str | None = None,
     ) -> pd.DataFrame:
         """日线 OHLCV, 列: date, open, high, low, close, volume.
-        缓存命中且范围覆盖 start->end 时直接返回, 否则全量重拉."""
+        优先级: DuckDB → parquet 缓存 → akshare 远程."""
         end = end or datetime.now().strftime("%Y-%m-%d")
         cache = self.daily_cache_path(market, code)
         adjust_key = "qfq" if self.price_adjust == "qfq" else self.price_adjust
 
+        # 1. DuckDB hot path（仅 qfq；非 qfq 走原 parquet 缓存以避免 adjust 混淆）
+        if self.price_adjust == "qfq":
+            store = self._get_store()
+            if store is not None and store.has_code(market, code):
+                df = store.get_daily(market, code, start, end)
+                if not df.empty:
+                    # equity_factor 下游期望 date 为字符串
+                    df = df.copy()
+                    df["date"] = df["date"].dt.strftime("%Y-%m-%d")
+                    return df[["date", "open", "high", "low", "close", "volume"]]
+
+        # 2. parquet 缓存
         if cache.exists() and self._is_fresh(cache):
             df = pd.read_parquet(cache)
             if len(df) > 0:
@@ -171,6 +199,14 @@ class DataLoader:
 
         df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
         df.to_parquet(cache)
+        # 同步写 DuckDB（仅 qfq；非 qfq 不入 DB 防止 adjust 混淆）
+        if self.price_adjust == "qfq":
+            store = self._get_store()
+            if store is not None:
+                try:
+                    store.insert_daily(market, code, df, replace=True)
+                except Exception:
+                    pass  # DB 写入失败不影响 parquet 路径
         return df[(df["date"] >= start) & (df["date"] <= end)]
 
     # ---------- index daily (回测交易日历 + 基准) ----------
