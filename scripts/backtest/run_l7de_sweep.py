@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
 """
-equity_factor L7-B (Pullback Plan B) sweep.
+equity_factor L7-DE 务实 sweep.
 
-Plan B 三组增量过滤（基于 L7-A defaults 的 5 条基础检查 + 增量）:
-  B1: 强势 regime gate (HS300 > MA200 AND > MA60 AND 20d_dd > -5%)
-  B2: 反弹确认 (higher low + close > MA20)
-  B3: 相对强度 (个股 20d 跑赢指数)
+L7-A/B pullback 思路全部失败 (Plan B Sharpe -0.68 vs baseline 0.23 在 2022-2026).
+转向 Plan D+E：保留 baseline 追高入场，叠加防顶部入场 + 收紧出场.
 
-实验 (a_share HS300, 2020-2026):
-  baseline-current  : 当前追高 baseline (对照)
-  L7-B0-defaults    : 纯 pullback 默认 (control, 已知失败)
-  L7-B1-regime      : + 强势 regime gate
-  L7-B1B2-conf      : + 反弹确认
-  L7-B1B2B3-rs      : + 相对强度
+Plan D: entry_price_position_max=0.7 (拒绝近20日上 30% 区位入场)
+Plan E: 收紧出场参数 (类似 zhuang L4-combo4 经验)
+  - atr_stop_mult: 2.0 → 1.5
+  - atr_target_mult: 4.0 → 3.0
+  - max_hold_days: 60 → 40
 
-每实验 ~1.5-2.5h，共 ~10h. 用 2020-2026 (6y) 而非 2018-2026 节省时间.
+实验 (a_share HS300, 2022-2026, 4y):
+  baseline-current         : 当前 baseline (对照)
+  L7-D-pos07              : + entry_price_position_max=0.7
+  L7-E-tight-exits        : + atr_stop=1.5 + atr_target=3.0 + max_hold=40
+  L7-DE-combined          : D + E 叠加
+
+每实验 ~35min on 4y (3270 HS300 等), 共 ~2.5h.
 """
 from __future__ import annotations
 
@@ -44,23 +47,20 @@ END = "2026-05-04"
 MARKET = "a_share"
 
 
-# 共用 B0 defaults
-B0 = {
-    "m2_pullback_mode": True,
-    "pullback_price_position_max": 0.5,
-    "pullback_rsi_low": 35.0, "pullback_rsi_high": 55.0,
-    "pullback_vol_max_ratio": 1.0,
-    "pullback_require_long_trend": True,
+D = {"entry_price_position_max": 0.7}
+E = {
+    "atr_stop_mult": 1.5,
+    "atr_target_mult": 3.0,
+    "max_hold_days": 40,
 }
-B1 = {**B0, "pullback_b1_regime_strict": True}
-B1B2 = {**B1, "pullback_b2_reversal_required": True}
-B1B2B3 = {**B1B2, "pullback_b3_relative_strength_min": 0.0}  # 0% = 不输给指数
+DE = {**D, **E}
 
 
 EXPERIMENTS: list[tuple[str, dict]] = [
-    ("baseline-current",   {}),
-    ("L7-B1B2-conf",       B1B2),
-    ("L7-B1B2B3-rs",       B1B2B3),
+    ("baseline-current",  {}),
+    ("L7-D-pos07",        D),
+    ("L7-E-tight-exits",  E),
+    ("L7-DE-combined",    DE),
 ]
 
 
@@ -102,7 +102,7 @@ def run_one(tag: str, overrides: dict, base_raw: dict, market: str) -> dict:
         m4_cfg=m4_cfg,
     )
 
-    out_dir = ROOT / f"data/backtest/_l7b_{tag}"
+    out_dir = ROOT / f"data/backtest/_l7de_{tag}"
     if out_dir.exists():
         shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -161,26 +161,28 @@ def main():
             print(f"[{tag}] ERROR: {e}", file=sys.stderr, flush=True)
             import traceback; traceback.print_exc()
 
-    out_md = ROOT / "data/backtest/equity_factor_l7b_pullback_summary.md"
+    out_md = ROOT / "data/backtest/equity_factor_l7de_summary.md"
     lines = [
-        "# equity_factor L7-B Pullback Plan B 扫描",
+        "# equity_factor L7-DE 务实 sweep (Plan B 失败后的回退)",
         "",
         f"市场: {MARKET}  窗口: {START} → {END}",
         "",
-        "B0 = pure pullback defaults (5 检查); B1+ = 加强势 regime; B2+ = 加反弹确认; B3+ = 加相对强度",
+        "baseline = 当前追高 (Sharpe 0.23 / DD -19.5%)",
+        "D = + entry_price_position_max=0.7 (拒顶部30%)",
+        "E = + 收紧出场 (atr_stop 1.5 / atr_target 3.0 / max_hold 40)",
         "",
-        "| 标签 | Sharpe | 年化 | 总收益 | DD | 胜率 | 笔数 | Calmar |",
-        "|---|---|---|---|---|---|---|---|",
+        "| 标签 | Sharpe | 年化 | 总收益 | DD | 胜率 | 笔数 |",
+        "|---|---|---|---|---|---|---|",
     ]
     for r in results:
         lines.append(
             f"| {r['tag']} | {r['sharpe']:.3f} | {r['annual_return']*100:+.1f}% | "
             f"{r['total_return']*100:+.1f}% | {r['max_drawdown']*100:.1f}% | "
-            f"{r['win_rate']*100:.1f}% | {r['n_trades']} | {r['calmar']:.2f} |"
+            f"{r['win_rate']*100:.1f}% | {r['n_trades']} |"
         )
     out_md.write_text("\n".join(lines), encoding="utf-8")
     out_md.with_suffix(".json").write_text(json.dumps(results, indent=2, ensure_ascii=False))
-    print(f"\n[L7-B sweep] summary → {out_md}", flush=True)
+    print(f"\n[L7-DE sweep] summary → {out_md}", flush=True)
 
 
 if __name__ == "__main__":
