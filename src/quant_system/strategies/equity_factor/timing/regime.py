@@ -33,6 +33,10 @@ class TimingRegimeContext:
     index_atr_pct: float | None
     index_atr_pct_rel: float | None
     southbound_strength: float | None = None
+    # Plan B (L7-B): 强势 regime gate + 相对强度过滤所需
+    index_close_vs_ma200: float | None = None  # (close/MA200 - 1)，>0 = 大牛
+    index_drawdown_from_20d_high: float | None = None  # (close/max_close_20d - 1)，≤0
+    index_return_20d: float | None = None  # 20 日累计收益
 
 
 
@@ -87,7 +91,8 @@ def build_timing_regime_context(
     if df is None or df.empty:
         return TimingRegimeContext(None, None, None)
     sub = df[df["date"] <= asof_str].copy()
-    need = max(int(ma_days) + 2, int(atr_period) + int(atr_pct_median_window) + 2)
+    # 至少需要 200 + 余量来计算 MA200（Plan B 强势 regime gate 用）
+    need = max(int(ma_days) + 2, int(atr_period) + int(atr_pct_median_window) + 2, 205)
     if len(sub) < need:
         return TimingRegimeContext(None, None, None)
     for col in ("open", "high", "low", "close", "volume"):
@@ -117,6 +122,23 @@ def build_timing_regime_context(
         if m0 and m0 > 0 and not pd.isna(m0):
             rel = last_atr_pct / m0 - 1.0
 
+    # Plan B 字段: MA200 / 20d drawdown / 20d return
+    vs_ma200: float | None = None
+    if len(sub) >= 201:
+        ma200 = sub["close"].rolling(200, min_periods=200).mean()
+        last_ma200 = float(ma200.iloc[-1])
+        if not pd.isna(last_ma200) and last_ma200 > 0:
+            vs_ma200 = last_close / last_ma200 - 1.0
+    dd_20d: float | None = None
+    ret_20d: float | None = None
+    if len(sub) >= 21:
+        last20_high = float(sub["close"].iloc[-21:-1].max())
+        if last20_high > 0:
+            dd_20d = last_close / last20_high - 1.0
+        c_20 = float(sub["close"].iloc[-21])
+        if c_20 > 0:
+            ret_20d = last_close / c_20 - 1.0
+
     # 边际资金强度信号（按市场分发：HK→南向，A 股→北向）
     sb_strength: float | None = None
     if southbound_enabled and marginal_flow_market:
@@ -136,4 +158,12 @@ def build_timing_regime_context(
         except Exception:
             sb_strength = None
 
-    return TimingRegimeContext(vs_ma, last_atr_pct, rel, sb_strength)
+    return TimingRegimeContext(
+        index_close_vs_ma=vs_ma,
+        index_atr_pct=last_atr_pct,
+        index_atr_pct_rel=rel,
+        southbound_strength=sb_strength,
+        index_close_vs_ma200=vs_ma200,
+        index_drawdown_from_20d_high=dd_20d,
+        index_return_20d=ret_20d,
+    )

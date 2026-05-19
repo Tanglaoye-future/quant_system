@@ -140,6 +140,23 @@ class TimingConfig:
     pullback_green_bars_min: int = 2
     pullback_green_bars_lookback: int = 5
 
+    # --- Plan B 强势 regime gate（B1）---
+    # 仅在 HS300 自身强势时入场（避免熊市 catching falling knives）
+    pullback_b1_regime_strict: bool = False
+    pullback_b1_require_ma200: bool = True       # index > MA200
+    pullback_b1_require_ma_short: bool = True    # index > MA60 (用现有 index_close_vs_ma)
+    pullback_b1_max_drawdown_from_high: float = -0.05  # index drawdown from 20d high 不深于 -5%
+
+    # --- Plan B 反弹确认（B2）---
+    pullback_b2_reversal_required: bool = False
+    pullback_b2_higher_low_lookback: int = 5      # 今日 low > 前 N 日 low 的最小值
+    pullback_b2_close_above_ma_short: bool = True # close > MA20 (反弹已发生)
+
+    # --- Plan B 相对强度（B3）---
+    # 个股 20d 收益 - 指数 20d 收益 >= threshold (默认 None=关闭)
+    pullback_b3_relative_strength_min: float | None = None
+    pullback_b3_lookback: int = 20
+
 
 def timing_config_from_yaml_node(node: dict | None) -> TimingConfig:
     """从 config.yaml `strategy.timing` 映射到 TimingConfig；未知键忽略。"""
@@ -297,18 +314,50 @@ def _pullback_entry_check(
     a: float | None,
     close: float,
     reasons: list[str],
+    regime_ctx: TimingRegimeContext | None = None,
 ) -> dict:
     """
     L7 Pullback 模式：主动识别"大趋势在 + 回调到 MA + 量缩 + RSI 反弹"低位机会.
 
-    入场条件全部需通过:
+    基础检查 (B0):
       1. 大趋势 OK: MA60 > MA(pullback_long_trend_ma=200)  (require_long_trend=True)
       2. 价格位置: (close - low_N) / (high_N - low_N) <= pullback_price_position_max (0.5)
       3. RSI 反弹带: pullback_rsi_low <= RSI <= pullback_rsi_high  (35-55)
       4. 量缩: 当日 volume <= avg(volume, N) × pullback_vol_max_ratio (1.0×5d)
       5. 企稳: 近 N 日内至少 M 个收阳 (2/5)
+
+    Plan B 增量检查（pullback_b1/b2/b3_* 开关启用时叠加）:
+      B1 (regime_strict): HS300 > MA200 AND > MA60 AND 20d drawdown 不深
+      B2 (reversal_required): higher_low + close > MA20 (确认反弹已开始)
+      B3 (relative_strength): 个股 20d 收益 - 指数 20d 收益 >= 阈值
     """
     today = df.iloc[-1]
+
+    # ── Plan B1: 强势 regime gate (基于指数侧 context) ────────────────────────
+    if cfg.pullback_b1_regime_strict and regime_ctx is not None:
+        if cfg.pullback_b1_require_ma200:
+            v = regime_ctx.index_close_vs_ma200
+            if v is None or v <= 0:
+                return _no_entry(
+                    f"B1 X: 指数未 > MA200 (vs_ma200={v})", close, None, None,
+                )
+            reasons.append(f"B1 OK: 指数 > MA200 ({v*100:+.1f}%)")
+        if cfg.pullback_b1_require_ma_short:
+            v = regime_ctx.index_close_vs_ma
+            if v is None or v <= 0:
+                return _no_entry(
+                    f"B1 X: 指数未 > MA60 (vs_ma={v})", close, None, None,
+                )
+            reasons.append(f"B1 OK: 指数 > MA60 ({v*100:+.1f}%)")
+        dd = regime_ctx.index_drawdown_from_20d_high
+        if dd is not None and dd < cfg.pullback_b1_max_drawdown_from_high:
+            return _no_entry(
+                f"B1 X: 指数已从 20d 高点回撤 {dd*100:.1f}% "
+                f"< {cfg.pullback_b1_max_drawdown_from_high*100:.1f}%",
+                close, None, None,
+            )
+        if dd is not None:
+            reasons.append(f"B1 OK: 指数 20d dd={dd*100:.1f}%")
 
     # 1. 大趋势 OK：MA60 > MA200
     if cfg.pullback_require_long_trend:
@@ -381,6 +430,46 @@ def _pullback_entry_check(
         )
     reasons.append(f"企稳 OK: 近{gbb}日收阳数={green_bars} >= {cfg.pullback_green_bars_min}")
 
+    # ── Plan B2: 反弹确认 (higher low + close > MA20) ─────────────────────
+    if cfg.pullback_b2_reversal_required:
+        hll = max(2, int(cfg.pullback_b2_higher_low_lookback))
+        if len(df) >= hll + 1:
+            recent_lows = df["low"].iloc[-(hll + 1):-1]
+            min_recent_low = float(pd.to_numeric(recent_lows, errors="coerce").min())
+            today_low = float(today["low"]) if pd.notna(today["low"]) else 0
+            if today_low <= min_recent_low:
+                return _no_entry(
+                    f"B2 X: 未形成 higher low (今日 low {today_low:.2f} <= "
+                    f"近{hll}日最低 {min_recent_low:.2f})",
+                    close, None, None,
+                )
+            reasons.append(f"B2 OK: higher low (今 {today_low:.2f} > 近 {min_recent_low:.2f})")
+        if cfg.pullback_b2_close_above_ma_short:
+            ma_s = today.get("ma_short")
+            if pd.isna(ma_s) or close <= float(ma_s):
+                return _no_entry(
+                    f"B2 X: close({close:.2f}) <= MA{cfg.ma_short}({ma_s})",
+                    close, None, None,
+                )
+            reasons.append(f"B2 OK: close > MA{cfg.ma_short}")
+
+    # ── Plan B3: 相对强度过滤 (个股 20d 跑赢指数) ──────────────────────────
+    if cfg.pullback_b3_relative_strength_min is not None:
+        rsl = max(2, int(cfg.pullback_b3_lookback))
+        if len(df) >= rsl + 1 and regime_ctx is not None and regime_ctx.index_return_20d is not None:
+            p_now = close
+            p_n = float(pd.to_numeric(df["close"].iloc[-(rsl + 1)], errors="coerce"))
+            if p_n > 0:
+                stock_ret = p_now / p_n - 1.0
+                excess = stock_ret - float(regime_ctx.index_return_20d)
+                if excess < cfg.pullback_b3_relative_strength_min:
+                    return _no_entry(
+                        f"B3 X: 个股20d超额 {excess*100:+.1f}% < "
+                        f"{cfg.pullback_b3_relative_strength_min*100:.1f}%",
+                        close, None, None,
+                    )
+                reasons.append(f"B3 OK: 个股20d超额 {excess*100:+.1f}%")
+
     if a is None:
         return _no_entry("ATR 缺失", close, None, None)
 
@@ -423,7 +512,7 @@ def entry_signal_from_enriched(
 
     # ── Pullback 模式（L7 低位识别）— 与突破/金叉模式互斥 ────────────────────
     if cfg.m2_pullback_mode:
-        return _pullback_entry_check(df, cfg, a, close, reasons)
+        return _pullback_entry_check(df, cfg, a, close, reasons, regime_ctx)
 
     # ── Level 3 突破模式 / 原金叉模式 分支 ──────────────────────────────────
     if cfg.m2_breakout_mode:
