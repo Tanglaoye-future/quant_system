@@ -1,0 +1,14 @@
+# 市场环境配置 — 港股 HSCHK100
+name: hk_share
+universe: hs100
+benchmark: HSCHK100
+regime_benchmark: HSCHK100
+universe_filter: none
+
+data:
+  hang_seng_indexes:
+    full_constituents_csv: ""           # 可选：订阅《指数数据产品》全量成份 CSV 路径
+    allow_factsheet_top50_only: true    # true：仅用官网英文 factsheet 内 TOP 50；完整 100 请配 full_constituents_csv 并置 false
+    official_factsheet_pdf_en: ""
+    hk_constituent_daily_dir: "./data/hk_prices"
+    hschk100_index_daily_csv: "./data/hk_prices/HSCHK100_index.csv"

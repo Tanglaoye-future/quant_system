@@ -1,0 +1,9 @@
+# 市场环境配置 — A 股
+# 只承载"市场环境本身决定的差异"：universe / benchmark / 数据源 / 费率细则
+# 不承载策略逻辑（timing / factors / hedge 在 strategies/ 下）
+
+name: a_share
+universe: hs300
+benchmark: sh000300
+regime_benchmark: sh000300        # MarketRegimeGate 用
+universe_filter: a_share          # 选择 UniverseFilter 实现；当前 strategy.py 内硬编码 if market==a_share，Phase 2 抽象

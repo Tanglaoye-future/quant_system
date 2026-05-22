@@ -1,0 +1,18 @@
+# 市场环境配置 — 美股 NASDAQ100
+# ⚠️ DEPRECATED FOR PRODUCTION (2026-05-15)；详见 memory/three_universe_2026-05.md
+# 保留供研究 / 后续因子实验；daily_run 不应跑此市场（策略文件 enabled: false）
+
+name: us_share
+universe: nasdaq100
+benchmark: NDX
+regime_benchmark: NDX
+universe_filter: none
+
+data:
+  us_market:
+    daily_dir: "./data/us_prices"
+    index_daily_csv: "./data/us_prices/NDX_index.csv"
+    constituents_csv: "./data/us_prices/nasdaq100_constituents.csv"
+
+fees:
+  stamp_tax_override: 0.0    # 美股无印花税；backtest.py L187 现在写死 if market==us_share 时归 0

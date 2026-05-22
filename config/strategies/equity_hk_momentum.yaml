@@ -1,0 +1,88 @@
+# 策略：港股 HSCHK100 中长线因子动量 (L1+L2-B 优化版)
+#
+# 历史：v1 baseline → L1 加宽 trail+TP runner → L2 财务接入 (drop value) → L2-B 南向资金信号
+# 关键洞察：HK 价值因子反 alpha (H 股银行长期破净不修复) → drop pe/pb，保留 quality+momentum
+# on-regime hedge r=0.3 优于熊市对冲 (Sharpe 0.52 → 0.78)
+# 详见 memory/hk_optimization_2026-05.md
+
+name: equity_hk_momentum
+kind: bottomup_timing
+
+deployments:
+  - market: hk_share
+    enabled: true
+    capital_pct: 0.20
+
+timing:
+  # M2 市况门 — 港股长熊 MA60 噪声太多，用 MA200
+  m2_regime_enabled: true
+  m2_regime_ma_days: 200
+  # M2 单票 — 接受更深超卖入场（港股折价修复）
+  rsi_entry_low: 40.0
+  rsi_entry_high: 72.0
+  ma_long: 80                       # 更长趋势均线，减少港股低流动性误穿
+  max_hold_days: 80                 # 港股中线持仓稍长
+  m2_rsi_atr_adjust: true
+  m2_rsi_atr_k: 400.0
+  m2_rsi_atr_cap: 8.0
+  m2_vol_green_bar: false
+  m2_vol_median_lookback: 5
+  m2_vol_median_mult: 1.0
+  m2_structure_lookback: 20
+  m2_structure_eps: 0.002
+  m2_breakout_mode: false
+  m2_breakout_ma_trend: true
+  vol_breakout_mult: 1.3
+  # L1：放宽 trail + TP runner（让赢家奔跑）
+  atr_stop_mult: 2.5
+  atr_target_mult: 5.0
+  tp_runner_enabled: true
+  atr_stop_mult_runner: 2.0         # runner 阶段 trail 收紧到 2×（锁利但保留上行）
+  tp_runner_lock_atr_mult: 1.0      # promote 时把 stop 拉到 target - 1×ATR
+  # M3 默认关
+  m3_regime_rsi_band: false
+  m3_reg_rsi_lo_widen_pts_per_ma_gap_1pct: 1.5
+  m3_reg_rsi_lo_widen_cap: 8.0
+  m3_reg_vol_tighten_hi: false
+  m3_reg_vol_hi_tighten_k: 18.0
+  m3_reg_vol_hi_tighten_cap: 6.0
+  m3_reg_index_atr_pct_median_window: 20
+  m3_mtf_rsi_enabled: false
+  m3_mtf_rsi_period: 28
+  m3_mtf_rsi_min: 48.0
+  # L2-B：南向资金信号联动
+  m3_southbound_widen_enabled: true
+  m3_southbound_ma_window: 20
+  m3_southbound_threshold: 2.0      # today_net_buy > 3×MA20 时触发（top 10% 强买日）
+  m3_southbound_widen_lo_pts: 3.0
+  m3_southbound_widen_hi_pts: 3.0
+  m3_southbound_vol_relax: 0.2      # 1.5× → 1.2×
+  # M5
+  m5_regime_exit_enabled: false
+  partial_exit_enabled: false
+  partial_exit_pct: 0.5
+  partial_exit_trail_mult: 1.5
+
+factors:
+  weights:
+    pe_inverse: 0.0                 # 价值陷阱：H 股银行长期破净
+    pb_inverse: 0.0
+    roe: 0.30                       # 质量过滤 — 避开僵尸国企
+    revenue_growth: 0.10
+    momentum_3m: 0.30               # 主信号
+    momentum_6m: 0.30               # 主信号
+    fcf_yield: 0.0
+    rev_accel: 0.0
+  # 注：m4 配置在入口 equity_factor.yaml 全局共享（Phase 1a 设计）
+
+# L3：HSCHK100 做空对冲 overlay（仅 regime ON 时维持，避免熊市反弹打损）
+hedge:
+  ratio: 0.3
+  ma_days: 200                      # 与 m2_regime_ma_days 对齐
+  borrow_cost: 0.03
+
+admission:
+  min_sharpe: 0.5
+  min_sortino: 0.7
+  max_drawdown: 0.25
+  min_win_rate: 0.40

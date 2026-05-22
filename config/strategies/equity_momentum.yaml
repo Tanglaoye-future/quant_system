@@ -1,0 +1,78 @@
+# 策略：A 股中长线因子动量 (L7-C3 收紧出场版)
+# 算法层完整自包含。市场环境通过 deployments 指向 markets/<m>.yaml。
+#
+# 历史：v1 baseline → L2 因子增强 (fcf_yield) → L7-C3 出场优化 (regime_exit+partial_exit+collar)
+# 4y 2022-2026: Sharpe 0.23 → 0.62 (+174%) / 收益 +17.7% → +38.5% / DD -19.5% → -14.3%
+# 8y 2018-2026: Sharpe 0.53 → 0.40 (牛市略输) / DD -18.5% → -14.8% (DD 始终改善)
+# trade-off：牛市 baseline 占优；震荡熊市 C3 占优；当前 2022-2026 模式适用
+
+name: equity_momentum
+kind: bottomup_timing                # backtest.py build_strategy 工厂键
+
+deployments:
+  - market: a_share
+    enabled: true
+    capital_pct: 0.20
+
+# --- 算法层 ---
+
+timing:
+  # M2 市况门
+  m2_regime_enabled: true
+  m2_regime_ma_days: 60
+  # M2 单票 RSI 带 + 量能 + 结构
+  m2_rsi_atr_adjust: true
+  m2_rsi_atr_k: 400.0
+  m2_rsi_atr_cap: 8.0
+  m2_vol_green_bar: false
+  m2_vol_median_lookback: 5
+  m2_vol_median_mult: 1.0
+  m2_structure_lookback: 20
+  m2_structure_eps: 0.002
+  # M2 突破入场（v8 实验失败回滚）
+  m2_breakout_mode: false
+  m2_breakout_ma_trend: true
+  vol_breakout_mult: 1.3
+  # M3 RSI 带 + 慢周期 RSI（默认关）
+  m3_regime_rsi_band: false
+  m3_reg_rsi_lo_widen_pts_per_ma_gap_1pct: 1.5
+  m3_reg_rsi_lo_widen_cap: 8.0
+  m3_reg_vol_tighten_hi: false
+  m3_reg_vol_hi_tighten_k: 18.0
+  m3_reg_vol_hi_tighten_cap: 6.0
+  m3_reg_index_atr_pct_median_window: 20
+  m3_mtf_rsi_enabled: false
+  m3_mtf_rsi_period: 28
+  m3_mtf_rsi_min: 48.0
+  # L7-C3 出场优化（核心收紧）
+  atr_stop_mult: 1.5            # L7-E: 2.0→1.5 收紧 ATR 止损
+  atr_target_mult: 3.0          # L7-E: 4.0→3.0 早锁利
+  max_hold_days: 30             # L7-E: 60→30 短持仓 (周转率↑, Sharpe↑)
+  m5_regime_exit_enabled: true  # L7-E4: HS300<MA60 强制平仓 (DD 改善关键)
+  partial_exit_enabled: true    # L7-C2: TP 触发卖 50% + 剩余切宽松 trail
+  partial_exit_pct: 0.5
+  partial_exit_trail_mult: 1.5
+
+factors:
+  weights:
+    # L2 因子增强：fcf_yield 加入，PE 保留（A 股 PE 信噪比低但 0.15 权重无害）
+    pe_inverse: 0.15
+    pb_inverse: 0.10
+    roe: 0.20
+    revenue_growth: 0.15
+    momentum_3m: 0.20
+    fcf_yield: 0.20
+    rev_accel: 0.0
+  # 注：m4 配置在入口 equity_factor.yaml 全局共享（Phase 1a 设计）
+
+# L3：on-regime HS300 做空 overlay（HK 验证 +0.13；A 股初测 +0.05）
+hedge:
+  ratio: 0.3
+  ma_days: 60
+  borrow_cost: 0.03
+
+admission:
+  min_sharpe: 0.5
+  min_sortino: 0.7
+  max_drawdown: 0.25
+  min_win_rate: 0.40
