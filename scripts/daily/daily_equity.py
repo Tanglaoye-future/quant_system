@@ -52,6 +52,10 @@ def main() -> None:
                         help="不写 snapshot / stop_loss 到 DB (干跑模式)")
     parser.add_argument("--all-stocks", action="store_true",
                         help="扫所有股票 (默认 True 只扫已缓存的, 加此参数会触发未缓存股票的在线 fetch)")
+    parser.add_argument("--capital", type=float, default=1_000_000,
+                        help="总资金 (用于计算仓位大小), 默认 100 万")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="干跑模式: 不实际录入开仓, 仅显示信号")
     args = parser.parse_args()
 
     cfg = load_config()
@@ -227,6 +231,63 @@ def main() -> None:
                 flag = "⚠利空" if cat.is_negative() else ("✓利好" if cat.is_positive() else "")
                 print(f"      催化剂: {cat.to_label()}  {flag}")
 
+    # ---------------- Step 3: 自动开仓 ----------------
+    open_codes_set = {t["symbol"] for t in j.list_open()}
+    max_positions = int(cfg.get("strategy", "position_max_count", default=6))
+    max_single_pct = float(cfg.get("strategy", "single_position_pct_max", default=0.20))
+    available_slots = max_positions - len(open_codes_set)
+
+    new_trades = []
+    if args.dry_run:
+        print()
+        print(f"【自动开仓】 (干跑模式，不实际录入)")
+    elif args.strategy == "mean_reversion":
+        print()
+        print(f"【自动开仓】 mean_reversion 策略暂不支持自动开仓，请手动处理")
+    elif available_slots <= 0:
+        print()
+        print(f"【自动开仓】 仓位已满 ({len(open_codes_set)}/{max_positions})，跳过")
+    elif not hits:
+        pass  # 无信号，静默跳过
+    else:
+        from quant_system.strategies.equity_factor.journal.journal import TradeOpen
+        for c in hits[:args.top]:
+            if len(new_trades) >= available_slots:
+                break
+            code = c["code"]
+            if code in open_codes_set:
+                continue
+            entry_size_lots = int(args.capital * max_single_pct / c["entry_price"] / 100)
+            if entry_size_lots < 1:
+                continue
+            entry_size = entry_size_lots * 100
+            reasons_str = " · ".join(c.get("reasons", []))
+            t = TradeOpen(
+                symbol=code,
+                market=args.market,
+                entry_date=args.asof,
+                entry_price=c["entry_price"],
+                entry_size=entry_size,
+                entry_score=c.get("score", 0.0),
+                reason_timing=reasons_str,
+                stop_loss_price=c["stop_loss"],
+                take_profit_price=c["take_profit"],
+            )
+            trade_id = j.open_trade(t)
+            new_trades.append((code, trade_id, entry_size, c["entry_price"]))
+            open_codes_set.add(code)
+
+        if new_trades:
+            print()
+            print(f"【自动开仓】 ({len(new_trades)} 笔)")
+            for code, tid, sz, ep in new_trades:
+                name = name_map.get(code, "?")
+                cost = sz * ep
+                print(f"  #{tid} {code} {name}  {sz}股 @ {ep:.2f}  成本 {cost:,.0f}")
+        else:
+            print()
+            print(f"【自动开仓】 无符合条件的新仓 (可用槽位 {available_slots})")
+
     # ---------------- 组合摘要 ----------------
     print()
     print("【组合摘要】")
@@ -290,6 +351,10 @@ def main() -> None:
         json.dumps(report_payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     print(f"[report] {json_filename} → {_REPORT_DATA / json_filename}")
+
+    # 自动重建 HTML 报告
+    from quant_system.report.builder import rebuild_html_report
+    rebuild_html_report(args.asof, open_browser=False)
 
 
 if __name__ == "__main__":

@@ -114,6 +114,12 @@ class RiskMonitor:
 
             if ex["signal"]:
                 risk_flag = "exit"
+                # 自动平仓结算
+                exit_price_use = ex.get("exit_price", current_price)
+                self.journal.close_trade(
+                    trade["id"], current_date, exit_price_use,
+                    str(ex.get("reason", "自动退出"))
+                )
             elif pnl_pct < -0.05:
                 risk_flag = "drawdown"
             else:

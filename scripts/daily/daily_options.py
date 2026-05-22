@@ -244,6 +244,10 @@ def main():
             print(f"❌ IBKR 连接失败: {e}")
             sys.exit(1)
 
+    # 自动重建 HTML 报告
+    from quant_system.report.builder import rebuild_html_report
+    rebuild_html_report(report_date=None, open_browser=False)
+
 
 if __name__ == "__main__":
     main()

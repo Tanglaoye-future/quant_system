@@ -455,5 +455,22 @@ def main():
         subprocess.Popen(["open", str(out)])
 
 
+def rebuild_html_report(report_date: str | None = None, open_browser: bool = False) -> Path | None:
+    """供 daily 脚本写 JSON 后调用，重建 HTML 报告。"""
+    if report_date is None:
+        report_date = date.today().strftime("%Y-%m-%d")
+    q = load_quant_multi()
+    o = load("options")
+    z = load("zhuang")
+    html = render(q, o, z, report_date)
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    out = REPORT_DIR / f"strategy_report_{report_date}.html"
+    out.write_text(html, encoding="utf-8")
+    print(f"[report] HTML 报告已更新 → {out}")
+    if open_browser:
+        subprocess.Popen(["open", str(out)])
+    return out
+
+
 if __name__ == "__main__":
     main()

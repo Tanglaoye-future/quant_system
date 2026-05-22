@@ -93,6 +93,10 @@ def main():
     )
     print(f"[report] zhuang.json → {_REPORT_DATA / 'zhuang.json'}")
 
+    # 自动重建 HTML 报告
+    from quant_system.report.builder import rebuild_html_report
+    rebuild_html_report(args.date, open_browser=False)
+
     loader._logout()
 
 
