@@ -68,7 +68,23 @@ type: project
 | v1 基线 | 原始策略 | 0.65 | +86.9% | 398 | PASS |
 | v2 回归 | 250日窗口 bug | 0.31 | +36.0% | 177 | FAIL（bug 已修复）|
 | 短线实验 | max_hold=15d | -0.54 | -2.2% | 61 | FAIL（方向否定）|
-| v3 待验证 | FETCH_FLOOR 修复后 | TBD | TBD | TBD | 待跑 |
+| L7-C3 实盘修复 | 2026-05-22 落地（regime_exit+partial_exit+collar） | 0.619 (4y) / 0.402 (8y) | +38.5% (4y) | 396 | ✅ PASS — 落地 config |
+| zhuang 累计 | v5→L1-E→L4-combo4→L5 | 0.944→**1.806** (6y) | +37%→+76% | 136 | ✅ PASS — 全部落地 |
+
+## equity_factor 实盘修复摘要（L7-C3, 2026-05-22）
+- L7-A/B Pullback 入场重写全失败（Sharpe -0.16 ~ -0.98）
+- L7-C3 回到 baseline 追高入场 + 收紧出场（类似 zhuang L4）
+- 4y 2022-2026: Sharpe 0.23→0.62 (+174%), DD -19.5%→-14.3%
+- 8y 2018-2026: DD 始终改善；牛市段 baseline 占优（partial_exit 早锁利）
+- 落地: atr_stop=1.5, atr_target=3.0, max_hold=30, regime_exit=on, partial_exit=on
+- 详见 `memory/equity_factor_l7_2026-05.md`
+
+## zhuang 累计优化摘要（L1→L5, 2026-05-18~19）
+- L1-E: entry_price_position_min=0.4 + score≥70 → Sharpe 0.94→1.35
+- L4-combo4: mh=10+tp=0.10+atr=1.5+dt=6.0+ms=0.03 → Sharpe 1.35→1.63
+- L5: score 分级仓位 (3%/5%/8%) → Sharpe 1.63→1.81
+- 6-asset overlay: zhuang 20-25% 占比, 组合 Sharpe 1.91→2.14
+- 详见 `memory/zhuang_optimization_2026-05.md`, `zhuang_l4_experiments_2026-05.md`, `zhuang_l5_experiments_2026-05.md`
 
 ---
 

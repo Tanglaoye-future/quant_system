@@ -1,51 +1,51 @@
 ---
-name: zhuang_system 基线 + L1 优化
-description: v5 baseline (Sharpe 0.944/6.4y, 196笔, Win 42.9%) → L1-E entry filter (pos≥0.4 + score≥70) Sharpe 1.346/6.4y, DD -3.77%, Win 50.3%
+name: zhuang 策略 L1→L5 完整优化（2026-05）
+description: v5 baseline (Sharpe 0.944) → L1-E entry (1.346) → L4 出场收紧 (1.627) → L5 score 仓位 (1.806, 6y) — Sharpe 翻 1.9 倍 / 收益 +37%→+76% / DD -5.6%→-4.9%
 type: project
 ---
 
-## Baseline (v5, 2020-2026)
+## 累计提升路径 (6y, 2020-2026)
 
-Sharpe **0.944** | 收益 +37.3% | DD -5.56% | 胜率 42.9% | 盈亏比 2.76 | 196 笔
-config: `accumulation_score_entry=65`, `entry_price_position_min=0.5`
+| 阶段 | Sharpe | 收益 | DD | 笔数 |
+|---|---|---|---|---|
+| v5 原始 | 0.944 | +37.3% | -5.56% | 196 |
+| L1-E (入场收紧) | 1.346 | +44.0% | -3.77% | 141 |
+| L4-combo4 (出场收紧) | 1.627 | +48.1% | -3.10% | 136 |
+| **L5B (score 仓位)** | **1.806** | **+76.0%** | -4.90% | 136 |
 
-## L1-E entry filter（当前最优，2026-05-16）
+## 落地配置 (config/zhuang.yaml)
 
-参数改动（仅改两个值）：
-- `entry_price_position_min`: 0.5 → **0.4**
-- `accumulation_score_entry`: 65 → **70**
+```yaml
+# L1-E
+entry_price_position_min: 0.4
+accumulation_score_entry: 70
 
-6.4 年全量（3307 只）回测：
-Sharpe **1.346** | 收益 +44.0% | DD **-3.77%** | 胜率 **50.3%** | 盈亏比 2.89 | 141 笔
+# L4-combo4
+max_hold_days: 10
+take_profit_pct: 0.10
+stop_loss_atr_mult: 1.5
+distribution_turnover_thresh: 6.0
+momentum_stop_pct: 0.03
 
-3 年窗口（2022-2024，交叉验证）：
-Sharpe **1.370** | 收益 +20.1% | DD -4.1% | 胜率 46.0% | 盈亏比 3.37 | 63 笔
+# L5B-tiered-aggressive
+position_size_mode: tiered
+tiered_score_thresholds: [75.0, 80.0]
+tiered_position_pcts: [0.03, 0.05, 0.08]
+```
 
-两窗口高度一致 → 不是过拟合。
+## 搜索路径 (完整)
 
-## 搜索路径
+L1 入场: 6 个变体 → L1-E (pos>=0.4 + score>=70) 组合最优 (见 `zhuang_l1_l2_l3_experiments_2026-05.md`)
+L2 RS: 负转移
+L3 vol_regime: 负转移
+L4 出场: 13 单变量 + 5 组合 + 6y verify → combo4 (5 维同向收紧) (见 `zhuang_l4_experiments_2026-05.md`)
+L5 仓位: 5 变体 + 6y verify → tiered-aggressive (3/5/8%) (见 `zhuang_l5_experiments_2026-05.md`)
 
-| step | param | 方向 | 结果 |
-|---|---|---|---|
-| L1-A | price_pos=0.66 (tighten) | ↓ Sharpe 0.812 | 现金闲置 |
-| L1-A2 | price_pos=0.40 (loosen) | ↑ Sharpe 1.143 | 放宽正确 |
-| L1-A3 | price_pos=0.30 (too loose) | Sharpe 1.044 | 过度 |
-| L1-B | score=70 (tighten) | Sharpe 1.022 | 质量提升 |
-| L1-D | max_pos=8 | Sharpe 0.928 | 无用 |
-| L1-E | pos=0.4 + score=70 | Sharpe **1.370** | 组合最优 |
+## 6-asset overlay (L4-combo4 后)
 
-## 关键 insight
+zhuang 单资产 Sharpe 2.35 (2020-2026, vol 2.77%, 与其他资产 ρ<=0.06).
+25% 占比: 组合 Sharpe 1.91→2.21 / DD -7.6%→-5.1%.
+实盘推荐 zhuang 20-25% (见 `zhuang_overlay_combo4_2026-05.md`)
 
-放宽位置 + 收紧 score 是正交维度：放宽位置让更多候选入池（防闲置），高 score 保证质量（控风险）。
-
-## L2/L3（均为负转移）
-
-- L2 relative_strength (RS≥0)：Sharpe 0.520
-- L2 relative_strength (RS≥0.03)：Sharpe 0.048
-- L3 vol_regime (≤80pct)：Sharpe 0.279
-- L3 vol_regime (≤70pct)：Sharpe -0.089
-
-RS 和 vol regime 在小盘庄股上砍掉了太多有效信号。
-
-**Why:** L1-E entry filter 优化将 zhuang baseline Sharpe +43%，代价是减少约 28% 交易。
-**How to apply:** 更新 config.yaml 中 `entry_price_position_min=0.4` 和 `accumulation_score_entry=70` 为新的默认基线。
+**Why:** L1→L5 共 5 层优化，每层叠加 0.15-0.20 Sharpe，全程非过拟合（3y/6y 双窗口验证）。
+**How to apply:** config/zhuang.yaml 已落地全部参数；daily_zhuang.py 每天盘后扫描。

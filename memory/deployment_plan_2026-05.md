@@ -1,20 +1,24 @@
 ---
-name: 实盘部署计划 2026-05-15（四 universe 35/30/15/20 配置）
-description: 8 年回测 Sharpe 1.198 后的实盘部署蓝图；4 账户配资（HK + A + QQQ + GLD）+ 季度再平衡
+name: 实盘部署计划 2026-05-22（6-asset 多策略 + zhuang L5 更新）
+description: 8 年回测后的实盘部署蓝图；6 账户配资（HK + A_mom + A_mr + zhuang + QQQ + GLD）+ 季度再平衡；zhuang 优化后占比从 10% 提到 20-25%
 type: project
 ---
 
-## 资金配置（基础资金 = 100%，v3 2026-05-15 升级为 5-asset 多策略）
+## 资金配置（基础资金 = 100%，v4 2026-05-22 升级为 6-asset + zhuang L5）
 
 | 账户 | 占比 | 标的 | 策略 |
 |---|---|---|---|
-| **HK 港股账户** | 25% | HSCHK100 成份股 | `daily_run --market hk_share` |
-| **A 股账户 — 子策略 A** | 25% | HS300 momentum | `daily_run --market a_share --strategy bottomup_timing` |
-| **A 股账户 — 子策略 B** | 15% | HS300 mean-reversion | `daily_run --market a_share --strategy mean_reversion` |
+| **HK 港股账户** | 20% | HSCHK100 成份股 | `daily_run --market hk_share` |
+| **A 股账户 — 子策略 A** | 20% | HS300 momentum | `daily_run --market a_share --strategy bottomup_timing` |
+| **A 股账户 — 子策略 B** | 10% | HS300 mean-reversion | `daily_run --market a_share --strategy mean_reversion` |
+| **A 股账户 — zhuang ⭐** | **20%** | A 股全市场小盘 | `daily_zhuang.py` |
 | **US ETF 账户** | 15% | QQQ ETF | 被动买入持有 |
-| **黄金 ETF 账户** | 20% | GLD（境外）或 518880（华安黄金 ETF，境内）| 被动买入持有 |
+| **黄金 ETF 账户** | 15% | GLD（境外）或 518880（华安黄金 ETF，境内）| 被动买入持有 |
 
-**升级原因**（详见 `memory/multistrat_2026-05.md`）：A_mom vs A_mr 相关性 -0.172（负相关！），5-asset 多策略组合 Sharpe **1.225 / DD -7.94% / Vol 6.11%**，比 v2 4-asset 1.198 高 +0.027 同时 DD 更小、Vol 更低。
+**v4 升级原因**（详见 `memory/zhuang_overlay_combo4_2026-05.md`）：zhuang L4+L5 优化后 6y Sharpe 从 0.94 → 1.81，单资产 Sharpe 2.35（2020-2026），与所有资产相关性 ≤0.06。
+6-asset overlay 扫描显示 zhuang 20-25% 占比最优：组合 Sharpe 1.91 → 2.14 / DD -7.6% → -5.6%（详见 `memory/zhuang_overlay_combo4_2026-05.md`）。
+
+equity_factor L7-C3 产出优化后 4y Sharpe 0.23 → 0.62 / DD -19.5% → -14.3%（详见 `memory/equity_factor_l7_2026-05.md`）。
 
 ## 启动准备清单
 

@@ -12,7 +12,7 @@
 - [实盘部署计划 2026-05](deployment_plan_2026-05.md) — 5-asset 多策略配置（HK 25% / A_mom 25% / A_mr 15% / QQQ 15% / GLD 20%）；季度再平衡；风控阈值；KPI 监控
 - [部署检查清单 2026-05](deploy_checklist_2026-05.md) — Step 0-6 操作指南；launchd 自动化调度；首月 KPI；紧急停盘流程
 - [Zhuang 叠加分析 2026-05](zhuang_overlay_2026-05.md) — 外部 zhuang_system 与 5-asset 组合相关性近零/负，10% 配比 Sharpe 1.30 → 1.35、DD -7.94% → -7.01%
-- [Zhuang 策略优化记录 2026-05](zhuang_optimization_2026-05.md) — zhuang 子策略 v1→L1-E 迭代，Sharpe 0.944→1.346；评分阈值与价格位置过滤的组合最优
+- [Zhuang 策略优化记录 2026-05](zhuang_optimization_2026-05.md) — zhuang 子策略 v1→L5 完整迭代，Sharpe 0.944→1.806；L1-E 入场 + L4 出场收紧 + L5 score 加权 + 6-asset overlay；全部落地 config
 - [Zhuang L1/L2/L3 实验明细 2026-05](zhuang_l1_l2_l3_experiments_2026-05.md) — entry filter / accumulation weight / exit rule 三层实验全记录
 - [Zhuang L4 出场规则实验 2026-05](zhuang_l4_experiments_2026-05.md) — 单变量+组合+6y 全跑完；combo4 (mh10+tp10+atr15+dt60+ms03) 6y Sharpe 1.39→1.63 已落地 config.yaml
 - [DuckDB 数据层迁移 2026-05](duckdb_migration_2026-05.md) — 三策略统一日线存储到 data/quant.duckdb；loader DB-first + CSV fallback；L4-combo4 验证零回归
