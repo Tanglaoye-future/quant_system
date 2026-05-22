@@ -25,3 +25,7 @@ export function getOptions() {
 export function getZhuang() {
   return fetchJSON<import('../types').ZhuangData>('/report/zhuang');
 }
+
+export function getMarkets() {
+  return fetchJSON<import('../types').MarketsResponse>('/markets');
+}

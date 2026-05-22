@@ -1,28 +1,28 @@
 import { useState } from 'react';
 import SystemStatusBar from '../components/SystemStatusBar';
 import TabNav from '../components/TabNav';
-import QuantSection from './QuantSection';
-import OptionsSection from './OptionsSection';
-import ZhuangSection from './ZhuangSection';
-import type { ReportSummary } from '../types';
+import AShareSection from './AShareSection';
+import USSection from './USSection';
+import HKSection from './HKSection';
+import type { ReportSummary, MarketsResponse } from '../types';
 
-export default function DashboardPage({ data }: { data: ReportSummary }) {
-  const [activeTab, setActiveTab] = useState('A 股中线');
+export default function DashboardPage({ data, markets }: { data: ReportSummary; markets: MarketsResponse }) {
+  const [activeTab, setActiveTab] = useState('A 股');
 
   return (
     <>
-      <SystemStatusBar quant={data.quant} options={data.options} zhuang={data.zhuang} />
+      <SystemStatusBar markets={markets} />
 
       <TabNav active={activeTab} onChange={setActiveTab} />
 
-      <div className={activeTab === 'A 股中线' ? '' : 'hidden'}>
-        <QuantSection data={data.quant} />
+      <div className={activeTab === 'A 股' ? '' : 'hidden'}>
+        <AShareSection quant={data.quant} zhuang={data.zhuang} />
       </div>
-      <div className={activeTab === 'QQQ 期权' ? '' : 'hidden'}>
-        <OptionsSection data={data.options} />
+      <div className={activeTab === '美股' ? '' : 'hidden'}>
+        <USSection data={data.options} />
       </div>
-      <div className={activeTab === '庄股小盘' ? '' : 'hidden'}>
-        <ZhuangSection data={data.zhuang} />
+      <div className={activeTab === '港股' ? '' : 'hidden'}>
+        <HKSection data={data.quant} />
       </div>
     </>
   );

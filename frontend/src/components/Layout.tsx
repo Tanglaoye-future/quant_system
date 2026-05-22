@@ -23,7 +23,7 @@ export default function Layout({
               量化策略日报
             </h1>
             <p className="text-xs text-[#86868b] mt-0.5">
-              {date || '—'} · A 股中线 · 美股期权 · 庄股小盘
+              {date || '—'} · A 股 · 美股 · 港股
             </p>
           </div>
           <div className="flex items-center gap-3">

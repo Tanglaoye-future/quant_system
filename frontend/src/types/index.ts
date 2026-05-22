@@ -91,6 +91,48 @@ export interface ColumnDef<T> {
   className?: string;
 }
 
+// ── Market-centric types ──
+
+export interface MarketIndex {
+  name: string;
+  symbol: string;
+  close?: number | string;
+  ma?: number | string;
+  ma60?: number | string;
+  ma200?: number | string;
+  regime: string;
+  regime_msg?: string;
+}
+
+export interface StrategySummary {
+  key: string;
+  name: string;
+  status: string;
+  signals?: number;
+  positions?: number;
+  candidates?: number;
+  max_score?: number;
+  gate_ok?: boolean | null;
+  ivr?: number;
+  iv_mode?: string;
+  grade?: string;
+  qqq_price?: number;
+  qqq_rsi?: number;
+  reason?: string;
+  missing?: boolean;
+}
+
+export interface MarketData {
+  index: MarketIndex;
+  strategies: StrategySummary[];
+}
+
+export interface MarketsResponse {
+  a_share: MarketData;
+  us: MarketData;
+  hk: MarketData;
+}
+
 export interface HealthResponse {
   status: string;
   data_available: {

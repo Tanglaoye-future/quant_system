@@ -11,6 +11,8 @@ DATA_DIR = PROJECT_ROOT / "report" / "data"
 
 
 def _read_json(system: str) -> dict:
+    """Read a JSON file from report/data/. Public so main.py can use it for /api/markets."""
+    # (implementation unchanged, docstring added for export clarity)
     path = DATA_DIR / f"{system}.json"
     if path.exists():
         try:

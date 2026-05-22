@@ -1,4 +1,4 @@
-const tabs = ['A 股中线', 'QQQ 期权', '庄股小盘'];
+const tabs = ['A 股', '美股', '港股'];
 
 export default function TabNav({
   active,

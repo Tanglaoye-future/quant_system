@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { ReportSummary } from '../types';
-import { getSummary } from '../api/client';
+import type { ReportSummary, MarketsResponse } from '../types';
+import { getSummary, getMarkets } from '../api/client';
 
 export default function useReportData() {
   const [data, setData] = useState<ReportSummary | null>(null);
+  const [markets, setMarkets] = useState<MarketsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string>('');
@@ -12,8 +13,9 @@ export default function useReportData() {
     try {
       setLoading(true);
       setError(null);
-      const result = await getSummary();
+      const [result, mkts] = await Promise.all([getSummary(), getMarkets()]);
       setData(result);
+      setMarkets(mkts);
       setUpdatedAt(new Date().toLocaleTimeString('zh-CN', { hour12: false }));
     } catch (e) {
       setError((e as Error).message);
@@ -26,5 +28,5 @@ export default function useReportData() {
     fetchData();
   }, [fetchData]);
 
-  return { data, loading, error, updatedAt, refresh: fetchData };
+  return { data, markets, loading, error, updatedAt, refresh: fetchData };
 }
