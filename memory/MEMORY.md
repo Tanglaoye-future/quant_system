@@ -19,3 +19,4 @@
 - [Zhuang L4-combo4 后 6-asset overlay 2026-05](zhuang_overlay_combo4_2026-05.md) — 新 zhuang 单资产 Sharpe 2.35；25% 权重把组合 Sharpe 1.91→2.21，DD -7.6%→-5.1%；推荐实盘 zhuang 20-25%
 - [Zhuang L5 仓位 sizing 2026-05](zhuang_l5_experiments_2026-05.md) — score 分级仓位 (3%/5%/8%) 6y Sharpe 1.63→1.81，收益 +48%→+76%；已落地 config
 - [Equity_factor L7 实盘修复 2026-05](equity_factor_l7_2026-05.md) — 用户套牢→Pullback 入场全失败→C3 出场优化（regime_exit+partial_exit+collar）4y Sharpe +174%/DD 改善 5pp
+- [前后端分离 + Apple 风格前端改造 2026-05](frontend_backend_refactor_2026-05.md) — FastAPI + React/Vite/Tailwind Apple 风格报告系统；自动开平仓闭环；3 个 daily 脚本自动串联 HTML 报告
