@@ -20,3 +20,4 @@
 - [Zhuang L5 仓位 sizing 2026-05](zhuang_l5_experiments_2026-05.md) — score 分级仓位 (3%/5%/8%) 6y Sharpe 1.63→1.81，收益 +48%→+76%；已落地 config
 - [Equity_factor L7 实盘修复 2026-05](equity_factor_l7_2026-05.md) — 用户套牢→Pullback 入场全失败→C3 出场优化（regime_exit+partial_exit+collar）4y Sharpe +174%/DD 改善 5pp
 - [前后端分离 + Apple 风格前端改造 2026-05](frontend_backend_refactor_2026-05.md) — FastAPI + React/Vite/Tailwind Apple 风格报告系统；自动开平仓闭环；3 个 daily 脚本自动串联 HTML 报告
+- [策略-市场解耦改造 2026-05](strategy_market_decouple_2026-05.md) — equity_factor 内 strategies/ + markets/ 拆分；--strategy 主索引；MarketContext 抽象；顺手修 daily 漏 merge L7-C3 的回归 bug
