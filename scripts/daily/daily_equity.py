@@ -29,7 +29,7 @@ if hasattr(sys.stdout, "reconfigure"):
 from quant_system.strategies.equity_factor.bottomup.factors import FactorWeights, score_universe
 from quant_system.strategies.equity_factor.bottomup.portfolio import m4_config_from_yaml
 from quant_system.strategies.equity_factor.catalyst.monitor import CatalystMonitor
-from quant_system.config import load_config
+from quant_system.config import load_config, resolve_strategy, resolve_strategy_params
 from quant_system.strategies.equity_factor.data.loader import DataLoader
 from quant_system.strategies.equity_factor.journal.journal import Journal
 from quant_system.strategies.equity_factor.risk.monitor import RiskMonitor
@@ -38,11 +38,17 @@ from quant_system.strategies.equity_factor.timing.signals import scan_today_entr
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--market", default="a_share", choices=["a_share", "hk_share"])
-    parser.add_argument("--strategy", default="bottomup_timing",
-                        choices=["bottomup_timing", "mean_reversion"],
-                        help="子策略：bottomup_timing 默认 momentum；mean_reversion 是超卖反弹")
+    parser = argparse.ArgumentParser(
+        description=(
+            "量化日报 (Phase 1b CLI 主索引翻转后).\n"
+            "  新用法: --strategy equity_momentum   # 自动从 deployments 推导 market\n"
+            "  旧用法: --strategy bottomup_timing --market a_share  # 仍兼容"
+        ),
+    )
+    parser.add_argument("--strategy", default="equity_momentum",
+                        help="策略名 (equity_momentum / equity_hk_momentum) 或工厂 kind (bottomup_timing / mean_reversion)")
+    parser.add_argument("--market", default=None, choices=["a_share", "hk_share"],
+                        help="可选；策略只部署到单一市场时自动推导")
     parser.add_argument("--top", type=int, default=30,
                         help="从因子打分前 N 名里挑择时信号")
     parser.add_argument("--limit", type=int, default=0,
@@ -59,6 +65,13 @@ def main() -> None:
     args = parser.parse_args()
 
     cfg = load_config()
+
+    # Phase 1b: --strategy 主索引解析
+    resolved_market, kind, strategy_name = resolve_strategy(cfg, args.strategy, args.market)
+    args.market = resolved_market
+    args.kind = kind
+    args.strategy_name = strategy_name
+
     market_cfg = cfg.get("markets", args.market)
     if not market_cfg or not market_cfg.get("enabled"):
         print(f"market {args.market} 在 config 里未启用")
@@ -73,9 +86,11 @@ def main() -> None:
     )
     j = Journal(cfg.journal_db_path)
     j.init_schema()
-    tcfg = timing_config_from_yaml_node(cfg.get("strategy", "timing", default=None))
+    # Phase 1b: 与 backtest.py 共用 resolve_strategy_params, 修复 daily_equity 漏 merge markets.<m>.timing 的回归
+    _params = resolve_strategy_params(cfg, args.market)
+    tcfg = timing_config_from_yaml_node(_params["timing"])
     bt_cfg = cfg.get("backtest") or {}
-    bench = market_cfg.get("benchmark") or bt_cfg.get("benchmark_symbol", "sh000300")
+    bench = _params["benchmark"]
 
     print()
     print("=" * 78)
@@ -143,7 +158,7 @@ def main() -> None:
             atr_pct_median_window=tcfg.m3_reg_index_atr_pct_median_window,
         )
 
-    if args.strategy == "mean_reversion":
+    if args.kind == "mean_reversion":
         # mean_reversion 子策略：直接调用 Strategy 类的 screen()，输出转 dict 格式
         from quant_system.strategies.equity_factor.engine.strategy import MeanReversionStrategy, MeanReversionConfig
         mr_node = (market_cfg.get("mean_reversion") or {}) if isinstance(market_cfg, dict) else {}
@@ -187,9 +202,9 @@ def main() -> None:
 
     # ---------------- Step 3: 对触发集合算因子, 按分排序 ----------------
     if hits:
-        w_cfg = cfg.get("factors", "weights", default={}) or {}
-        weights = FactorWeights(**w_cfg)
-        m4_cfg = m4_config_from_yaml(cfg.get("factors", "m4", default=None))
+        # Phase 1b: 用合并后的 weights, 同步修复漏 merge markets.<m>.factors.weights 的回归
+        weights = FactorWeights(**_params["weights"])
+        m4_cfg = m4_config_from_yaml(_params["m4"])
         m4_for_score = (
             m4_cfg if float(m4_cfg.m4_factor_dispersion_lambda) > 0 else None
         )
@@ -241,7 +256,7 @@ def main() -> None:
     if args.dry_run:
         print()
         print(f"【自动开仓】 (干跑模式，不实际录入)")
-    elif args.strategy == "mean_reversion":
+    elif args.kind == "mean_reversion":
         print()
         print(f"【自动开仓】 mean_reversion 策略暂不支持自动开仓，请手动处理")
     elif available_slots <= 0:
@@ -304,7 +319,7 @@ def main() -> None:
     # ---------------- 输出报告 JSON ----------------
     gate_ok = None
     gate_msg_str = ""
-    if args.strategy != "mean_reversion" and tcfg.m2_regime_enabled and args.market == "a_share":
+    if args.kind != "mean_reversion" and tcfg.m2_regime_enabled and args.market == "a_share":
         gate_ok = ok  # noqa: F821  (defined in the branch above)
         gate_msg_str = msg  # noqa: F821
 
@@ -337,6 +352,8 @@ def main() -> None:
         "date": args.asof,
         "market": args.market,
         "strategy": args.strategy,
+        "strategy_kind": args.kind,
+        "strategy_name": args.strategy_name,
         "market_gate": gate_ok,
         "market_gate_msg": gate_msg_str,
         "benchmark_close": "—",
@@ -345,8 +362,9 @@ def main() -> None:
         "positions": report_positions,
     }
     _REPORT_DATA.mkdir(parents=True, exist_ok=True)
-    # 按 market + strategy 分文件输出，report_builder 会合并
-    json_filename = f"quant_{args.market}_{args.strategy}.json"
+    # 按 market + kind 命名 JSON 文件，与 report builder / API 的硬编码引用兼容
+    # （strategy_name 信息通过 payload 字段传递；后续如要把文件名改成 strategy_name 需同步更新 builder/routes）
+    json_filename = f"quant_{args.market}_{args.kind}.json"
     (_REPORT_DATA / json_filename).write_text(
         json.dumps(report_payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )

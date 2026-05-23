@@ -39,7 +39,7 @@ import pandas as pd
 
 from quant_system.strategies.equity_factor.bottomup.factors import FactorWeights
 from quant_system.strategies.equity_factor.bottomup.portfolio import m4_config_from_yaml
-from quant_system.config import load_config
+from quant_system.config import load_config, resolve_strategy, resolve_strategy_params
 from quant_system.strategies.equity_factor.data.loader import DataLoader
 from quant_system.strategies.equity_factor.engine.backtest import BacktestDiagnostics, Backtester
 from quant_system.strategies.equity_factor.engine.metrics import check_admission, compute_metrics
@@ -49,14 +49,15 @@ from quant_system.strategies.equity_factor.timing.signals import timing_config_f
 from quant_system.strategies.equity_factor.universe.filter import UniverseFilter, UniverseFilterConfig
 
 
-def build_strategy(name: str, loader: DataLoader, cfg, market: str) -> object:
-    """策略工厂. 后续新策略在这里注册。
-    参数优先级: markets.<market>.timing > strategy.timing（全局默认）
-                markets.<market>.factors.weights > factors.weights（全局默认）
+def build_strategy(kind: str, loader: DataLoader, cfg, market: str) -> object:
+    """策略工厂. 入参 kind 是工厂键 (bottomup_timing / mean_reversion).
+    参数从 resolve_strategy_params(cfg, market) 拿 — 已 merge 全局默认 + market 覆盖.
     """
     market_cfg = cfg.get("markets", market) or {}
     universe = loader.get_universe(market, market_cfg["universe"])
-    if name == "mean_reversion":
+    params = resolve_strategy_params(cfg, market)
+
+    if kind == "mean_reversion":
         from quant_system.strategies.equity_factor.engine.strategy import MeanReversionStrategy, MeanReversionConfig
         mr_node = (market_cfg.get("mean_reversion") or {}) if isinstance(market_cfg, dict) else {}
         return MeanReversionStrategy(
@@ -65,31 +66,18 @@ def build_strategy(name: str, loader: DataLoader, cfg, market: str) -> object:
             cfg=MeanReversionConfig(**mr_node),
         )
 
-    if name == "bottomup_timing":
-        # 全局默认
-        global_timing = cfg.get("strategy", "timing", default=None) or {}
-        global_weights = cfg.get("factors", "weights", default={}) or {}
-        m4_cfg = m4_config_from_yaml(cfg.get("factors", "m4", default=None))
-        bt_fallback = cfg.get("backtest", "benchmark_symbol", default="sh000300")
-        bench = market_cfg.get("benchmark") or bt_fallback
-
-        # 市场级覆盖（同名字段以市场配置为准）
-        mkt_timing = market_cfg.get("timing") or {}
-        mkt_weights = (market_cfg.get("factors") or {}).get("weights") or {}
-
-        merged_timing = {**global_timing, **mkt_timing}
-        merged_weights = {**global_weights, **mkt_weights}
-
-        tcfg = timing_config_from_yaml_node(merged_timing)
+    if kind == "bottomup_timing":
+        tcfg = timing_config_from_yaml_node(params["timing"])
+        m4_cfg = m4_config_from_yaml(params["m4"])
         return BottomupTimingStrategy(
             loader=loader, market=market,
             universe_codes=universe["code"].tolist(),
             timing_cfg=tcfg,
-            weights=FactorWeights(**merged_weights),
-            regime_benchmark_symbol=str(bench),
+            weights=FactorWeights(**params["weights"]),
+            regime_benchmark_symbol=str(params["benchmark"]),
             m4_cfg=m4_cfg,
         )
-    raise ValueError(f"未注册策略: {name}")
+    raise ValueError(f"未注册策略 kind: {kind}")
 
 
 def _write_json(path: Path, obj) -> None:
@@ -148,9 +136,18 @@ def write_report(out_dir: Path, strategy_name: str, args, metrics, admission_pas
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--strategy", default="bottomup_timing")
-    parser.add_argument("--market", default="a_share", choices=["a_share", "hk_share", "us_share"])
+    parser = argparse.ArgumentParser(
+        description=(
+            "回测主入口 (Phase 1b CLI 主索引翻转后).\n"
+            "  新用法: --strategy equity_momentum   # 自动从 deployments 推导 market\n"
+            "  旧用法: --strategy bottomup_timing --market a_share  # 仍兼容"
+        ),
+    )
+    parser.add_argument("--strategy", default="equity_momentum",
+                        help="策略名 (equity_momentum / equity_hk_momentum) 或工厂 kind (bottomup_timing / mean_reversion)")
+    parser.add_argument("--market", default=None,
+                        choices=["a_share", "hk_share", "us_share"],
+                        help="可选；策略只部署到单一市场时自动推导")
     parser.add_argument("--start", default="2024-04-01")
     parser.add_argument("--end", default=datetime.now().strftime("%Y-%m-%d"))
     parser.add_argument("--capital", type=float, default=None,
@@ -160,6 +157,12 @@ def main() -> None:
     args = parser.parse_args()
 
     cfg = load_config()
+
+    # Phase 1b: --strategy 主索引解析
+    resolved_market, kind, strategy_name = resolve_strategy(cfg, args.strategy, args.market)
+    args.market = resolved_market
+    args.kind = kind
+    args.strategy_name = strategy_name      # 显示用；None 表示走 kind 兼容模式
     hsi = cfg.get("data", "hang_seng_indexes", default=None) or {}
     us_mkt = cfg.get("data", "us_market", default=None) or {}
     loader = DataLoader(
@@ -174,7 +177,7 @@ def main() -> None:
     benchmark_symbol = market_cfg_bt.get("benchmark") or bt_cfg.get("benchmark_symbol", "sh000300")
     benchmark_label = _benchmark_report_label(benchmark_symbol)
 
-    strategy = build_strategy(args.strategy, loader, cfg, args.market)
+    strategy = build_strategy(args.kind, loader, cfg, args.market)
 
     # L3：基准对冲 overlay（从 markets.<market>.hedge 读，关闭默认）
     hedge_cfg = (market_cfg_bt.get("hedge") or {}) if isinstance(market_cfg_bt, dict) else {}
@@ -195,7 +198,8 @@ def main() -> None:
     # ---------- 固定输出目录（同策略+市场+区间覆盖写入，不产生历史 run_id 子目录） ----------
     out_root = Path(bt_cfg.get("output_dir", "./data/backtest"))
     if not out_root.is_absolute():
-        out_root = Path(__file__).resolve().parents[1] / out_root
+        # scripts/backtest/backtest.py → parents[2] 是 repo root
+        out_root = Path(__file__).resolve().parents[2] / out_root
     out_dir = out_root / f"{args.strategy}_{args.market}_{args.start}_{args.end}"
     if out_dir.exists():
         shutil.rmtree(out_dir)
@@ -213,7 +217,8 @@ def main() -> None:
         except Exception as e:
             _write_json(out_dir / "universe_filter_stats_sample.json", {"error": str(e)})
 
-    print(f"启动回测: {args.strategy}  {args.start} -> {args.end}", flush=True)
+    _label = args.strategy if args.strategy_name else f"{args.kind}({args.market})"
+    print(f"启动回测: {_label}  {args.start} -> {args.end}", flush=True)
     print(f"  初始资金 {bt.initial_capital:,.0f}, 最多持仓 {bt.max_positions}, 单只 {bt.single_position_pct*100:.0f}%", flush=True)
     print(f"  手续费 {bt.commission*100:.2f}%, 印花税 {bt.stamp_tax*100:.2f}%, 滑点 {bt.slippage*100:.2f}%", flush=True)
     print()
@@ -303,6 +308,8 @@ def main() -> None:
         out_dir / "metrics.json",
         {
             "strategy": args.strategy,
+            "strategy_kind": args.kind,
+            "strategy_name": args.strategy_name,
             "market": args.market,
             "benchmark_symbol": benchmark_symbol,
             "start": args.start,
