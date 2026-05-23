@@ -147,9 +147,9 @@ def main() -> None:
     name_map = dict(zip(universe["code"], universe["name"]))
 
     regime_ctx = None
-    if args.market == "a_share" and (
-        tcfg.m3_regime_rsi_band or tcfg.m3_reg_vol_tighten_hi
-    ):
+    # Phase 2b: 由 tcfg 字段驱动（hk_share 策略默认未开这两个字段，不会进；
+    # 真要在 hk 上启用，是配置层的事，scripts 不该硬限市场）
+    if tcfg.m3_regime_rsi_band or tcfg.m3_reg_vol_tighten_hi:
         regime_ctx = build_timing_regime_context(
             loader,
             str(bench),
@@ -180,7 +180,9 @@ def main() -> None:
             "reasons": list(s.reasons.values()),
             "score": s.score,
         } for s in signals]
-    elif tcfg.m2_regime_enabled and args.market == "a_share":
+    elif tcfg.m2_regime_enabled:
+        # Phase 2b: 由 tcfg.m2_regime_enabled 驱动；hk_share 策略也开了 m2_regime_enabled,
+        # 现在终于会用上 M2 门保护（之前被 args.market == "a_share" 硬限误屏蔽）
         gate = MarketRegimeGate(loader, str(bench), tcfg.m2_regime_ma_days)
         ok, msg = gate.allows_long_entries(args.asof)
         print(f"  M2市况门: {msg}", flush=True)
@@ -321,7 +323,8 @@ def main() -> None:
     # ---------------- 输出报告 JSON ----------------
     gate_ok = None
     gate_msg_str = ""
-    if args.kind != "mean_reversion" and tcfg.m2_regime_enabled and args.market == "a_share":
+    if args.kind != "mean_reversion" and tcfg.m2_regime_enabled:
+        # Phase 2b: 与 L183 elif 条件对齐，去掉冗余 market 硬比
         gate_ok = ok  # noqa: F821  (defined in the branch above)
         gate_msg_str = msg  # noqa: F821
 

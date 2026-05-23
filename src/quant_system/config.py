@@ -98,7 +98,7 @@ def _assemble_split(root: dict[str, Any], base_dir: Path) -> dict[str, Any]:
                 "strategy_name": sname,                  # 反查用
                 "strategy_kind": sd.get("kind"),
             }
-            for opt_key in ("regime_benchmark", "universe_filter", "industry_concentration"):
+            for opt_key in ("regime_benchmark", "universe_filter", "industry_concentration", "fees"):
                 if opt_key in md:
                     entry[opt_key] = md[opt_key]
             # 算法层从策略文件复制

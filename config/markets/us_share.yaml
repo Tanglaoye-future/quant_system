@@ -9,11 +9,11 @@ regime_benchmark: NDX
 universe_filter: none
 industry_concentration: false     # US 无 industry_map 数据，关闭 M4 行业约束
 
+fees:
+  stamp_tax: 0.0                  # 美股无印花税
+
 data:
   us_market:
     daily_dir: "./data/us_prices"
     index_daily_csv: "./data/us_prices/NDX_index.csv"
     constituents_csv: "./data/us_prices/nasdaq100_constituents.csv"
-
-fees:
-  stamp_tax_override: 0.0    # 美股无印花税；backtest.py L187 现在写死 if market==us_share 时归 0

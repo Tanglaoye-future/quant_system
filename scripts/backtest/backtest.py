@@ -182,16 +182,20 @@ def main() -> None:
     benchmark_label = _benchmark_report_label(benchmark_symbol)
 
     strategy = build_strategy(args.kind, loader, cfg, args.market)
+    market_ctx = load_market_context(cfg, args.market)
 
     # L3：基准对冲 overlay（从 markets.<market>.hedge 读，关闭默认）
     hedge_cfg = (market_cfg_bt.get("hedge") or {}) if isinstance(market_cfg_bt, dict) else {}
+    # Phase 2b: stamp_tax 优先从 markets/<m>.yaml.fees 读，回退到入口 backtest.stamp_tax
+    market_fees = (market_cfg_bt.get("fees") or {}) if isinstance(market_cfg_bt, dict) else {}
+    stamp_tax = market_fees.get("stamp_tax", bt_cfg.get("stamp_tax", 0.001))
     bt = Backtester(
         loader=loader,
         initial_capital=args.capital or bt_cfg.get("initial_capital", 1_000_000),
         max_positions=cfg.get("strategy", "position_max_count", default=10),
         single_position_pct=cfg.get("strategy", "single_position_pct_max", default=0.15),
         commission=bt_cfg.get("commission", 0.0003),
-        stamp_tax=0.0 if args.market == "us_share" else bt_cfg.get("stamp_tax", 0.001),
+        stamp_tax=stamp_tax,
         slippage=bt_cfg.get("slippage", 0.001),
         cash_buffer_pct=bt_cfg.get("cash_buffer_pct", 0.05),
         benchmark_hedge_ratio=float(hedge_cfg.get("ratio", 0.0)),
@@ -210,7 +214,8 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # ---------- Universe 过滤样例输出（无黑盒；按 start 截断，避免未来信息） ----------
-    if args.market == "a_share":
+    # Phase 2b: 由 market_ctx.universe_filter 驱动，而非字符串硬比 a_share
+    if market_ctx.universe_filter == "a_share":
         try:
             market_cfg = cfg.get("markets", args.market)
             universe = loader.get_universe(args.market, market_cfg["universe"])

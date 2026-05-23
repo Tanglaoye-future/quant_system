@@ -6,6 +6,9 @@ regime_benchmark: HSCHK100
 universe_filter: none
 industry_concentration: false     # HK 无 industry_map 数据，关闭 M4 行业约束
 
+fees:
+  stamp_tax: 0.0                  # HK 无印花税（实际上 HK 有 0.13% stamp duty，本系统目前未建模）
+
 data:
   hang_seng_indexes:
     full_constituents_csv: ""           # 可选：订阅《指数数据产品》全量成份 CSV 路径

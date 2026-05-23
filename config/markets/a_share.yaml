@@ -8,3 +8,6 @@ benchmark: sh000300
 regime_benchmark: sh000300        # MarketRegimeGate 用
 universe_filter: a_share          # UniverseFilter.filter_a_share；'none' = 不过滤
 industry_concentration: true      # 启用 M4 行业集中度约束（依赖 loader.get_a_share_industry_map）
+
+fees:
+  stamp_tax: 0.001                # A 股印花税 (仅卖出)
