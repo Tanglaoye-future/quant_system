@@ -30,6 +30,7 @@ from quant_system.strategies.equity_factor.bottomup.factors import FactorWeights
 from quant_system.strategies.equity_factor.bottomup.portfolio import m4_config_from_yaml
 from quant_system.strategies.equity_factor.catalyst.monitor import CatalystMonitor
 from quant_system.config import load_config, resolve_strategy, resolve_strategy_params
+from quant_system.market import load_market_context
 from quant_system.strategies.equity_factor.data.loader import DataLoader
 from quant_system.strategies.equity_factor.journal.journal import Journal
 from quant_system.strategies.equity_factor.risk.monitor import RiskMonitor
@@ -166,6 +167,7 @@ def main() -> None:
             loader=loader, market=args.market,
             universe_codes=universe["code"].tolist(),
             cfg=MeanReversionConfig(**mr_node),
+            market_ctx=load_market_context(cfg, args.market),
         )
         from datetime import date as _date
         asof_dt = datetime.strptime(args.asof, "%Y-%m-%d").date()

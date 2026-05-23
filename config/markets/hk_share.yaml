@@ -4,6 +4,7 @@ universe: hs100
 benchmark: HSCHK100
 regime_benchmark: HSCHK100
 universe_filter: none
+industry_concentration: false     # HK 无 industry_map 数据，关闭 M4 行业约束
 
 data:
   hang_seng_indexes:

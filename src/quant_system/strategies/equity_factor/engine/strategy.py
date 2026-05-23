@@ -12,6 +12,7 @@ from typing import Optional, Protocol
 
 import pandas as pd
 
+from quant_system.market import MarketContext
 from quant_system.strategies.equity_factor.bottomup.factors import FactorWeights, score_universe
 from quant_system.strategies.equity_factor.bottomup.portfolio import M4Config
 from quant_system.strategies.equity_factor.data.loader import DataLoader
@@ -22,6 +23,17 @@ from quant_system.strategies.equity_factor.timing.signals import (
     entry_signal_from_enriched, exit_signal_from_enriched, trailing_stop_from_enriched,
 )
 from quant_system.strategies.equity_factor.universe.filter import UniverseFilter, UniverseFilterConfig
+
+
+def _market_ctx_or_default(market: str, market_ctx: Optional[MarketContext]) -> MarketContext:
+    """向下兼容辅助：旧调用未传 market_ctx 时按市场名给默认能力（与 Phase 2a 之前硬编码等价）."""
+    if market_ctx is not None:
+        return market_ctx
+    return MarketContext(
+        name=market,
+        universe_filter="a_share" if market == "a_share" else None,
+        industry_concentration=(market == "a_share"),
+    )
 
 
 @dataclass
@@ -93,9 +105,11 @@ class MeanReversionStrategy:
         universe_codes: list[str],
         cfg: Optional[MeanReversionConfig] = None,
         history_start: str = "2018-01-01",
+        market_ctx: Optional[MarketContext] = None,
     ):
         self.loader = loader
-        self.market = market
+        self.market = market                                    # 仍保留供 loader.get_daily 数据源 dispatch
+        self.market_ctx = _market_ctx_or_default(market, market_ctx)
         self.universe_codes = universe_codes
         self.cfg = cfg or MeanReversionConfig()
         self.history_start = history_start
@@ -108,7 +122,7 @@ class MeanReversionStrategy:
     def _filtered_universe_codes(self, asof_str: str) -> list[str]:
         if asof_str in self._filtered_cache:
             return self._filtered_cache[asof_str]
-        if self.market != "a_share":
+        if self.market_ctx.universe_filter != "a_share":
             self._filtered_cache[asof_str] = self.universe_codes
             return self.universe_codes
         uni_df = pd.DataFrame({"code": self.universe_codes})
@@ -226,9 +240,11 @@ class BottomupTimingStrategy:
         history_start: str = "2018-01-01",
         regime_benchmark_symbol: Optional[str] = None,
         m4_cfg: Optional[M4Config] = None,
+        market_ctx: Optional[MarketContext] = None,
     ):
         self.loader = loader
-        self.market = market
+        self.market = market                                    # 仍保留供 loader.get_daily 数据源 dispatch
+        self.market_ctx = _market_ctx_or_default(market, market_ctx)
         self.universe_codes = universe_codes
         self.tcfg = timing_cfg or TimingConfig()
         self.weights = weights or FactorWeights()
@@ -249,8 +265,8 @@ class BottomupTimingStrategy:
     def _filtered_universe_codes(self, asof_str: str) -> list[str]:
         if asof_str in self._filtered_cache:
             return self._filtered_cache[asof_str]
-        # 当前只实现 A 股过滤；港股后续按 M2 方案扩展
-        if self.market != "a_share":
+        # 当前只实现 A 股过滤；其他市场（universe_filter=none）跳过
+        if self.market_ctx.universe_filter != "a_share":
             self._filtered_cache[asof_str] = self.universe_codes
             return self.universe_codes
         uni_df = pd.DataFrame({"code": self.universe_codes})

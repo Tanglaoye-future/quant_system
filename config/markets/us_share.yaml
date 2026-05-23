@@ -7,6 +7,7 @@ universe: nasdaq100
 benchmark: NDX
 regime_benchmark: NDX
 universe_filter: none
+industry_concentration: false     # US 无 industry_map 数据，关闭 M4 行业约束
 
 data:
   us_market:

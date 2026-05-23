@@ -40,6 +40,7 @@ import pandas as pd
 from quant_system.strategies.equity_factor.bottomup.factors import FactorWeights
 from quant_system.strategies.equity_factor.bottomup.portfolio import m4_config_from_yaml
 from quant_system.config import load_config, resolve_strategy, resolve_strategy_params
+from quant_system.market import load_market_context
 from quant_system.strategies.equity_factor.data.loader import DataLoader
 from quant_system.strategies.equity_factor.engine.backtest import BacktestDiagnostics, Backtester
 from quant_system.strategies.equity_factor.engine.metrics import check_admission, compute_metrics
@@ -56,6 +57,7 @@ def build_strategy(kind: str, loader: DataLoader, cfg, market: str) -> object:
     market_cfg = cfg.get("markets", market) or {}
     universe = loader.get_universe(market, market_cfg["universe"])
     params = resolve_strategy_params(cfg, market)
+    market_ctx = load_market_context(cfg, market)
 
     if kind == "mean_reversion":
         from quant_system.strategies.equity_factor.engine.strategy import MeanReversionStrategy, MeanReversionConfig
@@ -64,6 +66,7 @@ def build_strategy(kind: str, loader: DataLoader, cfg, market: str) -> object:
             loader=loader, market=market,
             universe_codes=universe["code"].tolist(),
             cfg=MeanReversionConfig(**mr_node),
+            market_ctx=market_ctx,
         )
 
     if kind == "bottomup_timing":
@@ -76,6 +79,7 @@ def build_strategy(kind: str, loader: DataLoader, cfg, market: str) -> object:
             weights=FactorWeights(**params["weights"]),
             regime_benchmark_symbol=str(params["benchmark"]),
             m4_cfg=m4_cfg,
+            market_ctx=market_ctx,
         )
     raise ValueError(f"未注册策略 kind: {kind}")
 

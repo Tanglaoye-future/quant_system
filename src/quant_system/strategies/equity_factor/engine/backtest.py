@@ -316,6 +316,7 @@ class Backtester:
                     signals = m4_prioritize_signals(
                         signals, positions, pending_buys, slots,
                         self.loader, market, day_str, m4_cfg,
+                        market_ctx=getattr(strategy, "market_ctx", None),
                     )
                 if diagnostics is not None and signals:
                     picked: list[str] = []
