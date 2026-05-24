@@ -1,10 +1,10 @@
-# 策略：A 股中长线因子动量 (L7-C3 收紧出场版)
+# 策略：A 股中长线因子动量 (L7-C3 出场 + L8D2 去 fcf 因子版)
 # 算法层完整自包含。市场环境通过 deployments 指向 markets/<m>.yaml。
 #
-# 历史：v1 baseline → L2 因子增强 (fcf_yield) → L7-C3 出场优化 (regime_exit+partial_exit+collar)
-# 4y 2022-2026: Sharpe 0.23 → 0.62 (+174%) / 收益 +17.7% → +38.5% / DD -19.5% → -14.3%
-# 8y 2018-2026: Sharpe 0.53 → 0.40 (牛市略输) / DD -18.5% → -14.8% (DD 始终改善)
-# trade-off：牛市 baseline 占优；震荡熊市 C3 占优；当前 2022-2026 模式适用
+# 历史：v1 baseline → L2 因子增强 (fcf_yield) → L7-C3 出场优化 (regime_exit+partial_exit+collar) → L8D2 fcf=0
+# 4y 2022-2026: L7-C3 base 0.579 → L8D2 0.675 (+0.096) / 收益 +36.0% → +43.4% / DD -14.3% → -13.6%
+# 8y 2018-2026: L7-C3 base 0.063 → L8D2 0.195 (+0.132) / 收益 +18.8% → +32.0% / DD -16.8% → -19.5% (DD 略恶化)
+# trade-off：fcf_yield 在熊市起一定"避雷"作用，去掉 +Sharpe / +收益 但 DD +2.7pp
 
 name: equity_momentum
 kind: bottomup_timing                # backtest.py build_strategy 工厂键
@@ -55,13 +55,13 @@ timing:
 
 factors:
   weights:
-    # L2 因子增强：fcf_yield 加入，PE 保留（A 股 PE 信噪比低但 0.15 权重无害）
+    # L8D2: fcf_yield 实测 4y/8y 双窗口负贡献，去掉。sum 0.80 (打分会被压缩但相对排序不变)
     pe_inverse: 0.15
     pb_inverse: 0.10
     roe: 0.20
     revenue_growth: 0.15
     momentum_3m: 0.20
-    fcf_yield: 0.20
+    fcf_yield: 0.0
     rev_accel: 0.0
   # 注：m4 配置在入口 equity_factor.yaml 全局共享（Phase 1a 设计）
 
