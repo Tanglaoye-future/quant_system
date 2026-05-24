@@ -434,17 +434,20 @@ class DataLoader:
 
     @staticmethod
     def latest_n_indicator_values(
-        abstract_df: pd.DataFrame, indicator: str, asof: str | None = None, n: int = 2
+        abstract_df: pd.DataFrame, indicator: str, asof: str | None = None,
+        n: int = 2, publication_lag_days: int = 90,
     ) -> list[float]:
         """从 stock_financial_abstract 里取某指标最近 N 期的有效值（降序排列，最新在前）。
-        asof 截断：仅使用报告期 <= asof 的列，与 latest_indicator_value 保持相同防未来函数规则。
+        asof 截断：报告期 <= (asof - publication_lag_days) 才纳入，保守模拟实际公告窗口。
+        A 股一季报通常 4 月底披露 = 报告期 3-31 起约 30 天；半/年报最长约 90 天。
+        publication_lag_days=90 与 HK latest_hk_indicator 同步，安全侧偏严。
         """
         rows = abstract_df[abstract_df["指标"] == indicator]
         if rows.empty:
             return []
         date_cols = [c for c in abstract_df.columns if c not in ("选项", "指标")]
         if asof:
-            cutoff = asof.replace("-", "")
+            cutoff = (pd.to_datetime(asof) - pd.Timedelta(days=publication_lag_days)).strftime("%Y%m%d")
             date_cols = [c for c in date_cols if str(c) <= cutoff]
         results: list[float] = []
         for col in sorted(date_cols, reverse=True):
@@ -460,18 +463,20 @@ class DataLoader:
 
     @staticmethod
     def latest_indicator_value(
-        abstract_df: pd.DataFrame, indicator: str, asof: str | None = None
+        abstract_df: pd.DataFrame, indicator: str, asof: str | None = None,
+        publication_lag_days: int = 90,
     ) -> float | None:
         """从 stock_financial_abstract 的长格式里取某指标的最新一期值.
 
-        注意: abstract 的列名是报告期(YYYYMMDD). 回测时必须避免使用 asof 之后的报告期，避免未来信息泄漏。
+        asof 截断：报告期 <= (asof - publication_lag_days) 才纳入。
+        publication_lag_days=90 与 HK 同步；A 股年报最长披露窗口约 4 个月。
         """
         rows = abstract_df[abstract_df["指标"] == indicator]
         if rows.empty:
             return None
         date_cols = [c for c in abstract_df.columns if c not in ("选项", "指标")]
         if asof:
-            cutoff = asof.replace("-", "")
+            cutoff = (pd.to_datetime(asof) - pd.Timedelta(days=publication_lag_days)).strftime("%Y%m%d")
             date_cols = [c for c in date_cols if str(c) <= cutoff]
         # 列名是 'YYYYMMDD', 倒序取第一个非空
         date_cols_sorted = sorted(date_cols, reverse=True)
