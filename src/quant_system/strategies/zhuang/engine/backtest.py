@@ -35,7 +35,10 @@ class ZhuangBacktester:
         bt = config.get("backtest", {})
         self.initial_capital = float(bt.get("initial_capital", 1_000_000))
         self.commission = float(bt.get("commission", 0.0003))
-        self.stamp_tax = float(bt.get("stamp_tax", 0.001))
+        # Phase 1-C: stamp_tax 优先从 loader.market_cfg.fees 读 (market-specific),
+        # 回退顶层 backtest.stamp_tax (legacy)
+        market_fees = (loader.market_cfg.get("fees") or {}) if hasattr(loader, "market_cfg") else {}
+        self.stamp_tax = float(market_fees.get("stamp_tax", bt.get("stamp_tax", 0.001)))
         self.slippage = float(bt.get("slippage", 0.002))
         self.output_dir = Path(bt.get("output_dir", "./data/backtest"))
 
@@ -66,7 +69,10 @@ class ZhuangBacktester:
 
         # 市场趋势过滤
         self.market_trend_filter = bool(strat.get("market_trend_filter", False))
-        self.market_trend_index = strat.get("market_trend_index", "sh.000905")
+        # Phase 1-C: market_trend_index 优先用 loader.market_cfg.benchmark (market-specific),
+        # 回退 strategy.market_trend_index (legacy)
+        market_benchmark = (loader.market_cfg.get("benchmark") if hasattr(loader, "market_cfg") else None)
+        self.market_trend_index = market_benchmark or strat.get("market_trend_index", "sh.000905")
         self.market_trend_ma = int(strat.get("market_trend_ma", 60))
 
         # L5: score-weighted position sizing
@@ -452,7 +458,10 @@ class ZhuangBacktester:
         metrics["end"] = end
 
         # ── 保存结果 ──────────────────────────────────────────────────────────
-        tag = f"zhuang_a_share_{start}_{end}"
+        # Phase 1-C: tag 用 loader.market 替代硬码 a_share;
+        # market=a_share 时 tag 仍为 zhuang_a_share_* (保持历史目录命名兼容)
+        market_name = getattr(self.loader, "market", "a_share")
+        tag = f"zhuang_{market_name}_{start}_{end}"
         out_dir = self.output_dir / tag
         out_dir.mkdir(parents=True, exist_ok=True)
 

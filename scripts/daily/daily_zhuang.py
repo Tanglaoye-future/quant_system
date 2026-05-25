@@ -28,6 +28,8 @@ _REPORT_DATA = Path(__file__).resolve().parents[2] / "report" / "data"
 def parse_args():
     p = argparse.ArgumentParser(description="今日吃货期候选扫描")
     p.add_argument("--config", default="config/zhuang.yaml")
+    p.add_argument("--market", default=None,
+                   help="Phase 1-C: 指定 market (a_share / hk_small); 缺省读 config.default_market 或 a_share")
     p.add_argument("--date", default=date.today().strftime("%Y-%m-%d"), help="扫描日期")
     p.add_argument("--top", type=int, default=15, help="显示 TOP N")
     p.add_argument("--min-score", type=float, default=50.0, help="最低评分")
@@ -43,7 +45,9 @@ def main():
     with open(config_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
-    loader = ZhuangDataLoader(config, refresh_days=args.refresh_days)
+    # Phase 1-C: market 解析: 命令行 --market > config.default_market > a_share
+    market = args.market or config.get("default_market", "a_share")
+    loader = ZhuangDataLoader(config, refresh_days=args.refresh_days, market=market)
     universe = loader.get_universe(args.date)
     print(f"[scan] universe={len(universe)} codes, date={args.date}")
 

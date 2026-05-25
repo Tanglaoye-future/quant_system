@@ -26,6 +26,8 @@ def parse_args():
     p.add_argument("--start", required=True, help="开始日期 yyyy-mm-dd")
     p.add_argument("--end", required=True, help="结束日期 yyyy-mm-dd")
     p.add_argument("--config", default="config/zhuang.yaml", help="配置文件路径")
+    p.add_argument("--market", default=None,
+                   help="Phase 1-C: 指定 market (a_share / hk_small); 缺省读 config.default_market 或 a_share")
     p.add_argument("--universe", nargs="*", default=None, help="指定 universe 股票代码列表")
     p.add_argument("--universe-file", default=None, help="从 CSV 文件读取 universe（含 code 列）")
     p.add_argument("--sample", type=int, default=None, help="随机抽样 N 只（配合 --universe-file）")
@@ -56,7 +58,9 @@ def main():
             universe = random.sample(universe, args.sample)
             print(f"[backtest] 随机抽样 {len(universe)} 只 (seed={args.seed})", flush=True)
 
-    loader = ZhuangDataLoader(config, refresh_days=args.refresh_days)
+    # Phase 1-C: market 解析: --market > config.default_market > a_share
+    market = args.market or config.get("default_market", "a_share")
+    loader = ZhuangDataLoader(config, refresh_days=args.refresh_days, market=market)
     backtester = ZhuangBacktester(config, loader)
 
     metrics = backtester.run(

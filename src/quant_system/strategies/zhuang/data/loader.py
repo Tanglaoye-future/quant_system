@@ -1,9 +1,12 @@
 """
 zhuang_system 数据加载器.
 
-数据源：BaoStock（非营利，免注册，不走 eastmoney 接口）
-  - 日线行情：query_history_k_data_plus（含换手率）
-  - Universe：query_stock_basic + query_profit_data（总股本 × 近期股价 → 市值）
+数据源 (Phase 1-C 按 market dispatch):
+  - a_share: BaoStock 全量历史 + query_profit_data 总股本 → 市值
+  - hk_small: Phase 1-D 接入 (akshare/yfinance, 当前调用直接 NotImplementedError)
+
+调用者优先用装配后 config (含 markets[market] 子字典). 旧调用 (顶层 universe 不带 markets)
+仍向后兼容: market=a_share 默认, 顶层 universe 字段当作 fallback.
 """
 from __future__ import annotations
 
@@ -42,12 +45,41 @@ def _to_plain_code(bs_code: str) -> str:
 
 
 class ZhuangDataLoader:
-    """庄股策略专用数据加载器（DuckDB 优先 + CSV/BaoStock fallback）."""
+    """庄股策略专用数据加载器（DuckDB 优先 + CSV/BaoStock fallback）.
 
-    def __init__(self, config: dict, refresh_days: int = 1) -> None:
-        _require_bs()
+    Phase 1-C: 加 market 参数支持多市场 dispatch.
+        - market='a_share' (默认, 向下兼容): BaoStock 全量 + DuckDB store key='a_share'
+        - market='hk_small': Phase 1-D 待接入, 调用直接 NotImplementedError
+    """
+
+    def __init__(
+        self, config: dict, refresh_days: int = 1, market: str = "a_share",
+    ) -> None:
         self.config = config
         self.refresh_days = refresh_days
+        # 优先用 config["markets"][market] (Phase 1-C 新结构), 缺失回退到顶层 universe (legacy)
+        markets_node = config.get("markets") or {}
+        if market in markets_node:
+            self.market_cfg = markets_node[market]
+        else:
+            # legacy single-market config: 顶层 universe + fees 等
+            self.market_cfg = {
+                "universe": config.get("universe", {}),
+                "data_provider": "baostock",
+            }
+        self.market = market
+        self.data_provider = self.market_cfg.get("data_provider", "baostock")
+
+        # 数据源前置检查 - baostock 只在真正用 (login/fetch) 时才检查 ImportError
+        # hk_small/hk_yfinance provider 当前是占位, 立即 NotImplementedError 阻止构造
+        if self.data_provider in ("hk_akshare", "hk_yfinance"):
+            raise NotImplementedError(
+                f"market={market} data_provider={self.data_provider} 待 Phase 1-D 接入. "
+                "当前架构占位; HK 小盘股 universe 数据源 + benchmark + provider 实施在 task #8."
+            )
+        if self.data_provider != "baostock":
+            raise ValueError(f"未知 data_provider: {self.data_provider}")
+
         data_cfg = config.get("data", {})
         self.cache_dir = Path(data_cfg.get("cache_dir", "./data/cache"))
         self.daily_dir = Path(data_cfg.get("daily_dir", "./data/prices"))
@@ -70,6 +102,7 @@ class ZhuangDataLoader:
         return self._store if self._store else None
 
     def _login(self) -> None:
+        _require_bs()
         if not self._bs_logged_in:
             lg = bs.login()
             if lg.error_code != "0":
@@ -99,9 +132,12 @@ class ZhuangDataLoader:
 
         市值估算：totalShare（万股，季报）× 近期收盘价
         精度足够做 5-200亿市值筛选，误差在季报披露延迟（约1-3个月）内。
+
+        Phase 1-C: universe 字段优先从 market_cfg.universe 读 (新 markets 结构);
+        缺失回退顶层 config.universe (legacy)。
         """
         self._login()
-        ucfg = self.config.get("universe", {})
+        ucfg = self.market_cfg.get("universe") or self.config.get("universe", {})
         cap_min = float(ucfg.get("market_cap_min_cny", 5e9))
         cap_max = float(ucfg.get("market_cap_max_cny", 2e11))
         min_listed = int(ucfg.get("min_listed_days", 365))
@@ -259,10 +295,10 @@ class ZhuangDataLoader:
         """
         code = str(code).zfill(6)
 
-        # 1. DuckDB hot path
+        # 1. DuckDB hot path - Phase 1-C: 用 self.market 而非硬码 "a_share"
         store = self._get_store()
-        if store is not None and store.has_code("a_share", code):
-            df = store.get_daily("a_share", code, start, end)
+        if store is not None and store.has_code(self.market, code):
+            df = store.get_daily(self.market, code, start, end)
             if not df.empty:
                 return df.reset_index(drop=True)
 
@@ -278,10 +314,10 @@ class ZhuangDataLoader:
         df = self._fetch_daily(code)
         if df is not None and not df.empty:
             df.to_csv(csv_path, index=False)
-            # 同时写入 DuckDB 让下次更快
+            # 同时写入 DuckDB 让下次更快 - Phase 1-C: 用 self.market
             if store is not None:
                 try:
-                    store.insert_daily("a_share", code, df, replace=True)
+                    store.insert_daily(self.market, code, df, replace=True)
                 except Exception:
                     pass
             df["date"] = pd.to_datetime(df["date"])

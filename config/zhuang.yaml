@@ -1,5 +1,13 @@
 # zhuang_system — 庄股跟庄策略配置
 # 策略逻辑：识别吃货期（主力积累阶段），在低位共振建仓，拉升期持仓，5日止盈/止损退出
+#
+# Phase 1-C (2026-05-25): 加 markets: 子字典支持多 market dispatch。
+#   - daily_zhuang.py / backtest_zhuang.py 可加 --market hk_small 跑 HK 占位 (Phase 1-D 接入)
+#   - 8 个 scripts/backtest/*_zhuang.py 沿用 yaml.safe_load 不走 split-config 装配器, 默认 market=a_share
+#   - 顶层 universe 字段保留 (向下兼容): ZhuangDataLoader 优先读 markets[market], 缺失回退顶层 universe
+
+# 默认 market (向下兼容旧 scripts/cron 不带 --market 调用)
+default_market: a_share
 
 universe:
   market: a_share
@@ -8,6 +16,35 @@ universe:
   exclude_st: true                       # 排除 ST / *ST（已有风险警示）
   min_listed_days: 365                   # 上市未满 1 年不纳入（规避次新股陷阱）
   min_price: 2.0                         # 最低股价 2 元（排除仙股）
+
+# 多 market 配置 (Phase 1-C). 字段集与顶层 universe 平行;
+# data_provider / benchmark / fees 是市场特有字段, 顶层 backtest.* 中的同名值作兜底.
+markets:
+  a_share:
+    enabled: true
+    data_provider: baostock              # A 股: baostock 全量历史 + 总股本×收盘价市值
+    benchmark: sh.000905                 # 中证500 (小盘股基准, 比沪深300更贴近庄股)
+    fees:
+      stamp_tax: 0.001                   # A 股印花税 (仅卖出)
+    universe:
+      market_cap_min_cny: 5_000_000_000
+      market_cap_max_cny: 200_000_000_000
+      exclude_st: true
+      min_listed_days: 365
+      min_price: 2.0
+
+  hk_small:
+    enabled: false                       # Phase 1-C 仅架构占位; Phase 1-D 接入 HK provider + 验证
+    data_provider: hk_akshare            # 待实现: HK 小盘股 universe (akshare stock_hk_spot? yfinance?)
+    benchmark: HSI                       # 恒生指数 (HK 小盘股缺乏标准基准, HSI 仅作 fallback)
+    fees:
+      stamp_tax: 0.0013                  # HK 印花税 0.13% (双边, 实际比 A 股复杂; 待验证)
+    universe:
+      market_cap_min_hkd: 1_000_000_000      # 占位: 10亿 HKD
+      market_cap_max_hkd: 30_000_000_000     # 占位: 300亿 HKD
+      exclude_st: false                       # HK 无 ST 制度, 但有"PIP"和"DPP"待排除
+      min_listed_days: 365
+      min_price: 0.5                          # HK 仙股门槛 (HKD)
 
 data:
   cache_dir: ./data/cache
