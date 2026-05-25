@@ -27,3 +27,4 @@
 - [Options Phase 1-A 解耦 2026-05](options_decouple_2026-05.md) — options 包按 equity_factor 模板拆 strategies/+markets/；underlying/vol_proxy/exchange/currency 参数化；hk_hsi 占位为 Phase 1-E 双部署铺路
 - [Equity_factor Phase 1-B 多部署 2026-05](equity_factor_multi_deploy_2026-05.md) — 取消"一市多策略"抛错；raw["deployments"][sname][mname] 二维索引；equity_momentum 列 3 市场 (hk/us 默认 disabled) 解锁 cross-market 命令行
 - [Zhuang Phase 1-C market dispatch 2026-05](zhuang_market_dispatch_2026-05.md) — ZhuangDataLoader+Backtester 加 market 参数；config 新增 markets 子字典；hk_small 占位 NotImplementedError 等 Phase 1-D 接入；8 个 sweep scripts 零改动
+- [Zhuang Phase 1-D HK 调研 2026-05](zhuang_hk_research_2026-05.md) — HK provider 接入因数据源全 blocked (akshare 网络 / yfinance 缺换手+市值历史) + 算法对 HK 庄股先验存疑，退回"先调研"；hk_small 架构占位保留
