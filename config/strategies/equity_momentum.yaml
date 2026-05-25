@@ -13,6 +13,16 @@ deployments:
   - market: a_share
     enabled: true
     capital_pct: 0.20
+  # Phase 1-B: 解锁同策略多市场命令行实验。hk_share / us_share 默认 enabled=false，
+  # 不进入实盘 daily_run，也不与 equity_hk_momentum / equity_us_momentum (市场原生最优参数对照) 冲突。
+  # 跑 cross-market 实验：python scripts/backtest/backtest.py --strategy equity_momentum --market hk_share
+  # 已知 transferability 差 (见 [[a_share_e_transfer_2026-05]])，A 股 L7-C3 + L8D2 参数在 hk/us 表现弱.
+  - market: hk_share
+    enabled: false
+    capital_pct: 0.0
+  - market: us_share
+    enabled: false
+    capital_pct: 0.0
 
 # --- 算法层 ---
 

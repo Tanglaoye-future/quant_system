@@ -25,3 +25,4 @@
 - [本仓 venv 命名约定](feedback_venv_naming.md) — 必须用 venv/ 不能 .venv/；macOS UF_HIDDEN + Python 3.14 site.py 会让 dot-prefixed venv 下所有 .pth 失效，editable install 完全废
 - [用户协作风格](feedback_user_collab_style.md) — "按顺序做完" 自主推进；yaml/实盘改动前 AskUserQuestion；双窗口验证才落 yaml；idle 主动提建议；commit 按逻辑单元打包
 - [Options Phase 1-A 解耦 2026-05](options_decouple_2026-05.md) — options 包按 equity_factor 模板拆 strategies/+markets/；underlying/vol_proxy/exchange/currency 参数化；hk_hsi 占位为 Phase 1-E 双部署铺路
+- [Equity_factor Phase 1-B 多部署 2026-05](equity_factor_multi_deploy_2026-05.md) — 取消"一市多策略"抛错；raw["deployments"][sname][mname] 二维索引；equity_momentum 列 3 市场 (hk/us 默认 disabled) 解锁 cross-market 命令行

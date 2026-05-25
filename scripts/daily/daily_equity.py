@@ -73,9 +73,12 @@ def main() -> None:
     args.kind = kind
     args.strategy_name = strategy_name
 
-    market_cfg = cfg.get("markets", args.market)
+    # Phase 1-B: 优先按 (strategy_name, market) 精确 lookup，回退到 markets[market]
+    _deps = cfg.get("deployments") or {}
+    market_cfg = ((_deps.get(args.strategy_name) or {}).get(args.market)
+                  if args.strategy_name else None) or cfg.get("markets", args.market)
     if not market_cfg or not market_cfg.get("enabled"):
-        print(f"market {args.market} 在 config 里未启用")
+        print(f"strategy {args.strategy_name} @ market {args.market} 在 config 里未启用")
         return
 
     hsi = cfg.get("data", "hang_seng_indexes", default=None) or {}
@@ -88,7 +91,8 @@ def main() -> None:
     j = Journal(cfg.journal_db_path)
     j.init_schema()
     # Phase 1b: 与 backtest.py 共用 resolve_strategy_params, 修复 daily_equity 漏 merge markets.<m>.timing 的回归
-    _params = resolve_strategy_params(cfg, args.market)
+    # Phase 1-B: 传 strategy_name 支持一市多策略
+    _params = resolve_strategy_params(cfg, args.market, strategy_name=args.strategy_name)
     tcfg = timing_config_from_yaml_node(_params["timing"])
     bt_cfg = cfg.get("backtest") or {}
     bench = _params["benchmark"]

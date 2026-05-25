@@ -50,13 +50,18 @@ from quant_system.strategies.equity_factor.timing.signals import timing_config_f
 from quant_system.strategies.equity_factor.universe.filter import UniverseFilter, UniverseFilterConfig
 
 
-def build_strategy(kind: str, loader: DataLoader, cfg, market: str) -> object:
+def build_strategy(kind: str, loader: DataLoader, cfg, market: str,
+                   strategy_name: str | None = None) -> object:
     """策略工厂. 入参 kind 是工厂键 (bottomup_timing / mean_reversion).
-    参数从 resolve_strategy_params(cfg, market) 拿 — 已 merge 全局默认 + market 覆盖.
+    参数从 resolve_strategy_params(cfg, market, strategy_name) 拿 — Phase 1-B 后
+    支持一市多策略，传入 strategy_name 用二维 deployments 索引精确取参.
     """
-    market_cfg = cfg.get("markets", market) or {}
+    # Phase 1-B: 优先用 deployments[strategy_name][market]；缺失时回退 markets[market]
+    deployments = cfg.get("deployments") or {}
+    dep_entry = (deployments.get(strategy_name) or {}).get(market) if strategy_name else None
+    market_cfg = dep_entry or cfg.get("markets", market) or {}
     universe = loader.get_universe(market, market_cfg["universe"])
-    params = resolve_strategy_params(cfg, market)
+    params = resolve_strategy_params(cfg, market, strategy_name=strategy_name)
     market_ctx = load_market_context(cfg, market)
 
     if kind == "mean_reversion":
@@ -177,11 +182,14 @@ def main() -> None:
         us_market=us_mkt,
     )
     bt_cfg = cfg.get("backtest") or {}
-    market_cfg_bt = cfg.get("markets", args.market) or {}
+    # Phase 1-B: 优先用 deployments[strategy_name][market] 精确 entry；让一市多策略时也能选对策略的 benchmark/hedge
+    _deps = cfg.get("deployments") or {}
+    market_cfg_bt = ((_deps.get(args.strategy_name) or {}).get(args.market)
+                     if args.strategy_name else None) or cfg.get("markets", args.market) or {}
     benchmark_symbol = market_cfg_bt.get("benchmark") or bt_cfg.get("benchmark_symbol", "sh000300")
     benchmark_label = _benchmark_report_label(benchmark_symbol)
 
-    strategy = build_strategy(args.kind, loader, cfg, args.market)
+    strategy = build_strategy(args.kind, loader, cfg, args.market, strategy_name=args.strategy_name)
     market_ctx = load_market_context(cfg, args.market)
 
     # L3：基准对冲 overlay（从 markets.<market>.hedge 读，关闭默认）

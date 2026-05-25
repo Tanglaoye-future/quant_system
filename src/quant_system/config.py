@@ -84,6 +84,9 @@ def _assemble_split(root: dict[str, Any], base_dir: Path) -> dict[str, Any]:
     raw: dict[str, Any] = {k: v for k, v in root.items() if k not in ("strategies", "markets")}
     raw["data"] = dict(raw.get("data") or {})
     raw["markets"] = {}
+    # Phase 1-B: 二维 deployments 索引 — 让 (strategy, market) 复合 lookup 不再二义
+    # raw["deployments"][sname][mname] = entry；同一 market 多策略时各自独立保存
+    raw["deployments"] = {}
 
     for sname, sd in strategies.items():
         for dep in (sd.get("deployments") or []):
@@ -118,14 +121,27 @@ def _assemble_split(root: dict[str, Any], base_dir: Path) -> dict[str, Any]:
             ):
                 if sk in sd:
                     entry[sk] = sd[sk]
-            # 一市多策检测 (Phase 1a 不支持)
-            if mname in raw["markets"]:
-                prev = raw["markets"][mname].get("strategy_name")
-                raise ValueError(
-                    f"market {mname} 被多个策略 ({prev}, {sname}) 同时部署；"
-                    "Phase 1a 仅支持一市一策略，请关闭其中一个 deployment.enabled 或 Phase 1b 翻转入口签名后支持"
+            # Phase 1-B: 一市多策略改为 deployments 二维索引保存。
+            # raw["markets"][mname] 保留旧接口（向后兼容下游 14 处 cfg.get("markets", market)），
+            # 多策略部署到同一 market 时优先选 enabled=True 的占位；都 enabled=True 时取第一个并 warning。
+            # 精确按 (sname, mname) 取参请用 resolve_strategy_params(cfg, market, strategy_name=sname).
+            prev_entry = raw["markets"].get(mname)
+            if prev_entry is None:
+                raw["markets"][mname] = entry
+            elif not prev_entry.get("enabled") and entry.get("enabled"):
+                # 之前的占位是 disabled deployment，被现在的 enabled 取代
+                raw["markets"][mname] = entry
+            elif prev_entry.get("enabled") and entry.get("enabled"):
+                prev_sname = prev_entry.get("strategy_name")
+                print(
+                    f"[config] warning: market {mname} 被多个 enabled 策略 ({prev_sname}, {sname}) 部署；"
+                    f"raw['markets'][{mname}] 保留 {prev_sname}；按精确策略取参请用 "
+                    f"resolve_strategy_params(cfg, '{mname}', strategy_name='{sname}')",
+                    flush=True,
                 )
-            raw["markets"][mname] = entry
+            # 其他情况 (prev enabled / new disabled，或都 disabled) 保留 prev_entry 不动
+
+            raw["deployments"].setdefault(sname, {})[mname] = entry
 
             # 合并市场文件 data 节到全局 data (用于 hang_seng_indexes / us_market 等数据源配置)
             mdata = md.get("data") or {}
@@ -165,18 +181,16 @@ def resolve_strategy(cfg: Config, strategy_arg: str, market_arg: str | None = No
          保留旧用法兼容，需显式 --market；strategy_name 返回 None
 
     Raises SystemExit when 解析失败（便于 scripts 入口直接抛出友好错误）.
-    """
-    markets = cfg.raw.get("markets") or {}
-    deployments_by_name: dict[str, list[str]] = {}
-    for m, entry in markets.items():
-        if not isinstance(entry, dict):
-            continue
-        sname = entry.get("strategy_name")
-        if sname:
-            deployments_by_name.setdefault(sname, []).append(m)
 
-    if strategy_arg in deployments_by_name:
-        deployments = deployments_by_name[strategy_arg]
+    Phase 1-B: 优先从 raw["deployments"] 二维索引反查 (策略 → 市场列表)；这样
+    一市多策略时也能正确识别"equity_momentum 部署到 hk/us"等场景.
+    """
+    deployments_idx = cfg.raw.get("deployments") or {}
+    markets = cfg.raw.get("markets") or {}
+
+    if strategy_arg in deployments_idx:
+        deployments_map = deployments_idx[strategy_arg]
+        deployments = list(deployments_map.keys())
         if market_arg is not None:
             if market_arg not in deployments:
                 raise SystemExit(
@@ -186,10 +200,20 @@ def resolve_strategy(cfg: Config, strategy_arg: str, market_arg: str | None = No
         elif len(deployments) == 1:
             resolved_market = deployments[0]
         else:
-            raise SystemExit(
-                f"策略 {strategy_arg} 部署到多个 market {deployments}，请用 --market 指定"
-            )
-        kind = markets[resolved_market].get("strategy_kind") or "bottomup_timing"
+            # Phase 1-B: 多部署时若仅一个 enabled=True, 自动推为默认 (向后兼容旧 cron/daily 不带 --market 调用)
+            enabled_deps = [m for m, e in deployments_map.items() if e.get("enabled")]
+            if len(enabled_deps) == 1:
+                resolved_market = enabled_deps[0]
+            else:
+                raise SystemExit(
+                    f"策略 {strategy_arg} 部署到多个 market {deployments}（enabled: {enabled_deps}），请用 --market 指定"
+                )
+        dep_entry = deployments_idx[strategy_arg][resolved_market]
+        kind = (
+            dep_entry.get("strategy_kind")
+            or (markets.get(resolved_market) or {}).get("strategy_kind")
+            or "bottomup_timing"
+        )
         return resolved_market, kind, strategy_arg
 
     # 兼容旧用法：strategy_arg 当作 kind，market_arg 必须显式（fallback a_share）
@@ -197,12 +221,23 @@ def resolve_strategy(cfg: Config, strategy_arg: str, market_arg: str | None = No
     return resolved_market, strategy_arg, None
 
 
-def resolve_strategy_params(cfg: Config, market: str) -> dict[str, Any]:
+def resolve_strategy_params(
+    cfg: Config, market: str, strategy_name: str | None = None,
+) -> dict[str, Any]:
     """合并全局默认 + market 覆盖，返回某个 market 实际使用的算法层参数.
 
-    backtest.py 与 daily_equity.py 共用，避免 daily 端漏合并 markets.<m>.timing 的回归.
+    Phase 1-B: 加 strategy_name 可选参数。当 (sname, market) 二维索引存在时
+    优先用 deployments[sname][market]，使一市多策略对照实验能取到正确策略的参数；
+    不传时走旧 markets[market] dict (向后兼容).
     """
-    market_cfg = cfg.get("markets", market) or {}
+    market_cfg = None
+    if strategy_name:
+        deployments = cfg.get("deployments") or {}
+        sd = deployments.get(strategy_name) or {}
+        market_cfg = sd.get(market)
+    if market_cfg is None:
+        market_cfg = cfg.get("markets", market) or {}
+
     global_timing = cfg.get("strategy", "timing", default=None) or {}
     global_weights = cfg.get("factors", "weights", default={}) or {}
     mkt_timing = market_cfg.get("timing") or {}
