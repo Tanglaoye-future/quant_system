@@ -1,0 +1,19 @@
+# 市场环境配置 — 港股 HSI 期权 (Phase 1-A 占位, Phase 1-E 启用)
+# ⚠️ 当前 enabled=false（在策略 deployments 里），需要：
+#   1. 用户 IBKR 账户开通"Hong Kong Options"交易权限
+#   2. 验证 VHSI ticker 在 yfinance 可拉
+#   3. 适配合约乘数 50（!= QQQ 的 100），size_position 当前还硬编码 ×100
+#   4. HSI 期权到期日是"每月最后第二个交易日"，跟 QQQ 每周到期不同
+# 详见 task #9 (Phase 1-E)
+
+name: hk_hsi
+underlying: HSI
+vol_proxy_ticker: VHSI             # 恒指波动率指数（yfinance 可用性待验证）
+exchange: HKFE                     # IBKR 香港期货交易所
+currency: HKD
+contract_multiplier: 50            # HSI 期权 1 张 = 50 港币 × 指数点
+
+display:
+  currency_symbol: "HK$"
+  underlying_label: HSI
+  vol_label: VHSI

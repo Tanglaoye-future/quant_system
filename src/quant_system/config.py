@@ -98,11 +98,24 @@ def _assemble_split(root: dict[str, Any], base_dir: Path) -> dict[str, Any]:
                 "strategy_name": sname,                  # 反查用
                 "strategy_kind": sd.get("kind"),
             }
-            for opt_key in ("regime_benchmark", "universe_filter", "industry_concentration", "fees"):
+            # 市场环境扩展键（equity_factor + options 共用此装配器）
+            #   equity_factor: regime_benchmark / universe_filter / industry_concentration / fees
+            #   options:        underlying / vol_proxy_ticker / exchange / currency /
+            #                   contract_multiplier / display
+            for opt_key in (
+                "regime_benchmark", "universe_filter", "industry_concentration", "fees",
+                "underlying", "vol_proxy_ticker", "exchange", "currency",
+                "contract_multiplier", "display",
+            ):
                 if opt_key in md:
                     entry[opt_key] = md[opt_key]
             # 算法层从策略文件复制
-            for sk in ("timing", "factors", "hedge", "admission"):
+            #   equity_factor: timing / factors / hedge / admission
+            #   options:        iv_engine / entry / exit / momentum / signal_grades
+            for sk in (
+                "timing", "factors", "hedge", "admission",
+                "iv_engine", "entry", "exit", "momentum", "signal_grades",
+            ):
                 if sk in sd:
                     entry[sk] = sd[sk]
             # 一市多策检测 (Phase 1a 不支持)

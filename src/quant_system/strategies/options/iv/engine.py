@@ -1,8 +1,11 @@
 """
-IV 引擎：基于 VXN 计算 QQQ 的 IV Rank，输出策略模式。
+IV 引擎：基于 vol_proxy ticker 计算标的的 IV Rank，输出策略模式。
 
-VXN = CBOE NASDAQ-100 波动率指数，是 QQQ 的 implied vol 代理。
-IVR = (当前 VXN - 52周最低) / (52周最高 - 52周最低)
+vol_proxy ticker 由 market 配置注入，例如：
+  - QQQ (NASDAQ-100 ETF) → ^VXN (CBOE NASDAQ-100 波动率指数)
+  - HSI (恒生指数)        → VHSI (恒指波动率指数)
+
+IVR = (当前 vol_proxy - 52周最低) / (52周最高 - 52周最低)
 
 策略模式：
   LOW_IV  (IVR < 25) → 期权便宜 → 买入认购 / Bull Call Spread
@@ -37,7 +40,7 @@ class IVMode(str, Enum):
 @dataclass
 class IVSnapshot:
     date: str
-    vxn_current: float
+    vxn_current: float       # 字段名保留 vxn_ 前缀向下兼容；实际承载任意 vol_proxy 的当前值
     vxn_52w_low: float
     vxn_52w_high: float
     ivr: float               # 0–100
@@ -52,24 +55,28 @@ def _require_yf() -> None:
 
 
 def compute_ivr(
-    vxn_ticker: str = "^VXN",
+    vxn_ticker: str,
     lookback_days: int = 252,
     cache_dir: Optional[Path] = None,
     refresh_hours: float = 4.0,
+    cache_filename: Optional[str] = None,
 ) -> IVSnapshot:
     """
-    拉取 VXN 历史数据，计算 IV Rank。
+    拉取 vol_proxy 历史数据，计算 IV Rank。
 
     Parameters
     ----------
     vxn_ticker : str
-        雅虎财经 ticker，默认 ^VXN（NASDAQ 波动率）
+        雅虎财经 ticker，例如 '^VXN' (NASDAQ-100 波动率) / 'VHSI' (恒指波动率)
+        参数名保留 vxn_ticker 是历史命名（向下兼容）；实际可承载任意 vol proxy。
     lookback_days : int
         历史窗口（交易日），默认 252（≈52周）
     cache_dir : Path | None
         缓存目录；None 则不缓存
     refresh_hours : float
         缓存有效时间（小时），默认 4 小时
+    cache_filename : str | None
+        缓存文件名，默认基于 ticker 推导（多 market 时避免覆盖）
     """
     _require_yf()
 
@@ -78,7 +85,12 @@ def compute_ivr(
     if cache_dir is not None:
         cache_dir = Path(cache_dir)
         cache_dir.mkdir(parents=True, exist_ok=True)
-        cache_path = cache_dir / "vxn_history.csv"
+        # 默认按 ticker 推导 cache 文件名以避免多 market 互相覆盖
+        # ^VXN → vol_proxy_VXN.csv / VHSI → vol_proxy_VHSI.csv
+        if cache_filename is None:
+            safe_name = vxn_ticker.lstrip("^").replace("/", "_")
+            cache_filename = f"vol_proxy_{safe_name}.csv"
+        cache_path = cache_dir / cache_filename
         if cache_path.exists():
             age_hours = (time.time() - os.path.getmtime(cache_path)) / 3600
             if age_hours < refresh_hours:
@@ -97,7 +109,7 @@ def compute_ivr(
             date=datetime.now().strftime("%Y-%m-%d"),
             vxn_current=0.0, vxn_52w_low=0.0, vxn_52w_high=0.0,
             ivr=0.0, mode=IVMode.UNKNOWN, signal_grade="D",
-            note="无法获取 VXN 数据",
+            note=f"无法获取 {vxn_ticker} 数据",
         )
 
     # yfinance ≥1.0 对单 ticker 可能返回 MultiIndex columns (field, ticker)；统一拍平
@@ -138,7 +150,7 @@ def _fetch_vxn(ticker: str, lookback_days: int) -> pd.DataFrame:
                            end=end.strftime("%Y-%m-%d"), progress=False, auto_adjust=True)
         return hist.tail(lookback_days)
     except Exception as e:
-        print(f"[WARN] VXN fetch failed: {e}")
+        print(f"[WARN] vol_proxy {ticker} fetch failed: {e}")
         return pd.DataFrame()
 
 

@@ -1,0 +1,15 @@
+# 市场环境配置 — 美股 QQQ 期权
+# 只承载"市场/合约本身决定的差异"：标的、IV 代理、交易所、币种、合约乘数
+# 策略逻辑（IV 阈值/Delta/DTE/出场规则）在 strategies/options_bull_call_spread.yaml
+
+name: us_qqq
+underlying: QQQ
+vol_proxy_ticker: "^VXN"          # CBOE NASDAQ-100 波动率指数（QQQ 的 IV 代理）
+exchange: SMART                    # IBKR 智能路由
+currency: USD
+contract_multiplier: 100           # 美股期权 1 张 = 100 股
+
+display:
+  currency_symbol: "$"
+  underlying_label: QQQ
+  vol_label: VXN

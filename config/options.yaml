@@ -1,54 +1,26 @@
-# options_system — QQQ Bull Call Spread 期权策略
-# 账户：IBKR Gateway，Reg T Margin，~$13,700
+# Quant system 入口配置 — options 子策略包
+# Phase 1-A 重构（2026-05-25）：策略与市场解耦
+#   - 算法层（iv 阈值/entry/exit/momentum/signal_grades）→ config/strategies/options_bull_call_spread.yaml
+#   - 市场层（underlying/vol_proxy/exchange/currency/multiplier）→ config/markets/{us_qqq, hk_hsi}.yaml
+#   - 账户/broker 层（IBKR 连接 + 风险预算）→ 本文件（跨策略共享）
+# 装配 loader 在 src/quant_system/config.py 把策略+市场合成 markets.<m>.* dict 结构
+
+strategies:
+  - strategies/options_bull_call_spread.yaml
+
+markets:
+  - markets/us_qqq.yaml
+  - markets/hk_hsi.yaml         # Phase 1-A 占位；strategy deployment 默认未启用此 market
+
+# ----------- 账户/Broker 层（跨策略共享）-----------
 
 broker:
   host: 127.0.0.1
-  port: 4001          # Gateway 实盘；模拟盘改 4002
+  port: 4001          # IBKR Gateway 实盘端口
+  paper_port: 4002    # 模拟盘端口（--paper 启用）
   client_id: 10
   timeout_sec: 20
 
 account:
-  risk_per_trade_pct: 0.03      # 每笔风险 3%（~$411）
+  risk_per_trade_pct: 0.03      # 每笔风险 3%
   max_concurrent_positions: 5   # 最多同时 5 个方向
-  currency: USD
-
-strategy:
-  underlying: QQQ
-  exchange: SMART
-
-  # IV 引擎（用 VXN 作 QQQ 隐含波动率代理）
-  iv_engine:
-    vxn_ticker: "^VXN"
-    ivr_lookback_days: 252      # 52 周
-    ivr_low: 25                 # IVR < 25 → Low IV mode（便宜，买方优先）
-    ivr_high: 50                # IVR > 50 → High IV mode（贵，等待或超紧价差）
-
-  # 入场参数（Bull Call Spread）
-  entry:
-    dte_min: 40
-    dte_max: 65
-    long_leg_delta: 0.45        # 买入腿目标 Delta
-    short_leg_delta: 0.27       # 卖出腿目标 Delta
-    min_spread_width_pct: 0.025 # 最小价差宽度 = 标的价格 × 2.5%（约 $12）
-    max_bid_ask_pct: 0.06       # 单腿 bid-ask 超过 mid × 6% → 流动性不足，跳过
-
-  # 出场参数
-  exit:
-    profit_target_mult: 2.0     # 权利金翻倍 → 止盈
-    stop_loss_mult: 0.50        # 亏损 50% → 止损
-    dte_warning: 21             # 剩余 21 DTE → 提醒评估滚仓
-
-  # QQQ 动量门控
-  momentum:
-    ma_period: 200
-    rsi_period: 14
-    rsi_entry_low: 50.0
-    rsi_entry_high: 78.0
-    lookback_days: 300
-
-  # 信号评级（综合 IV + 动量）
-  signal_grades:
-    A: {ivr_max: 25, label: "强烈买入 — 期权便宜+动量强"}
-    B: {ivr_max: 40, label: "买入 — 价差控成本"}
-    C: {ivr_max: 50, label: "观望 — 权利金偏贵"}
-    D: {ivr_min: 50, label: "跳过 — 期权过贵"}

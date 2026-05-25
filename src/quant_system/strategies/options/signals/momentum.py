@@ -1,8 +1,8 @@
 """
-QQQ 动量门控信号.
+标的动量门控信号（市场无关，ticker 由 market 配置注入）.
 
 条件：
-  1. QQQ 收盘 > MA200（牛市环境）
+  1. 标的收盘 > MA200（牛市环境）
   2. RSI(14) 在 [rsi_low, rsi_high]（不追超买，不接飞刀）
   3. 3 个月涨幅 > 0（正向动量）
 
@@ -38,7 +38,7 @@ class MomentumSignal:
 
 
 def check_momentum(
-    ticker: str = "QQQ",
+    ticker: str,
     ma_period: int = 200,
     rsi_period: int = 14,
     rsi_low: float = 50.0,
@@ -46,9 +46,10 @@ def check_momentum(
     lookback_days: int = 300,
 ) -> MomentumSignal:
     """
-    拉取 QQQ 日线，计算动量指标。
+    拉取标的日线，计算动量指标。
 
     使用 yfinance 获取数据（无需 IBKR 连接）。
+    ticker 形如 'QQQ'（NASDAQ-100 ETF）或 '^HSI'（恒生指数）。
     """
     if yf is None:
         raise ImportError("请安装 yfinance：pip install yfinance")

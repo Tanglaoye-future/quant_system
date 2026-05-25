@@ -3,13 +3,14 @@ IBKR Gateway 连接层.
 
 封装 ib_insync，提供：
   1. 账户信息（净值、现金）
-  2. QQQ 实时价格
+  2. 标的实时价格（symbol/exchange/currency 由 market 配置注入）
   3. 期权链（到期日 + 行权价）
   4. 期权快照数据（bid/ask/Delta/IV）
   5. 当前持仓
   6. 下单（供手动确认前预览）
 
 所有调用均为同步阻塞。
+Phase 1-A: symbol/exchange/currency 全部参数化以支持 QQQ (SMART/USD) + HSI (HKFE/HKD)。
 """
 from __future__ import annotations
 
@@ -133,9 +134,9 @@ class IBKRClient:
 
     # ── 标的价格 ──────────────────────────────────────────────────────────────
 
-    def get_price(self, symbol: str = "QQQ") -> float:
+    def get_price(self, symbol: str, exchange: str = "SMART", currency: str = "USD") -> float:
         """获取标的最新价（snapshot）."""
-        contract = Stock(symbol, "SMART", "USD")
+        contract = Stock(symbol, exchange, currency)
         self.ib.qualifyContracts(contract)
         ticker = self.ib.reqMktData(contract, "", True, False)
         self.ib.sleep(2)
@@ -149,16 +150,18 @@ class IBKRClient:
 
     def get_option_chain(
         self,
-        symbol: str = "QQQ",
+        symbol: str,
         dte_min: int = 40,
         dte_max: int = 65,
+        exchange: str = "SMART",
+        currency: str = "USD",
     ) -> dict[str, list[float]]:
         """
         返回符合 DTE 范围的期权链：{expiry_str: [strikes]}
 
         expiry_str 格式：YYYYMMDD
         """
-        contract = Stock(symbol, "SMART", "USD")
+        contract = Stock(symbol, exchange, currency)
         self.ib.qualifyContracts(contract)
         chains = self.ib.reqSecDefOptParams(
             symbol, "", contract.secType, contract.conId
@@ -167,7 +170,7 @@ class IBKRClient:
         today = datetime.now().date()
         result: dict[str, list[float]] = {}
         for chain in chains:
-            if chain.exchange != "SMART":
+            if chain.exchange != exchange:
                 continue
             for exp_str in chain.expirations:
                 exp_dt = datetime.strptime(exp_str, "%Y%m%d").date()
@@ -179,14 +182,15 @@ class IBKRClient:
     # ── 期权快照 ──────────────────────────────────────────────────────────────
 
     def get_option_quote(
-        self, symbol: str, expiry: str, strike: float, right: str
+        self, symbol: str, expiry: str, strike: float, right: str,
+        exchange: str = "SMART",
     ) -> Optional[OptionQuote]:
         """
         获取单张期权的 bid/ask/Greeks（snapshot）.
 
         right: 'C' or 'P'
         """
-        opt = Option(symbol, expiry, strike, right, "SMART")
+        opt = Option(symbol, expiry, strike, right, exchange)
         qualified = self.ib.qualifyContracts(opt)
         if not qualified:
             return None
@@ -219,8 +223,8 @@ class IBKRClient:
 
     # ── 当前持仓 ──────────────────────────────────────────────────────────────
 
-    def get_option_positions(self, symbol: str = "QQQ") -> list[dict]:
-        """返回 QQQ 期权持仓列表."""
+    def get_option_positions(self, symbol: str) -> list[dict]:
+        """返回指定标的期权持仓列表."""
         positions = self.ib.positions()
         result = []
         for p in positions:

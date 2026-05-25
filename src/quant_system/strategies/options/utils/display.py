@@ -22,26 +22,31 @@ def print_signal_card(
     spread: "SpreadQuote",
     sizing: dict,
     account_net_liq: float,
+    underlying_label: str = "QQQ",
+    vol_label: str = "VXN",
+    currency_symbol: str = "$",
+    contract_multiplier: int = 100,
 ) -> None:
-    """打印完整交易信号卡."""
+    """打印完整交易信号卡（标的/币种/合约乘数由 market_ctx 注入）."""
 
     grade_emoji = {"A": "🟢", "B": "🟡", "C": "🟠", "D": "🔴"}.get(iv.signal_grade, "⚪")
+    cs = currency_symbol
 
     print(f"\n{_LINE}")
-    print(f"  QQQ 期权交易信号  {momentum.date}")
+    print(f"  {underlying_label} 期权交易信号  {momentum.date}")
     print(_LINE)
 
     # ── IV 环境 ───────────────────────────────────────────────────────────────
     print(f"\n【IV 环境】{grade_emoji} 评级 {iv.signal_grade}")
-    print(f"  VXN 当前:  {iv.vxn_current:.2f}")
+    print(f"  {vol_label} 当前:  {iv.vxn_current:.2f}")
     print(f"  IVR:       {iv.ivr:.1f}  (52周: {iv.vxn_52w_low:.1f} – {iv.vxn_52w_high:.1f})")
     print(f"  模式:      {iv.mode.value}")
 
     # ── 动量信号 ──────────────────────────────────────────────────────────────
     bullish_str = "✅ 看涨" if momentum.bullish else "❌ 信号不足"
     print(f"\n【动量信号】{bullish_str}")
-    print(f"  QQQ 价格:  ${momentum.price:.2f}")
-    print(f"  MA200:     ${momentum.ma200:.2f}  {'↑上方' if momentum.above_ma200 else '↓下方'}")
+    print(f"  {underlying_label} 价格:  {cs}{momentum.price:.2f}")
+    print(f"  MA200:     {cs}{momentum.ma200:.2f}  {'↑上方' if momentum.above_ma200 else '↓下方'}")
     print(f"  RSI(14):   {momentum.rsi:.1f}  {'✅' if momentum.rsi_in_range else '❌'}")
     print(f"  3月动量:   {momentum.momentum_3m*100:+.1f}%  {'✅' if momentum.momentum_positive else '❌'}")
     if momentum.note and not momentum.bullish:
@@ -59,42 +64,43 @@ def print_signal_card(
     print(f"  到期日:    {spread.expiry_str}  ({ll.dte} DTE)")
     print()
     print(f"  ┌─ 买入腿 (Long Call)")
-    print(f"  │  行权价: ${ll.strike:.1f}  Delta: {ll.delta:+.3f}")
-    print(f"  │  报价:   ${ll.bid:.2f} / ${ll.ask:.2f}  (Mid ${ll.mid:.2f})")
+    print(f"  │  行权价: {cs}{ll.strike:.1f}  Delta: {ll.delta:+.3f}")
+    print(f"  │  报价:   {cs}{ll.bid:.2f} / {cs}{ll.ask:.2f}  (Mid {cs}{ll.mid:.2f})")
     print(f"  │  IV:     {ll.iv*100:.1f}%  Theta: {ll.theta:.3f}/日")
     print(f"  │")
     print(f"  └─ 卖出腿 (Short Call)")
-    print(f"     行权价: ${sl.strike:.1f}  Delta: {sl.delta:+.3f}")
-    print(f"     报价:   ${sl.bid:.2f} / ${sl.ask:.2f}  (Mid ${sl.mid:.2f})")
+    print(f"     行权价: {cs}{sl.strike:.1f}  Delta: {sl.delta:+.3f}")
+    print(f"     报价:   {cs}{sl.bid:.2f} / {cs}{sl.ask:.2f}  (Mid {cs}{sl.mid:.2f})")
     print(f"     IV:     {sl.iv*100:.1f}%  Theta: {sl.theta:.3f}/日")
 
     # ── 盈亏结构 ──────────────────────────────────────────────────────────────
-    print(f"\n【盈亏结构】（每张合约 = 100 股）")
-    print(f"  净权利金:    ${spread.net_debit:.2f}/股  = ${spread.net_debit*100:.0f}/张")
-    print(f"  最大亏损:    ${spread.max_loss:.2f}/股   = ${spread.max_loss*100:.0f}/张")
-    print(f"  最大盈利:    ${spread.max_profit:.2f}/股  = ${spread.max_profit*100:.0f}/张  ({spread.profit_ratio:.1f}×)")
-    print(f"  盈亏平衡:    ${spread.breakeven:.2f}  (需涨 {(spread.breakeven/momentum.price-1)*100:.1f}%)")
+    cm = contract_multiplier
+    print(f"\n【盈亏结构】（每张合约 = {cm} 股/指数点）")
+    print(f"  净权利金:    {cs}{spread.net_debit:.2f}/单位  = {cs}{spread.net_debit*cm:.0f}/张")
+    print(f"  最大亏损:    {cs}{spread.max_loss:.2f}/单位   = {cs}{spread.max_loss*cm:.0f}/张")
+    print(f"  最大盈利:    {cs}{spread.max_profit:.2f}/单位  = {cs}{spread.max_profit*cm:.0f}/张  ({spread.profit_ratio:.1f}×)")
+    print(f"  盈亏平衡:    {cs}{spread.breakeven:.2f}  (需涨 {(spread.breakeven/momentum.price-1)*100:.1f}%)")
 
     # ── 仓位建议 ──────────────────────────────────────────────────────────────
     print(f"\n【仓位建议】")
-    print(f"  账户净值:    ${account_net_liq:,.0f}")
-    print(f"  风险预算:    ${sizing['risk_budget']:,.0f}  ({sizing['risk_pct_actual']:.1f}%)")
+    print(f"  账户净值:    {cs}{account_net_liq:,.0f}")
+    print(f"  风险预算:    {cs}{sizing['risk_budget']:,.0f}  ({sizing['risk_pct_actual']:.1f}%)")
     print(f"  建议张数:    {sizing['contracts']} 张")
-    print(f"  实际成本:    ${sizing['total_risk']:,.0f}")
+    print(f"  实际成本:    {cs}{sizing['total_risk']:,.0f}")
 
     # ── 出场规则 ──────────────────────────────────────────────────────────────
     tp_price = spread.net_debit * 2
     sl_price = spread.net_debit * 0.5
     print(f"\n【出场规则】")
-    print(f"  止盈:  Mid ≥ ${tp_price:.2f}/股  (权利金翻倍 +100%)")
-    print(f"  止损:  Mid ≤ ${sl_price:.2f}/股  (亏损 50%)")
+    print(f"  止盈:  Mid ≥ {cs}{tp_price:.2f}/单位  (权利金翻倍 +100%)")
+    print(f"  止损:  Mid ≤ {cs}{sl_price:.2f}/单位  (亏损 50%)")
     print(f"  时间:  剩余 21 DTE → 评估滚仓")
 
     # ── 下单参考 ──────────────────────────────────────────────────────────────
     print(f"\n【IBKR 下单参考】")
-    print(f"  腿1 BUY  {sizing['contracts']} QQQ {spread.expiry_str} ${ll.strike:.1f}C  LMT {ll.ask:.2f}")
-    print(f"  腿2 SELL {sizing['contracts']} QQQ {spread.expiry_str} ${sl.strike:.1f}C  LMT {sl.bid:.2f}")
-    print(f"  净费用:  ~${spread.net_debit*sizing['contracts']*100:.0f}")
+    print(f"  腿1 BUY  {sizing['contracts']} {underlying_label} {spread.expiry_str} {cs}{ll.strike:.1f}C  LMT {ll.ask:.2f}")
+    print(f"  腿2 SELL {sizing['contracts']} {underlying_label} {spread.expiry_str} {cs}{sl.strike:.1f}C  LMT {sl.bid:.2f}")
+    print(f"  净费用:  ~{cs}{spread.net_debit*sizing['contracts']*cm:.0f}")
 
     print(f"\n{_LINE}\n")
 
@@ -123,15 +129,21 @@ def print_monitor_alerts(alerts: list["PositionAlert"]) -> None:
     print(f"\n{_LINE}\n")
 
 
-def print_no_signal(iv: "IVSnapshot", momentum: "MomentumSignal") -> None:
+def print_no_signal(
+    iv: "IVSnapshot",
+    momentum: "MomentumSignal",
+    underlying_label: str = "QQQ",
+    currency_symbol: str = "$",
+) -> None:
     """当条件不满足时打印简短摘要."""
+    cs = currency_symbol
     print(f"\n{_LINE}")
-    print(f"  QQQ 期权扫描  {momentum.date}  → 无信号")
+    print(f"  {underlying_label} 期权扫描  {momentum.date}  → 无信号")
     print(_LINE)
-    print(f"  IVR: {iv.ivr:.1f} ({iv.mode.value})  |  QQQ: ${momentum.price:.2f}")
+    print(f"  IVR: {iv.ivr:.1f} ({iv.mode.value})  |  {underlying_label}: {cs}{momentum.price:.2f}")
     reason = []
     if not momentum.above_ma200:
-        reason.append(f"价格低于 MA200(${momentum.ma200:.2f})")
+        reason.append(f"价格低于 MA200({cs}{momentum.ma200:.2f})")
     if not momentum.rsi_in_range:
         reason.append(f"RSI({momentum.rsi:.1f}) 超出范围")
     if not momentum.momentum_positive:
