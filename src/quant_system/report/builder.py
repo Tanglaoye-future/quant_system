@@ -29,6 +29,82 @@ REPORT_DIR = PROJECT_ROOT / "report"   # repo_root/report/
 DATA = REPORT_DIR / "data"             # repo_root/report/data/
 
 
+def load_cross_market_summary() -> list[dict] | None:
+    """加载 9-cell 跨市场回测汇总 (_summary.csv)，不存在返回 None。"""
+    import csv
+    summary_path = PROJECT_ROOT / "data" / "cross_market_audit_logs" / "_summary.csv"
+    if not summary_path.exists():
+        return None
+    rows: list[dict] = []
+    with open(summary_path, encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            try:
+                r["sharpe"]        = float(r.get("sharpe", "0") or 0)
+                r["annual_ret"]    = float(r.get("annual_ret", "0") or 0)
+                r["max_dd"]        = float(r.get("max_dd", "0") or 0)
+                r["win_rate"]      = float(r.get("win_rate", "0") or 0)
+                r["n_trades"]      = int(r.get("n_trades", "0") or 0)
+            except Exception:
+                continue
+            rows.append(r)
+    return rows if rows else None
+
+
+def _cross_market_table(rows: list[dict]) -> str:
+    """渲染 9-cell 跨市场矩阵为 compact HTML 表格."""
+    # 按 (strategy, window) 分组 pivot
+    strategies_order = ["equity_momentum", "equity_hk_momentum", "equity_us_momentum", "zhuang"]
+    markets_order   = ["a_share", "hk_share", "us_share"]
+
+    def sharpe_cell(v):
+        if v is None: return '<span style="color:var(--muted)">—</span>'
+        cls = "pos" if v >= 0.5 else ("warn" if v >= 0 else "neg")
+        return f'<span class="{cls}" style="font-weight:700">{v:+.2f}</span>'
+    def dd_cell(v):
+        if v is None: return '<span style="color:var(--muted)">—</span>'
+        cls = "pos" if v >= -20 else ("warn" if v >= -30 else "neg")
+        return f'{v:.1f}%'
+
+    # header
+    thead = "<tr><th>策略</th><th>窗口</th>" + "".join(f"<th style='text-align:center'>{m.replace('_',' ')}</th>" for m in markets_order) + "</tr>"
+
+    tbody = ""
+    for strat in strategies_order:
+        for window_label, window_filter in [("4y", "4y"), ("8y", "8y")]:
+            cells: dict[str, tuple[float|None, float|None]] = {}
+            for row in rows:
+                s, m, lbl = row.get("strategy",""), row.get("market",""), row.get("label","")
+                if s == strat and lbl.endswith(f"_{window_filter}"):
+                    cells[m] = (row.get("sharpe"), row.get("max_dd"))
+
+            strat_short = {"equity_momentum":"equity (A参)", "equity_hk_momentum":"equity (HK参)",
+                           "equity_us_momentum":"equity (US参)", "zhuang":"zhuang"}.get(strat, strat)
+            tbody += f"<tr><td style='font-weight:600'>{strat_short}</td><td style='color:var(--muted)'>{window_label}</td>"
+            extra = ""
+            for m in markets_order:
+                sh, dd = cells.get(m, (None, None))
+                if sh is not None:
+                    tbody += f"<td style='text-align:center;font-size:13px'>{sharpe_cell(sh)}<br><span style='font-size:10px;color:var(--muted)'>DD {dd_cell(dd)}</span></td>"
+                    if window_label == "4y":
+                        extra += f"<td style='font-size:10px;color:var(--muted);text-align:center'>Sharpe {sh:+.2f}<br>DD {dd:.0f}%</td>"
+                else:
+                    tbody += '<td style="text-align:center;color:var(--muted);font-size:12px">—</td>'
+            tbody += "</tr>"
+
+    return f"""
+    <div class="table-wrap" style="margin-top:12px">
+    <table>
+      <thead>{thead}</thead>
+      <tbody>{tbody}</tbody>
+    </table>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-top:10px;display:flex;gap:16px">
+      <span>🟢 Sharpe≥0.5</span> <span>🟡 0&lt;Sharpe&lt;0.5</span> <span>🔴 Sharpe≤0</span>
+      <span style="margin-left:auto">数据路径: data/cross_market_audit_logs/_summary.csv</span>
+    </div>"""
+
+
 def load(system: str) -> dict:
     """加载系统的最新 JSON 信号，不存在则返回空占位。"""
     path = DATA / f"{system}.json"
@@ -56,6 +132,7 @@ def color_class(v, positive_good=True):
 
 
 def render(q: dict, o: dict, z: dict, report_date: str) -> str:
+    cross_rows = load_cross_market_summary()
     # ── quant helpers ──────────────────────────────────────────────────────
     q_signals = q.get("signals", [])
     # 按策略来源统计
@@ -163,7 +240,7 @@ def render(q: dict, o: dict, z: dict, report_date: str) -> str:
           <div class="signal-row"><span class="signal-key">最大亏损</span><span class='neg'>{o_signal.get('max_loss','—')}</span></div>
         </div>"""
 
-    return f"""<!DOCTYPE html>
+    html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -368,6 +445,16 @@ def render(q: dict, o: dict, z: dict, report_date: str) -> str:
   </div>
 </div>
 
+<!-- CROSS MARKET AUDIT -->"""
+    if cross_rows:
+        html += f"""<div class="section">
+  <div class="section-title"><span class="dot dot-blue"></span>cross_market <span class="tag">9-cell 跨市场审计</span><span class="chip chip-pass" style="margin-left:8px">已审计</span></div>
+  <div class="card"><div class="card-header"><div class="card-title">全策略 × 全市场 双窗口矩阵</div><div class="card-sub">Sharpe / Max DD · 4y+8y · 自动生成</div></div>
+  {_cross_market_table(cross_rows)}
+  </div>
+</div>
+"""
+    return html + f"""
 <footer>
   <div>生成：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} &nbsp;|&nbsp; Claude Sonnet 4.6 &nbsp;|&nbsp; report_builder.py v2.1</div>
   <div>本报告仅供研究参考，不构成投资建议</div>
