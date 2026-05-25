@@ -9,7 +9,7 @@ zhuang L4 出场规则单变量扫描.
 但每次 run() 重新加载；这里通过共享 loader + 缓存 disk CSV 实现近似复用).
 
 用法:
-  PYTHONPATH=src .venv/bin/python scripts/backtest/run_l4_sweep_zhuang.py \\
+  PYTHONPATH=src venv/bin/python scripts/backtest/run_l4_sweep_zhuang.py \\
       --start 2022-01-01 --end 2024-12-31 \\
       --universe-file data/cache/universe_2026-05-16.csv
 """

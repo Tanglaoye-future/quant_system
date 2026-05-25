@@ -12,7 +12,7 @@ L5C-linear             : score 70-85 → 4-6%         平滑
 预测 hypothesis: score 区分能进一步提升 Sharpe 但增量小（L4 已榨干 entry filter alpha）.
 
 用法:
-  PYTHONUNBUFFERED=1 PYTHONPATH=src .venv/bin/python -u \\
+  PYTHONUNBUFFERED=1 PYTHONPATH=src venv/bin/python -u \\
       scripts/backtest/run_l5_sweep_zhuang.py \\
       --start 2022-01-01 --end 2024-12-31 \\
       --universe-file data/cache/universe_2026-05-16.csv

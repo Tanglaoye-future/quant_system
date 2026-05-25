@@ -12,7 +12,7 @@ zhuang L4 出场规则组合实验.
 最优组合再跑 2020-2026 6 年验证。
 
 用法:
-  PYTHONUNBUFFERED=1 PYTHONPATH=src .venv/bin/python -u \\
+  PYTHONUNBUFFERED=1 PYTHONPATH=src venv/bin/python -u \\
       scripts/backtest/run_l4_combo_zhuang.py \\
       --start 2022-01-01 --end 2024-12-31 \\
       --universe-file data/cache/universe_2026-05-16.csv

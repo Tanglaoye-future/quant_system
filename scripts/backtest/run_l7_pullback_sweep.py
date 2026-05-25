@@ -16,7 +16,7 @@ equity_factor L7 Pullback 入场模式扫描.
 每实验同窗口，输出 markdown summary.
 
 用法:
-  PYTHONUNBUFFERED=1 PYTHONPATH=src .venv/bin/python -u \\
+  PYTHONUNBUFFERED=1 PYTHONPATH=src venv/bin/python -u \\
       scripts/backtest/run_l7_pullback_sweep.py
 """
 from __future__ import annotations

@@ -22,3 +22,4 @@
 - [前后端分离 + Apple 风格前端改造 2026-05](frontend_backend_refactor_2026-05.md) — FastAPI + React/Vite/Tailwind Apple 风格报告系统；自动开平仓闭环；3 个 daily 脚本自动串联 HTML 报告
 - [策略-市场解耦改造 2026-05](strategy_market_decouple_2026-05.md) — equity_factor 内 strategies/ + markets/ 拆分；--strategy 主索引；MarketContext 抽象；顺手修 daily 漏 merge L7-C3 的回归 bug
 - [Equity_factor L8 因子层优化 2026-05](equity_factor_l8_2026-05.md) — fcf_yield 实测 4y/8y 双窗口负贡献；L8D2 fcf=0 落地，4y Sharpe 0.579→0.675、8y 0.063→0.195；DD 恶化 2.7pp trade-off；loader 加 90 天公告窗口 + 8 个 unit test
+- [本仓 venv 命名约定](feedback_venv_naming.md) — 必须用 venv/ 不能 .venv/；macOS UF_HIDDEN + Python 3.14 site.py 会让 dot-prefixed venv 下所有 .pth 失效，editable install 完全废

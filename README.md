@@ -68,8 +68,8 @@
 ## 安装
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv venv      # 注意：用 venv/ 而非 .venv/ —— macOS 对 dot-prefixed 目录自动设 UF_HIDDEN，Python 3.14 site.py 会跳过其下 .pth 文件导致 editable install 失效
+source venv/bin/activate
 pip install -e ".[dev]"
 ```
 

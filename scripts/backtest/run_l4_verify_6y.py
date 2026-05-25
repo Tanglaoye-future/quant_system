@@ -11,7 +11,7 @@ zhuang L4 最优组合 6 年验证 (2020-2026).
 共约 2h 完成。
 
 用法:
-  PYTHONUNBUFFERED=1 PYTHONPATH=src .venv/bin/python -u \\
+  PYTHONUNBUFFERED=1 PYTHONPATH=src venv/bin/python -u \\
       scripts/backtest/run_l4_verify_6y.py
 """
 from __future__ import annotations
