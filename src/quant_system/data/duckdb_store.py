@@ -14,6 +14,7 @@ Schema:
 """
 from __future__ import annotations
 
+import os
 import threading
 from pathlib import Path
 from typing import Iterable, Optional
@@ -39,13 +40,20 @@ class DuckDBStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._con: duckdb.DuckDBPyConnection | None = None
+        # 多进程并行场景 (parallel_audit) 用 env 切 read-only 模式避免 lock 冲突
+        # DuckDB default 单 writer; read_only=True 允许多 reader 并发
+        self._read_only = os.environ.get("QUANT_DUCKDB_READ_ONLY", "").lower() in ("1", "true", "yes")
 
     # ── 连接 ────────────────────────────────────────────────────────────
 
     def _connect(self) -> "duckdb.DuckDBPyConnection":
         if self._con is None:
-            self._con = duckdb.connect(str(self.db_path))
-            self._init_schema(self._con)
+            if self._read_only:
+                # read_only 模式不需要 init_schema; 表已存在
+                self._con = duckdb.connect(str(self.db_path), read_only=True)
+            else:
+                self._con = duckdb.connect(str(self.db_path))
+                self._init_schema(self._con)
         return self._con
 
     def _init_schema(self, con: "duckdb.DuckDBPyConnection") -> None:
@@ -84,7 +92,12 @@ class DuckDBStore:
 
         df 列至少包含 date/open/high/low/close/volume; turnover_rate 可选.
         date 接受 string 或 datetime, 内部转 DATE.
+
+        read_only 模式 (QUANT_DUCKDB_READ_ONLY=1) silently skip — 不抛错,
+        让多进程回测的 cache-miss 仍能继续 (走 parquet/远程, 只是不再写 DuckDB).
         """
+        if self._read_only:
+            return 0
         if df is None or df.empty:
             return 0
         for col in self.REQUIRED_COLS:
@@ -118,13 +131,21 @@ class DuckDBStore:
             con.unregister("incoming")
         return len(d)
 
+    def _check_writable(self) -> None:
+        """write 类方法在 read_only 时统一 silently no-op."""
+        # 这是一个 marker; 实际 bulk_insert_daily 内部独立判断 (跟 insert_daily 一致语义)
+        pass
+
     def bulk_insert_daily(
         self, market: str, df: pd.DataFrame, replace: bool = False
     ) -> int:
         """
         批量写入: df 含 code 列, 一次写多只股票. 大幅快过逐 code insert_daily.
         replace=True 会先 DELETE 范围内行 (耗时), False 直接 INSERT 假定无重复.
+        read_only 模式 silently skip.
         """
+        if self._read_only:
+            return 0
         if df is None or df.empty:
             return 0
         need = list(self.REQUIRED_COLS) + ["code"]
