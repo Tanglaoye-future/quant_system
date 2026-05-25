@@ -133,6 +133,56 @@ export interface MarketsResponse {
   hk: MarketData;
 }
 
+// ── Dynamic strategy-market matrix (Phase 2: registry-backed) ──
+
+export type CellStatus = 'active' | 'available' | 'blocked' | 'deprecated' | 'unsupported';
+
+export interface CellMetrics {
+  signals_count?: number;
+  positions_count?: number;
+  candidates_count?: number;
+  market_gate?: boolean | null;
+  ivr?: number;
+  iv_mode?: string;
+  signal_grade?: string;
+  qqq_price?: number;
+  qqq_rsi?: number;
+  qqq_bullish?: boolean;
+  reason?: string;
+}
+
+export interface CellResponse {
+  strategy_name: string;
+  strategy_label: string;
+  strategy_kind: string;
+  status: CellStatus;
+  has_data: boolean;
+  data_date?: string;
+  config_enabled: boolean;
+  blocker_reason?: string;
+  metrics: CellMetrics;
+}
+
+export interface MarketGroup {
+  market_name: string;
+  market_label: string;
+  display_order: number;
+  index: MarketIndex;
+  cells: CellResponse[];
+}
+
+export interface MatrixResponse {
+  markets: MarketGroup[];
+  strategies: string[];
+}
+
+/** @deprecated Use MatrixResponse / GET /api/matrix instead. Kept for backward compat. */
+export interface MarketsResponse {
+  a_share: MarketData;
+  us: MarketData;
+  hk: MarketData;
+}
+
 export interface HealthResponse {
   status: string;
   data_available: {

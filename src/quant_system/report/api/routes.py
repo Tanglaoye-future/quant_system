@@ -12,7 +12,6 @@ DATA_DIR = PROJECT_ROOT / "report" / "data"
 
 def _read_json(system: str) -> dict:
     """Read a JSON file from report/data/. Public so main.py can use it for /api/markets."""
-    # (implementation unchanged, docstring added for export clarity)
     path = DATA_DIR / f"{system}.json"
     if path.exists():
         try:
@@ -96,4 +95,39 @@ def get_summary():
         "quant": _merge_quant(),
         "options": _read_json("options"),
         "zhuang": _read_json("zhuang"),
+    }
+
+
+# ── Dynamic strategy-market matrix (Phase 2: registry-backed) ──────────
+
+@router.get("/matrix")
+def get_matrix():
+    from quant_system.report.registry import resolve_matrix
+
+    cells, groups = resolve_matrix()
+    return {
+        "markets": [
+            {
+                "market_name": g.market_name,
+                "market_label": g.market_label,
+                "display_order": g.display_order,
+                "index": g.index_info,
+                "cells": [
+                    {
+                        "strategy_name": c.strategy_name,
+                        "strategy_label": c.strategy_label,
+                        "strategy_kind": c.strategy_kind,
+                        "status": c.status.value,
+                        "has_data": c.has_data,
+                        "data_date": c.data_date,
+                        "config_enabled": c.config_enabled,
+                        "blocker_reason": c.blocker_reason,
+                        "metrics": c.metrics,
+                    }
+                    for c in g.cells
+                ],
+            }
+            for g in groups
+        ],
+        "strategies": sorted({c.strategy_name for c in cells}),
     }

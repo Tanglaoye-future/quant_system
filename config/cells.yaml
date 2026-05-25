@@ -1,0 +1,33 @@
+# 策略-市场组合的规范声明
+# 不在任何策略包 config 中的组合在此声明，含 status 和原因。
+# 未来新增组合: 只需在此加一行，不需要改 Python 代码。
+declarations:
+  - strategy: options_bull_call_spread
+    market: a_share
+    status: unsupported
+    reason: "A 股无期权经纪商支持"
+
+  - strategy: options_bull_call_spread
+    market: hk_share
+    status: unsupported
+    reason: "港股期权通过 hk_hsi 市场处理"
+
+  - strategy: zhuang
+    market: us_share
+    status: unsupported
+    reason: "庄股策略仅针对 A 股小盘股设计"
+
+  - strategy: equity_mean_reversion
+    market: hk_share
+    status: unsupported
+    reason: "均值回归策略仅针对 A 股实施"
+
+  - strategy: equity_mean_reversion
+    market: us_share
+    status: unsupported
+    reason: "均值回归策略仅针对 A 股实施"
+
+  - strategy: zhuang
+    market: hk_small
+    status: blocked
+    reason: "HK 小盘股数据源不可用 (详见 Phase 1-D 调研)"

@@ -1,9 +1,9 @@
-const tabs = ['A 股', '美股', '港股'];
-
 export default function TabNav({
+  tabs = ['A 股', '美股', '港股'],
   active,
   onChange,
 }: {
+  tabs?: string[];
   active: string;
   onChange: (tab: string) => void;
 }) {

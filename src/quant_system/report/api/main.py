@@ -26,14 +26,12 @@ app.include_router(report_router)
 
 @app.get("/api/health")
 def health():
-    quant_files = [
-        "quant_a_share_bottomup_timing.json",
-        "quant_hk_share_bottomup_timing.json",
-        "quant_a_share_mean_reversion.json",
-    ]
-    has_quant = any((DATA_DIR / f).exists() for f in quant_files)
-    has_options = (DATA_DIR / "options.json").exists()
-    has_zhuang = (DATA_DIR / "zhuang.json").exists()
+    from quant_system.report.registry import resolve_matrix
+
+    cells, _ = resolve_matrix()
+    has_quant = any(c.has_data and c.strategy_kind in ("bottomup_timing", "mean_reversion") for c in cells)
+    has_options = any(c.has_data and c.strategy_kind == "bull_call_spread" for c in cells)
+    has_zhuang = any(c.has_data and c.strategy_kind == "zhuang" for c in cells)
     return {
         "status": "ok",
         "data_available": {
@@ -46,96 +44,80 @@ def health():
 
 @app.get("/api/markets")
 def get_markets():
-    """Aggregate all JSON data by market (A股 / 美股 / 港股) with index + strategy summaries."""
-    a_mom = _read_json("quant_a_share_bottomup_timing")
-    a_mr = _read_json("quant_a_share_mean_reversion")
-    hk_mom = _read_json("quant_hk_share_bottomup_timing")
-    opt = _read_json("options")
-    zhuang = _read_json("zhuang")
+    """Aggregate market data — now backed by registry, same response shape.
+
+    Old shape preserved for frontend backward compat during migration.
+    New consumers should use GET /api/report/matrix (also aliased at /api/matrix).
+    """
+    from quant_system.report.registry import resolve_matrix
+
+    _, groups = resolve_matrix()
+    a_share = next((g for g in groups if g.market_name == "a_share"), None)
+    hk_group = next((g for g in groups if g.market_name == "hk_share"), None)
+    us_group = next((g for g in groups if g.market_name == "us_share"), None)
+
+    def _cell_by_strategy(g, name):
+        if g is None:
+            return None
+        for c in g.cells:
+            if c.strategy_name == name:
+                return c
+        return None
+
+    def _build_strategies(g) -> list[dict]:
+        if g is None:
+            return []
+        result = []
+        for c in g.cells:
+            entry = {
+                "key": c.strategy_name,
+                "name": c.strategy_label,
+                "status": "active" if c.status.value == "active" and c.has_data else
+                         ("idle" if c.status.value == "active" else c.status.value),
+                "missing": not c.has_data,
+            }
+            # 合并 metrics
+            m = c.metrics
+            if c.strategy_kind == "bottomup_timing" or c.strategy_kind == "mean_reversion":
+                entry.update({
+                    "signals": m.get("signals_count", 0),
+                    "positions": m.get("positions_count", 0),
+                    "gate_ok": m.get("market_gate"),
+                })
+            elif c.strategy_kind == "bull_call_spread":
+                entry.update({
+                    "ivr": m.get("ivr"), "iv_mode": m.get("iv_mode", "—"),
+                    "grade": m.get("signal_grade", "—"),
+                    "qqq_price": m.get("qqq_price"), "qqq_rsi": m.get("qqq_rsi"),
+                    "reason": m.get("reason", ""),
+                })
+            elif c.strategy_kind == "zhuang":
+                entry.update({
+                    "candidates": m.get("candidates_count", 0),
+                    "max_score": 0,
+                    "gate_ok": None,
+                })
+            result.append(entry)
+        return result
 
     return {
         "a_share": {
-            "index": {
-                "name": "沪深300",
-                "symbol": "000300",
-                "close": a_mom.get("benchmark_close", "—"),
-                "ma60": a_mom.get("benchmark_ma60", "—"),
-                "regime": "ok" if a_mom.get("market_gate") else ("closed" if a_mom.get("market_gate") is False else "unknown"),
-                "regime_msg": a_mom.get("market_gate_msg", ""),
-            },
-            "strategies": [
-                {
-                    "key": "equity_mom",
-                    "name": "中线 momentum",
-                    "status": "active" if len(a_mom.get("signals", [])) > 0 else "idle",
-                    "signals": len(a_mom.get("signals", [])),
-                    "positions": len(a_mom.get("positions", [])),
-                    "gate_ok": a_mom.get("market_gate"),
-                    "missing": a_mom.get("_missing", False),
-                },
-                {
-                    "key": "equity_mr",
-                    "name": "中线 mean-reversion",
-                    "status": "active" if len(a_mr.get("signals", [])) > 0 else "idle",
-                    "signals": len(a_mr.get("signals", [])),
-                    "positions": len(a_mr.get("positions", [])),
-                    "gate_ok": None,
-                    "missing": a_mr.get("_missing", False),
-                },
-                {
-                    "key": "zhuang",
-                    "name": "庄股跟庄",
-                    "status": "active" if zhuang.get("candidates_count", 0) > 0 else "idle",
-                    "candidates": zhuang.get("candidates_count", 0),
-                    "max_score": (zhuang.get("top_candidates") or [{}])[0].get("total", 0) if zhuang.get("top_candidates") else 0,
-                    "gate_ok": zhuang.get("market_trend"),
-                    "missing": zhuang.get("_missing", False),
-                },
-            ],
+            "index": a_share.index_info if a_share else {},
+            "strategies": _build_strategies(a_share),
         },
         "us": {
-            "index": {
-                "name": "QQQ",
-                "symbol": "QQQ",
-                "close": opt.get("qqq_price"),
-                "ma200": opt.get("qqq_ma200"),
-                "regime": "bullish" if opt.get("qqq_bullish") else "bearish",
-                "regime_msg": "",
-            },
-            "strategies": [
-                {
-                    "key": "options",
-                    "name": "期权 Bull Call Spread",
-                    "status": "signal" if opt.get("signal") else ("ready" if opt.get("qqq_bullish") else "waiting"),
-                    "ivr": opt.get("ivr"),
-                    "iv_mode": opt.get("iv_mode", "—"),
-                    "grade": opt.get("signal_grade", "—"),
-                    "qqq_price": opt.get("qqq_price"),
-                    "qqq_rsi": opt.get("qqq_rsi"),
-                    "reason": opt.get("reason", ""),
-                    "missing": opt.get("_missing", False),
-                },
-            ],
+            "index": us_group.index_info if us_group else {},
+            "strategies": _build_strategies(us_group),
         },
         "hk": {
-            "index": {
-                "name": "恒生中国100",
-                "symbol": "HSCHK100",
-                "close": hk_mom.get("benchmark_close", "—"),
-                "ma": hk_mom.get("benchmark_ma60", "—"),
-                "regime": "ok" if hk_mom.get("market_gate") else ("closed" if hk_mom.get("market_gate") is False else "unknown"),
-                "regime_msg": hk_mom.get("market_gate_msg", ""),
-            },
-            "strategies": [
-                {
-                    "key": "equity_mom",
-                    "name": "中线 momentum",
-                    "status": "active" if len(hk_mom.get("signals", [])) > 0 else "idle",
-                    "signals": len(hk_mom.get("signals", [])),
-                    "positions": len(hk_mom.get("positions", [])),
-                    "gate_ok": hk_mom.get("market_gate"),
-                    "missing": hk_mom.get("_missing", False),
-                },
-            ],
+            "index": hk_group.index_info if hk_group else {},
+            "strategies": _build_strategies(hk_group),
         },
     }
+
+
+@app.get("/api/matrix")
+def get_matrix_alias():
+    """Alias for GET /api/report/matrix — discovered strategy-market grid."""
+    from quant_system.report.api.routes import get_matrix as _matrix
+    return _matrix()

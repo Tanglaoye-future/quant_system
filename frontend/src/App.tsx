@@ -3,7 +3,7 @@ import Layout from './components/Layout';
 import DashboardPage from './pages/DashboardPage';
 
 export default function App() {
-  const { data, markets, loading, error, updatedAt, refresh } = useReportData();
+  const { data, markets, matrix, loading, error, updatedAt, refresh } = useReportData();
   const date = data?.quant?.date || data?.options?.date || data?.zhuang?.date || '';
 
   return (
@@ -23,7 +23,7 @@ export default function App() {
         </div>
       )}
 
-      {data && markets && <DashboardPage data={data} markets={markets} />}
+      {data && markets && <DashboardPage data={data} markets={markets} matrix={matrix} />}
     </Layout>
   );
 }
