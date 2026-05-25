@@ -29,7 +29,13 @@ export default function DashboardPage({ data, markets, matrix }: Props) {
         />
         {matrix.markets.map(m => (
           <div key={m.market_name} className={activeTab === m.market_label ? '' : 'hidden'}>
-            <MarketSection market={m} showAll={true} />
+            <MarketSection
+              market={m}
+              showAll={true}
+              quantData={data.quant}
+              zhuangData={data.zhuang}
+              optionsData={data.options}
+            />
           </div>
         ))}
       </>

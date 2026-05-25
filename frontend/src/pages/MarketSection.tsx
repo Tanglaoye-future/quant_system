@@ -1,24 +1,31 @@
-import type { MarketGroup } from '../types';
+import type { MarketGroup, QuantData, ZhuangData, OptionsData } from '../types';
 import StrategyCard from '../components/StrategyCard';
 
 interface Props {
   market: MarketGroup;
-  /** 如果 true, 也显示非 active 的 cells (默认 true) */
   showAll?: boolean;
+  quantData?: QuantData;
+  zhuangData?: ZhuangData;
+  optionsData?: OptionsData;
 }
 
-export default function MarketSection({ market, showAll = true }: Props) {
+/** 将 strategy_name 映射到 QuantData 的 _source label，用于数据匹配 */
+export default function MarketSection({ market, showAll = true, quantData, zhuangData, optionsData }: Props) {
   const activeCells = market.cells.filter(c => c.status === 'active' && c.has_data);
   const otherCells = market.cells.filter(c => !(c.status === 'active' && c.has_data));
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* active strategies first */}
       {activeCells.map(cell => (
-        <StrategyCard key={`${cell.strategy_name}@${cell.market_name}`} cell={cell} />
+        <StrategyCard
+          key={`${cell.strategy_name}@${cell.market_name}`}
+          cell={cell}
+          quantData={quantData}
+          zhuangData={zhuangData}
+          optionsData={optionsData}
+        />
       ))}
 
-      {/* other strategies below */}
       {showAll && otherCells.length > 0 && (
         <>
           <div style={{
@@ -29,7 +36,13 @@ export default function MarketSection({ market, showAll = true }: Props) {
             {otherCells.length} 个其他组合
           </div>
           {otherCells.map(cell => (
-            <StrategyCard key={`${cell.strategy_name}@${cell.market_name}`} cell={cell} />
+            <StrategyCard
+              key={`${cell.strategy_name}@${cell.market_name}`}
+              cell={cell}
+              quantData={quantData}
+              zhuangData={zhuangData}
+              optionsData={optionsData}
+            />
           ))}
         </>
       )}
