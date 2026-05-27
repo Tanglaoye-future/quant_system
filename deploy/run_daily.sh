@@ -45,6 +45,12 @@ echo ""
 PYTHON="$REPO_ROOT/venv/bin/python"
 [ -f "$PYTHON" ] || PYTHON="python3"
 
+# macOS UF_HIDDEN 反复给 venv site-packages 下 .pth 设隐藏 flag, Python 3.14
+# site.py 跳过 hidden .pth → editable install 失效 → import quant_system 报 ModuleNotFoundError.
+# 详见 memory/feedback_venv_naming.md. 每次启动先 strip flag 兜底.
+SITE_PKGS="$REPO_ROOT/venv/lib/python3.14/site-packages"
+[ -d "$SITE_PKGS" ] && chflags -R nohidden "$SITE_PKGS" 2>/dev/null || true
+
 LOG_DIR="$REPO_ROOT/logs"
 mkdir -p "$LOG_DIR" "$REPO_ROOT/report/data"
 
