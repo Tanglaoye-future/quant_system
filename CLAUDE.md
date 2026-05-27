@@ -45,3 +45,18 @@ python scripts/backtest/audit_m0_outputs.py data/backtest/<strategy>_<market>_<s
 - 触达哪个子策略 + 哪个 M 节点
 - 运行了哪些验收命令
 - 输出目录在哪里
+
+## Daily 调度（2026-05-27 起手动）
+
+launchd 自动调度因 macOS Full Disk Access（TCC）阻塞已停用（详见 `memory/session_2026_05_27.md`）。**每天手动跑**：
+
+```bash
+cd ~/Documents/projects/quant_system && ./deploy/run_daily.sh --no-options
+```
+
+去掉 `--no-options` 会带 IBKR 期权扫描。脚本启动时自动 chflags strip macOS UF_HIDDEN flag（修 venv editable install 失效）。
+
+## 接美股因子/策略需求前
+
+**强制先读** `memory/sp500_negative_2026-05.md` 与 `memory/us_fundamentals_yfinance_2026-05.md`。
+NASDAQ100 / SP500 / fundamentals 微调路径已实验完整 FAIL，不要重做。详见 `.cursor/skills/quant-system-milestones/SKILL.md` "已证伪路径" 段。
