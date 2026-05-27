@@ -257,6 +257,14 @@ class BottomupTimingStrategy:
             self._regime_gate = MarketRegimeGate(
                 loader, self._regime_benchmark_symbol, self.tcfg.m2_regime_ma_days
             )
+        # L9-A: regime-aware partial_exit 需要"基准 > MA(L9 ma_days)"判断；ma_days 与 m2 解耦
+        # 仅 partial_exit_enabled + partial_exit_regime_filter 同开时使用
+        self._partial_regime_gate: MarketRegimeGate | None = None
+        if self.tcfg.partial_exit_enabled and self.tcfg.partial_exit_regime_filter:
+            self._partial_regime_gate = MarketRegimeGate(
+                loader, self._regime_benchmark_symbol,
+                int(self.tcfg.partial_exit_regime_ma_days),
+            )
         # enrich 缓存：按需构建（UniverseFilter 先缩小集合，再 enrich）
         self._enriched: dict[str, "object"] = {}
         self._universe_filter = UniverseFilter(loader, UniverseFilterConfig())
@@ -391,6 +399,14 @@ class BottomupTimingStrategy:
             sub, position.entry_price, position.stop_loss, self.tcfg,
             trail_mult_override=trail_override,
         )
+        # L9-A: 若 partial_exit_regime_filter 启用，按 asof 计算"基准是否在 MA 上方"传给 exit
+        regime_above_ma: Optional[bool] = None
+        if self._partial_regime_gate is not None:
+            try:
+                ok_regime, _msg = self._partial_regime_gate.allows_long_entries(asof_str)
+                regime_above_ma = bool(ok_regime)
+            except Exception:
+                regime_above_ma = None
         ex = exit_signal_from_enriched(
             sub,
             entry_price=position.entry_price,
@@ -398,6 +414,7 @@ class BottomupTimingStrategy:
             trailing_stop_price=new_stop, cfg=self.tcfg,
             partial_exit_done=position.partial_exit_done,
             runner_active=position.runner_active,
+            regime_above_ma=regime_above_ma,
         )
         if ex.get("promote_runner"):
             promote_stop = float(ex.get("new_stop") or new_stop)

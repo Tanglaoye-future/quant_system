@@ -32,3 +32,4 @@
 - [Zhuang Phase 1-D HK 调研 2026-05](zhuang_hk_research_2026-05.md) — HK provider 接入因数据源全 blocked (akshare 网络 / yfinance 缺换手+市值历史) + 算法对 HK 庄股先验存疑，退回"先调研"；hk_small 架构占位保留
 - [HK daily 参数修复 + US fundamentals 接入 2026-05](us_fundamentals_yfinance_2026-05.md) — run_daily.sh HK 用错参数 bug 修复；yfinance 93/93 ticker fundamentals cache 全落地；US 4y baseline Sharpe -0.22 不变（yaml 权重故意 0），待决策 quality sweep / 换 universe / 维持
 - [SP500 负结果 2026-05](sp500_negative_2026-05.md) — 工程完整 (503 ticker prefetch + loader 多 universe 支持 + 新策略 yaml)，4y Sharpe -0.18 / 胜率 37.5% FAIL；换 universe 不能救美股 momentum，问题在策略本身
+- [Equity_factor L9-A regime-aware partial_exit 2026-05](equity_factor_l9_partial_regime_2026-05.md) — 牛市 (HS300>MA) 跳过 partial 走全平；4y ma200 Sharpe 0.844 vs base 0.659，8y ma200 0.363 vs base 0.277（同向但未到用户预设 ≥0.5 阈），落 yaml 决策待裁

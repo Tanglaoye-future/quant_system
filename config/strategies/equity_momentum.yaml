@@ -1,10 +1,11 @@
-# 策略：A 股中长线因子动量 (L7-C3 出场 + L8D2 去 fcf 因子版)
+# 策略：A 股中长线因子动量 (L7-C3 出场 + L8D2 去 fcf 因子 + L9-A regime-aware partial)
 # 算法层完整自包含。市场环境通过 deployments 指向 markets/<m>.yaml。
 #
-# 历史：v1 baseline → L2 因子增强 (fcf_yield) → L7-C3 出场优化 (regime_exit+partial_exit+collar) → L8D2 fcf=0
-# 4y 2022-2026: L7-C3 base 0.579 → L8D2 0.675 (+0.096) / 收益 +36.0% → +43.4% / DD -14.3% → -13.6%
-# 8y 2018-2026: L7-C3 base 0.063 → L8D2 0.195 (+0.132) / 收益 +18.8% → +32.0% / DD -16.8% → -19.5% (DD 略恶化)
-# trade-off：fcf_yield 在熊市起一定"避雷"作用，去掉 +Sharpe / +收益 但 DD +2.7pp
+# 历史：v1 baseline → L2 因子增强 (fcf_yield) → L7-C3 出场优化 (regime_exit+partial_exit+collar)
+#       → L8D2 fcf=0 → L9-A regime-aware partial_exit (HS300 > MA200 跳过 partial 走全平)
+# 4y 2022-2026: L8D2 base 0.659 → L9-A-ma200 0.844 (+0.185) / 收益 +43.3% → +56.4% / DD -13.6% → -12.8%
+# 8y 2018-2026: L8D2 base 0.277 → L9-A-ma200 0.363 (+0.086) / 收益 +42.2% → +52.9% / DD -19.5% → -18.2%
+# trade-off：胜率 50.7%→44.3% (4y) / 50.5%→43.2% (8y) — 牛市跳过 partial 单笔回吐换高单笔盈利
 
 name: equity_momentum
 kind: bottomup_timing                # backtest.py build_strategy 工厂键
@@ -62,6 +63,8 @@ timing:
   partial_exit_enabled: true    # L7-C2: TP 触发卖 50% + 剩余切宽松 trail
   partial_exit_pct: 0.5
   partial_exit_trail_mult: 1.5
+  partial_exit_regime_filter: true   # L9-A: HS300 > MA(N) 时跳过 partial，TP 全平吃趋势
+  partial_exit_regime_ma_days: 200   # MA200 是 4y/8y 双窗口 winner (vs ma60/ma120)
 
 factors:
   weights:

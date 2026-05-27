@@ -33,6 +33,22 @@ description: >-
 
 ---
 
+## 已证伪路径（不要重做）
+
+下面方向 **已实验完整，结论 negative**。再有人问类似需求，先把 memory 链接发过去，再讨论是否值得做不同的路径。
+
+### 美股 momentum 中线选股
+- **NASDAQ100 等权 momentum-only**：4y Sharpe -0.22 / FAIL（[[equity_us_momentum.yaml]] DEPRECATED 注释）
+- **NASDAQ100 + yfinance fundamentals 数据接入**：4y 不变 -0.22，因策略 yaml 把 fundamentals 权重故意全 0（[[us_fundamentals_yfinance_2026-05]]）
+- **SP500 universe + quality 因子 (roe/fcf_yield) 重设权重**：4y Sharpe -0.18 / 胜率 37.5% / FAIL，胜率反而比 NASDAQ100 (42.5%) 降 5pp（[[sp500_negative_2026-05]]）
+
+**已经被证明的根因**：等权 + ATR trail stop + 中线持仓在美股 2022-2026 大盘成长占主导环境**结构性失效**，跟 universe 大小 / fundamentals 接入无关。后续若要做美股 momentum 必须改架构：市值加权 / 年度持有 / regime filter，或缩窄到 top-20 by mkt cap。
+
+### HK 庄股策略数据接入
+- **akshare HK + yfinance HK fundamentals**：网络阻塞 + 缺换手率 + 历史市值（survivorship bias）；架构占位保留但实盘退回（[[zhuang_hk_research_2026-05]]）
+
+---
+
 ## 里程碑一览（M0 → M终）
 
 | 节点 | 定义（“长什么样”） | 当前仓库锚点（实现时以 grep 为准） |

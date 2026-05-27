@@ -41,7 +41,17 @@ metadata:
 **Why**: 用户接受这种"既然在等不如顺手做点"的提议，节省整体周期。
 **How to apply**: idle 时主动列 2-3 个相关候选（不要太多），用户拒绝就继续等。不要静默 sleep 浪费机会。
 
-## 5. Commit 按逻辑单元打包，不按文件
+## 5. 长任务 / 子进程默认全权限
+
+用户 2026-05-27 明确："后续回测、读 data/ cache、长任务子进程我都会用完整权限（all），避免再出现 0/300 cache 那种沙箱假失败"。
+
+**Why**: 受限沙箱里跑 sweep 会出现 universe 拿到 0/300 的秒级假失败，log 看到 `prefetch 0/300 / elapsed=0.5s / Sharpe=NaN`，且 agent 会把它当"完成"汇报误导决策。详见 [[equity_factor_l9_partial_regime_2026-05]]。
+**How to apply**:
+- agent 不要在受限沙箱里 fork ProcessPoolExecutor / subprocess 跑长回测
+- 长 sweep（>5 min）一律用本机终端跑，或确认用户在 all 权限模式
+- 收到任何"超快完成"通知（实际预计 >1 min 任务秒返）一律先看 log 里 prefetch 数字 + elapsed 是否正常再相信指标
+
+## 6. Commit 按逻辑单元打包，不按文件
 
 一次 commit 含完整逻辑单元（实验脚本 + unit test + yaml 改动 + memory + index）。本会话两次成功示范：
 

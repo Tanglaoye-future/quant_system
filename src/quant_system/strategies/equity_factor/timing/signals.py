@@ -99,6 +99,14 @@ class TimingConfig:
     partial_exit_pct: float = 0.5          # 首次止盈时出场比例（0.5 = 50%）
     partial_exit_trail_mult: float = 1.5   # 剩余仓位的 trailing stop 倍数扩展（相对 atr_stop_mult）
 
+    # --- L9-A: regime-aware partial_exit ---
+    # 仅当 partial_exit_enabled=True 时生效。True 时：基准指数收盘 > MA(partial_exit_regime_ma_days)
+    # (即"牛市"段) → 跳过 partial_exit，走默认全平 TP（让趋势奔跑）；
+    # 基准 <= MA → 保留 partial_exit（震荡/熊市锁利）。
+    # 解决 8y 牛市段 partial_exit 早锁利导致的 Sharpe / 收益拖累；默认 False = 行为兼容 L8D2.
+    partial_exit_regime_filter: bool = False
+    partial_exit_regime_ma_days: int = 200
+
     # --- M5 L1 (worktree HK): TP 命中时不卖任何仓，仅上移 stop + 启用 runner trail ---
     # 注：与 partial_exit_enabled 互斥使用——同时启用时 partial_exit 优先（main 主线）
     tp_runner_enabled: bool = False
@@ -662,12 +670,16 @@ def exit_signal_from_enriched(
     trailing_stop_price: Optional[float] = None, cfg: Optional[TimingConfig] = None,
     partial_exit_done: bool = False,
     runner_active: bool = False,
+    regime_above_ma: Optional[bool] = None,
 ) -> dict:
     """与 exit_signal 同, 但接收已 enrich 的 df.
 
     partial_exit_done (main): 已完成 partial_exit_enabled 路径的部分卖出（不再重复）。
     runner_active (worktree HK): tp_runner_enabled 路径已 promote 为 runner（跳过 TP 与 RSI overbought）。
     promote 返回字典含 promote_runner=True / new_stop 时，调用方应锁 stop 并置 pos.runner_active=True，不卖。
+    regime_above_ma (L9-A): 调用方算好的"基准指数 > MA(partial_exit_regime_ma_days)" 结果。
+        仅在 cfg.partial_exit_regime_filter=True 时被消费——True 时 TP 命中改走全平（吃趋势），
+        而不进入 partial_exit。None / cfg.partial_exit_regime_filter=False 时退化为原 partial 行为。
     """
     cfg = cfg or TimingConfig()
     df = enriched
@@ -687,7 +699,13 @@ def exit_signal_from_enriched(
         target = entry_price + cfg.atr_target_mult * a
         if close >= target:
             # 优先级 1：partial_exit_enabled (main) — 卖一部分，剩余切宽 trail
-            if cfg.partial_exit_enabled and not partial_exit_done:
+            # L9-A: 若启用 regime filter 且当前 regime 在 MA 上方（牛市），跳过 partial 走全平 TP 吃趋势
+            _partial_skipped_by_regime = (
+                cfg.partial_exit_enabled
+                and cfg.partial_exit_regime_filter
+                and regime_above_ma is True
+            )
+            if cfg.partial_exit_enabled and not partial_exit_done and not _partial_skipped_by_regime:
                 wide_mult = cfg.atr_stop_mult * cfg.partial_exit_trail_mult
                 new_stop_wide = close - wide_mult * a
                 rs = (
