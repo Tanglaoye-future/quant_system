@@ -45,12 +45,15 @@ class TestDeploymentsIndex:
         assert hk_entry["enabled"] is True
 
     def test_markets_us_share_prefers_enabled(self, cfg):
-        # us_share 部署: equity_momentum(enabled=false) + equity_us_momentum(enabled=false)
-        # 都 disabled 时, 占位以"第一个加入"为准 (equity_momentum 在 strategies 列表里排前)
-        # 但实际 raw["markets"]["us_share"] 是 us_share 的"代表性 entry"; 因为都 disabled,
-        # 选哪个都不会进入 daily_run, 此 test 容忍两种实现
+        # us_share 部署:
+        #   equity_momentum (enabled=false, nasdaq100)
+        #   equity_us_momentum (enabled=false, nasdaq100)
+        #   equity_sp500_momentum (enabled=true, sp500 universe override)
+        # raw["markets"]["us_share"] 应保留首个 enabled=true → equity_sp500_momentum
         us_entry = cfg.get("markets", "us_share")
-        assert us_entry["strategy_name"] in ("equity_momentum", "equity_us_momentum")
+        assert us_entry["strategy_name"] == "equity_sp500_momentum"
+        assert us_entry["enabled"] is True
+        assert us_entry["universe"] == "sp500"
 
 
 class TestResolveStrategyParamsBySname:

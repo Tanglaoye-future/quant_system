@@ -82,11 +82,14 @@ def main() -> None:
         return
 
     hsi = cfg.get("data", "hang_seng_indexes", default=None) or {}
+    us_mkt = cfg.get("data", "us_market", default=None) or {}
     loader = DataLoader(
         cfg.cache_dir,
         refresh_days=cfg.get("data", "refresh_days", default=1),
         price_adjust=cfg.get("data", "price_adjust", default="qfq"),
         hang_seng_indexes=hsi,
+        us_market=us_mkt,
+        us_universe=market_cfg.get("universe"),   # 影响 us_share 多 universe 路径
     )
     j = Journal(cfg.journal_db_path)
     j.init_schema()

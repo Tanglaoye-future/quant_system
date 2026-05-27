@@ -1,0 +1,77 @@
+# 策略：SP500 中长线动量 + quality
+#
+# 设计意图：摆脱 NASDAQ100 MAG7 集中市等权失效问题，用 SP500 503 ticker 更宽 universe
+# 因子组合：动量主权重 + ROE/FCF quality 过滤 + 适度 value (PE)
+# 注：因 yfinance fundamentals 仅覆盖 ~5 年 (2021+)，8y 回测 2018-2020 段 fundamentals 缺失，
+#     z-score 中位填 0，相当于该段仅 momentum 主导。详见 memory/us_fundamentals_yfinance_2026-05.md
+
+name: equity_sp500_momentum
+kind: bottomup_timing
+
+deployments:
+  - market: us_share
+    universe: sp500                 # 覆盖 market 默认 nasdaq100；走 sp500_daily_dir
+    benchmark: SPX                  # SPY ETF as SPX proxy
+    enabled: true
+    capital_pct: 0.0                # capital_pct 在 Phase C 用户拍板后再调
+
+timing:
+  # M2 市况门：SP500 用 MA200 (美股标准)
+  m2_regime_enabled: true
+  m2_regime_ma_days: 200
+  rsi_entry_low: 45.0               # SP500 比 NDX 略保守
+  rsi_entry_high: 75.0
+  rsi_overbought: 85.0
+  ma_long: 60
+  max_hold_days: 120                # 比 NASDAQ100 略短，SP500 中位股动能持续时间稍弱
+  m2_rsi_atr_adjust: true
+  m2_rsi_atr_k: 250.0
+  m2_rsi_atr_cap: 8.0
+  m2_vol_green_bar: false
+  m2_vol_median_lookback: 5
+  m2_vol_median_mult: 1.0
+  m2_structure_lookback: 30
+  m2_structure_eps: 0.002
+  m2_breakout_mode: false
+  m2_breakout_ma_trend: true
+  vol_breakout_mult: 1.3
+  atr_stop_mult: 2.5
+  atr_target_mult: 5.0
+  tp_runner_enabled: true
+  atr_stop_mult_runner: 2.0
+  tp_runner_lock_atr_mult: 1.0
+  m3_regime_rsi_band: false
+  m3_reg_rsi_lo_widen_pts_per_ma_gap_1pct: 1.5
+  m3_reg_rsi_lo_widen_cap: 8.0
+  m3_reg_vol_tighten_hi: false
+  m3_reg_vol_hi_tighten_k: 18.0
+  m3_reg_vol_hi_tighten_cap: 6.0
+  m3_reg_index_atr_pct_median_window: 20
+  m3_mtf_rsi_enabled: false
+  m3_mtf_rsi_period: 28
+  m3_mtf_rsi_min: 48.0
+  m5_regime_exit_enabled: false
+  partial_exit_enabled: false
+  partial_exit_pct: 0.5
+  partial_exit_trail_mult: 1.5
+
+factors:
+  weights:
+    # SP500 多 universe → value 因子（PE/PB）相对 NASDAQ100 有意义（包含传统价值股）
+    pe_inverse: 0.10
+    pb_inverse: 0.05
+    # 质量 → SP500 涵盖大量稳健 ROE / FCF 公司
+    roe: 0.20
+    revenue_growth: 0.10
+    fcf_yield: 0.15
+    rev_accel: 0.0
+    # 动量保持主权重
+    momentum_3m: 0.20
+    momentum_6m: 0.20
+
+# 无 hedge（先看裸策略表现，未来若需要加 SPY 反 ETF 对冲再 enable）
+admission:
+  min_sharpe: 0.5
+  min_sortino: 0.7
+  max_drawdown: 0.25
+  min_win_rate: 0.40

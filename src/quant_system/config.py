@@ -96,8 +96,10 @@ def _assemble_split(root: dict[str, Any], base_dir: Path) -> dict[str, Any]:
                 raise ValueError(f"strategy {sname} 引用未知 market: {mname}")
             entry: dict[str, Any] = {
                 "enabled": bool(dep.get("enabled", True)),
-                "universe": md.get("universe"),
-                "benchmark": md.get("benchmark"),
+                # 允许 deployment 覆盖 market 默认 universe / benchmark
+                # (e.g. us_share 同时支持 nasdaq100 + sp500 两个 universe)
+                "universe": dep.get("universe") or md.get("universe"),
+                "benchmark": dep.get("benchmark") or md.get("benchmark"),
                 "strategy_name": sname,                  # 反查用
                 "strategy_kind": sd.get("kind"),
             }

@@ -35,6 +35,7 @@ data/backtest/
 data/prices/
 data/hk_prices/
 data/us_prices/
+data/sp500_prices/
 data/quant.duckdb
 data/quant.duckdb.wal
 data/baseline_signals.txt

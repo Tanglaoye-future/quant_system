@@ -174,12 +174,17 @@ def main() -> None:
     args.strategy_name = strategy_name      # 显示用；None 表示走 kind 兼容模式
     hsi = cfg.get("data", "hang_seng_indexes", default=None) or {}
     us_mkt = cfg.get("data", "us_market", default=None) or {}
+    # 预读 deployment 拿到 universe 名，影响 us_share 多 universe (nasdaq100 / sp500) 路径选择
+    _deps_for_uni = cfg.get("deployments") or {}
+    _market_cfg_for_uni = ((_deps_for_uni.get(args.strategy_name) or {}).get(args.market)
+                           if args.strategy_name else None) or cfg.get("markets", args.market) or {}
     loader = DataLoader(
         cfg.cache_dir,
         refresh_days=args.refresh_days,
         price_adjust=cfg.get("data", "price_adjust", default="qfq"),
         hang_seng_indexes=hsi,
         us_market=us_mkt,
+        us_universe=_market_cfg_for_uni.get("universe"),
     )
     bt_cfg = cfg.get("backtest") or {}
     # Phase 1-B: 优先用 deployments[strategy_name][market] 精确 entry；让一市多策略时也能选对策略的 benchmark/hedge

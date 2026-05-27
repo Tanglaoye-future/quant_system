@@ -9,7 +9,8 @@
 strategies:
   - strategies/equity_momentum.yaml        # A 股 L7-C3 (a_share)
   - strategies/equity_hk_momentum.yaml     # 港股 L1+L2-B (hk_share)
-  - strategies/equity_us_momentum.yaml     # 美股 deprecated (us_share, disabled)
+  - strategies/equity_us_momentum.yaml     # 美股 NASDAQ100 deprecated (us_share, disabled)
+  - strategies/equity_sp500_momentum.yaml  # 美股 SP500 quality+momentum (us_share/sp500)
 
 markets:
   - markets/a_share.yaml

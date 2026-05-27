@@ -30,6 +30,7 @@ class DataLoader:
         price_adjust: str = "qfq",
         hang_seng_indexes: dict[str, Any] | None = None,
         us_market: dict[str, Any] | None = None,
+        us_universe: str | None = None,
         duckdb_path: str = "data/quant.duckdb",
     ):
         self.cache_dir = Path(cache_dir)
@@ -39,8 +40,28 @@ class DataLoader:
         self.price_adjust = price_adjust
         self._hsi_cfg: dict[str, Any] = hang_seng_indexes or {}
         self._us_cfg: dict[str, Any] = us_market or {}
+        # us_universe 影响 _us_cfg 中路径键的选择（nasdaq100 默认 vs sp500_*）
+        self.us_universe: str = us_universe or "nasdaq100"
         self._duckdb_path = duckdb_path
         self._store: Any = None  # lazy
+
+    def _us_paths(self) -> dict[str, str]:
+        """根据 us_universe 返回 {daily_dir, index_daily_csv, constituents_csv}。
+        sp500 走 sp500_* 前缀字段；nasdaq100 / 未指定 走旧字段（向后兼容）。"""
+        if self.us_universe == "sp500":
+            return {
+                "daily_dir": self._us_cfg.get("sp500_daily_dir")
+                             or self._us_cfg.get("daily_dir") or "",
+                "index_daily_csv": self._us_cfg.get("sp500_index_daily_csv")
+                             or self._us_cfg.get("index_daily_csv") or "",
+                "constituents_csv": self._us_cfg.get("sp500_constituents_csv")
+                             or self._us_cfg.get("constituents_csv") or "",
+            }
+        return {
+            "daily_dir": self._us_cfg.get("daily_dir") or "",
+            "index_daily_csv": self._us_cfg.get("index_daily_csv") or "",
+            "constituents_csv": self._us_cfg.get("constituents_csv") or "",
+        }
 
     def _get_store(self):
         """DuckDB store (lazy). 不可用时返回 None, get_daily 自动 fallback."""
@@ -79,12 +100,14 @@ class DataLoader:
                     f"未知 港股 universe: {name}（本项目仅支持 hs100=恒生 HSCHK100）",
                 )
         elif market == "us_share":
-            if name == "nasdaq100":
-                csvp = self._us_cfg.get("constituents_csv") or ""
+            if name in ("nasdaq100", "sp500"):
+                # 切换 universe 上下文（影响后续 get_daily / get_index_daily 路径）
+                self.us_universe = name
+                csvp = self._us_paths()["constituents_csv"]
                 if not csvp:
                     raise ValueError(
-                        "请先运行 scripts/prefetch_us_universe.py，并在 config.yaml 设置 "
-                        "data.us_market.constituents_csv"
+                        f"请先运行 scripts/prefetch/prefetch_{'us' if name == 'nasdaq100' else 'sp500'}_universe.py，"
+                        f"并在 config 设置 data.us_market.{'constituents_csv' if name == 'nasdaq100' else 'sp500_constituents_csv'}"
                     )
                 from quant_system.config import PROJECT_ROOT
                 p = Path(csvp)
@@ -92,7 +115,7 @@ class DataLoader:
                     p = PROJECT_ROOT / p
                 df = pd.read_csv(p)[["code", "name"]]
             else:
-                raise ValueError(f"未知美股 universe: {name}（本项目仅支持 nasdaq100）")
+                raise ValueError(f"未知美股 universe: {name}（本项目支持 nasdaq100 / sp500）")
         else:
             raise ValueError(f"未知 market: {market}")
 
@@ -174,12 +197,11 @@ class DataLoader:
                 dpath = PROJECT_ROOT / dpath
             df = read_hk_constituent_daily_csv(dpath, code)
         elif market == "us_share":
-            daily_dir = self._us_cfg.get("daily_dir") or ""
+            daily_dir = self._us_paths()["daily_dir"]
             if not daily_dir:
                 raise ValueError(
-                    "美股日线须先运行 scripts/prefetch_us_universe.py 预取。"
-                    "请在 config.yaml 设置 data.us_market.daily_dir "
-                    "（每只股票一个 {ticker}.csv，列: date,open,high,low,close,volume）。"
+                    "美股日线须先运行 scripts/prefetch/prefetch_us_universe.py 或 prefetch_sp500_universe.py 预取。"
+                    f"当前 us_universe={self.us_universe}，请在 config 设置对应 daily_dir。"
                 )
             from quant_system.config import PROJECT_ROOT
 
@@ -188,7 +210,16 @@ class DataLoader:
                 dpath = PROJECT_ROOT / dpath
             csv_path = dpath / f"{code}.csv"
             if not csv_path.exists():
-                raise FileNotFoundError(f"美股日线文件不存在: {csv_path}  请先运行 prefetch_us_universe.py")
+                # 备用：sp500 universe 下查不到时回退到 nasdaq100 dir（103 只 overlap）
+                alt = self._us_cfg.get("daily_dir") or ""
+                if alt and self.us_universe == "sp500":
+                    alt_path = Path(alt) if Path(alt).is_absolute() else PROJECT_ROOT / alt
+                    if (alt_path / f"{code}.csv").exists():
+                        csv_path = alt_path / f"{code}.csv"
+                    else:
+                        raise FileNotFoundError(f"美股日线文件不存在: {csv_path}（备用 {alt_path}/{code}.csv 也无）")
+                else:
+                    raise FileNotFoundError(f"美股日线文件不存在: {csv_path}")
             raw = pd.read_csv(csv_path)
             # akshare stock_us_daily 可能返回中/英文列名，统一映射
             cn_map = {"日期": "date", "开盘": "open", "最高": "high", "最低": "low", "收盘": "close", "成交量": "volume"}
@@ -230,12 +261,19 @@ class DataLoader:
             if not p.is_absolute():
                 p = PROJECT_ROOT / p
             df = read_hschk100_index_daily_csv(p)
-        elif symbol.upper() == "NDX":
-            csvp = self._us_cfg.get("index_daily_csv") or ""
+        elif symbol.upper() in ("NDX", "SPX"):
+            # 临时切上下文确保 _us_paths() 返回对应 universe 路径
+            saved = self.us_universe
+            if symbol.upper() == "SPX":
+                self.us_universe = "sp500"
+            elif symbol.upper() == "NDX":
+                self.us_universe = "nasdaq100"
+            csvp = self._us_paths()["index_daily_csv"]
+            self.us_universe = saved
             if not csvp:
                 raise ValueError(
-                    "美股基准 NDX 须先运行 scripts/prefetch_us_universe.py。"
-                    "请设置 data.us_market.index_daily_csv（列: date,open,high,low,close,volume）。"
+                    f"美股基准 {symbol.upper()} 须先运行对应 prefetch 脚本。"
+                    f"请设置 data.us_market.{'sp500_index_daily_csv' if symbol.upper() == 'SPX' else 'index_daily_csv'}"
                 )
             from quant_system.config import PROJECT_ROOT
 

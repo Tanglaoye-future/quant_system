@@ -14,9 +14,14 @@ fees:
 
 data:
   us_market:
+    # NASDAQ 100 (默认 universe)
     daily_dir: "./data/us_prices"
     index_daily_csv: "./data/us_prices/NDX_index.csv"
     constituents_csv: "./data/us_prices/nasdaq100_constituents.csv"
+    # SP500 (DataLoader.us_universe="sp500" 时启用)
+    sp500_daily_dir: "./data/sp500_prices"
+    sp500_index_daily_csv: "./data/sp500_prices/SPX_index.csv"
+    sp500_constituents_csv: "./data/sp500_prices/sp500_constituents.csv"
     # fundamentals via yfinance: 5 年年度 (income/balance/cashflow)，2018-2020 段缺失
     # 备选 provider: akshare_em (stock_financial_us_analysis_indicator_em)，未实现
     fundamentals_provider: yfinance
