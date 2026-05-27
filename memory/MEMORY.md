@@ -29,3 +29,4 @@
 - [Equity_factor Phase 1-B 多部署 2026-05](equity_factor_multi_deploy_2026-05.md) — 取消"一市多策略"抛错；raw["deployments"][sname][mname] 二维索引；equity_momentum 列 3 市场 (hk/us 默认 disabled) 解锁 cross-market 命令行
 - [Zhuang Phase 1-C market dispatch 2026-05](zhuang_market_dispatch_2026-05.md) — ZhuangDataLoader+Backtester 加 market 参数；config 新增 markets 子字典；hk_small 占位 NotImplementedError 等 Phase 1-D 接入；8 个 sweep scripts 零改动
 - [Zhuang Phase 1-D HK 调研 2026-05](zhuang_hk_research_2026-05.md) — HK provider 接入因数据源全 blocked (akshare 网络 / yfinance 缺换手+市值历史) + 算法对 HK 庄股先验存疑，退回"先调研"；hk_small 架构占位保留
+- [HK daily 参数修复 + US fundamentals 接入 2026-05](us_fundamentals_yfinance_2026-05.md) — run_daily.sh HK 用错参数 bug 修复；yfinance 93/93 ticker fundamentals cache 全落地；US 4y baseline Sharpe -0.22 不变（yaml 权重故意 0），待决策 quality sweep / 换 universe / 维持

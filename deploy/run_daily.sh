@@ -64,12 +64,30 @@ run_equity() {
   echo ""
 }
 
+# Phase 1b CLI 后的主索引调用：strategy name 自动从 deployments 推导 market，
+# resolve_strategy_params 走 deployments[<name>][<market>] 路径拿到策略文件参数
+# (factors.weights / hedge 等)，避免 legacy --market+kind 回退到 markets/<m>.yaml
+# 而丢掉 strategies/<name>.yaml 调好的参数 (HK Sharpe 1.08 来自这套参数).
+run_equity_named() {
+  local strategy=$1 label=$2
+  echo "▶ [equity_factor] $label..."
+  if (cd "$REPO_ROOT" && "$PYTHON" scripts/daily/daily_equity.py \
+        --strategy "$strategy" \
+        > "$LOG_DIR/${DATE}_${label// /_}.log" 2>&1); then
+    echo "  ✅ $label 完成"
+  else
+    echo "  ❌ $label 失败（日志: $LOG_DIR/${DATE}_${label// /_}.log）"
+    FAIL_COUNT=$((FAIL_COUNT + 1))
+  fi
+  echo ""
+}
+
 if [ "$REPORT_ONLY" = false ]; then
 
   # ── 1-3. equity_factor 三个子策略 ─────────────────────────────────────────
-  run_equity "hk_share" "bottomup_timing" "HK_momentum"
-  run_equity "a_share"  "bottomup_timing" "A_momentum"
-  run_equity "a_share"  "mean_reversion"  "A_mean_reversion"
+  run_equity_named "equity_hk_momentum" "HK_momentum"
+  run_equity_named "equity_momentum"    "A_momentum"
+  run_equity "a_share"  "mean_reversion" "A_mean_reversion"
 
   # ── 4. options ────────────────────────────────────────────────────────────
   if [ "$SKIP_OPTIONS" = false ]; then

@@ -580,6 +580,103 @@ class DataLoader:
         s = pd.to_numeric(eligible[col], errors="coerce").dropna()
         return float(s.iloc[-1]) if len(s) else None
 
+    # ---------- fundamentals (US 美股) ----------
+
+    def get_us_financial_indicator(self, code: str) -> pd.DataFrame:
+        """US 年度财务指标 (yfinance .financials / .balance_sheet / .cashflow).
+        返回 [report_date, eps_ttm, bps, roe_avg, revenue_yoy, fcf_per_share]，按 report_date 升序。
+        yfinance 通常提供最近 4-5 年年报；2018-2020 段可能缺失。
+        失败时返回空 DataFrame 并缓存以避免反复重试。
+        """
+        cache = self.cache_dir / f"us_fin_{code}.parquet"
+        if self._is_fresh(cache):
+            return pd.read_parquet(cache)
+        cols = ["report_date", "eps_ttm", "bps", "roe_avg", "revenue_yoy", "fcf_per_share"]
+        try:
+            import yfinance as yf
+            t = yf.Ticker(code)
+            fin = t.financials       # income statement annual: 行=line item, 列=report_date 降序
+            bs = t.balance_sheet     # balance sheet annual
+            cf = t.cashflow          # cashflow annual
+        except Exception:
+            df = pd.DataFrame(columns=cols)
+            df.to_parquet(cache)
+            return df
+        if fin is None or fin.empty or bs is None or bs.empty:
+            df = pd.DataFrame(columns=cols)
+            df.to_parquet(cache)
+            return df
+
+        # 所有年报列时间戳（取 income stmt 的列做主轴；如 bs/cf 缺某年用 NaN 填）
+        report_dates = sorted([pd.Timestamp(c) for c in fin.columns])
+
+        def _at(table: pd.DataFrame, row: str, dt: pd.Timestamp) -> float | None:
+            if table is None or table.empty or row not in table.index:
+                return None
+            if dt not in table.columns:
+                return None
+            v = table.loc[row, dt]
+            try:
+                f = float(v)
+                return f if not pd.isna(f) else None
+            except (TypeError, ValueError):
+                return None
+
+        rows = []
+        revs: list[tuple[pd.Timestamp, float | None]] = []
+        for dt in report_dates:
+            eps = _at(fin, "Diluted EPS", dt) or _at(fin, "Basic EPS", dt)
+            equity = _at(bs, "Stockholders Equity", dt) or _at(bs, "Common Stock Equity", dt)
+            shares = _at(bs, "Ordinary Shares Number", dt) or _at(bs, "Share Issued", dt)
+            ni = _at(fin, "Net Income", dt) or _at(fin, "Net Income Common Stockholders", dt)
+            revenue = _at(fin, "Total Revenue", dt) or _at(fin, "Operating Revenue", dt)
+            fcf = _at(cf, "Free Cash Flow", dt)
+
+            bps_v = (equity / shares) if (equity is not None and shares and shares > 0) else None
+            roe_v = (ni / equity) if (ni is not None and equity and equity > 0) else None
+            fcf_ps_v = (fcf / shares) if (fcf is not None and shares and shares > 0) else None
+            revs.append((dt, revenue))
+            # revenue_yoy 后面统一回填
+            rows.append({
+                "report_date": dt.strftime("%Y-%m-%d"),
+                "eps_ttm": eps,
+                "bps": bps_v,
+                "roe_avg": roe_v,
+                "revenue_yoy": None,   # placeholder
+                "fcf_per_share": fcf_ps_v,
+            })
+
+        # revenue_yoy：用 revs 按 report_date 升序计算 (rev_t - rev_{t-1}) / rev_{t-1}
+        for i, (dt, rev) in enumerate(revs):
+            if i == 0 or rev is None or revs[i-1][1] in (None, 0):
+                continue
+            prev = revs[i-1][1]
+            if prev and prev != 0:
+                rows[i]["revenue_yoy"] = (rev - prev) / abs(prev)
+
+        df = pd.DataFrame(rows, columns=cols)
+        for c in ["eps_ttm", "bps", "roe_avg", "revenue_yoy", "fcf_per_share"]:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+        df = df.dropna(subset=["report_date"]).sort_values("report_date").reset_index(drop=True)
+        df.to_parquet(cache)
+        return df
+
+    @staticmethod
+    def latest_us_indicator(
+        df: pd.DataFrame, col: str, asof: str, publication_lag_days: int = 60
+    ) -> float | None:
+        """US 年度财务取 asof 之前 publication_lag_days 天的最新有效值。
+        默认 60 天滞后模拟 SEC 10-K 披露窗口（large accelerated filers 60 天内披露）。
+        与 latest_hk_indicator 同款逻辑，仅默认窗口不同。"""
+        if df is None or df.empty or col not in df.columns:
+            return None
+        cutoff = (pd.to_datetime(asof) - pd.Timedelta(days=publication_lag_days)).strftime("%Y-%m-%d")
+        eligible = df[df["report_date"] <= cutoff]
+        if eligible.empty:
+            return None
+        s = pd.to_numeric(eligible[col], errors="coerce").dropna()
+        return float(s.iloc[-1]) if len(s) else None
+
     def get_a_share_industry_map(self) -> dict[str, str]:
         """
         A 股 code -> 行业名称（东财 A 股实时行情整表，单日 parquet 缓存）。

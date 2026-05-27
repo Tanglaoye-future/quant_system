@@ -121,6 +121,33 @@ def compute_raw_factors(
         except Exception:
             pass
 
+    elif market == "us_share":
+        # US 财务（yfinance 年度报表），带 60 天 10-K 披露滞后避免未来信息
+        # yfinance 通常给 4-5 年数据；2018-2020 段大概率缺失 → 因子 NaN → z-score 填 0 (中性)
+        try:
+            fin = loader.get_us_financial_indicator(code)
+            eps_ttm = loader.latest_us_indicator(fin, "eps_ttm", asof)
+            bps = loader.latest_us_indicator(fin, "bps", asof)
+            roe = loader.latest_us_indicator(fin, "roe_avg", asof)
+            rev_yoy = loader.latest_us_indicator(fin, "revenue_yoy", asof)
+            fcf_ps = loader.latest_us_indicator(fin, "fcf_per_share", asof)
+            end_dt = pd.to_datetime(asof)
+            start_dt = max(end_dt - pd.Timedelta(days=30), pd.Timestamp("2018-01-01"))
+            px_recent = loader.get_daily(market, code, start_dt.strftime("%Y-%m-%d"), asof)
+            latest_close = float(px_recent["close"].iloc[-1]) if not px_recent.empty else None
+            if eps_ttm is not None and latest_close and latest_close > 0:
+                factors["pe_inverse"] = eps_ttm / latest_close
+            if bps is not None and latest_close and latest_close > 0 and bps > 0:
+                factors["pb_inverse"] = bps / latest_close
+            if roe is not None:
+                factors["roe"] = float(roe)
+            if rev_yoy is not None:
+                factors["revenue_growth"] = float(rev_yoy)
+            if fcf_ps is not None:
+                _fcf_per_share = fcf_ps
+        except Exception:
+            pass
+
     try:
         end_dt = pd.to_datetime(asof)
         # Floor at FETCH_FLOOR to avoid cache misses when backtest starts near 2018-01-01
@@ -130,8 +157,8 @@ def compute_raw_factors(
             factors["momentum_3m"] = float(px["close"].iloc[-1] / px["close"].iloc[-60] - 1.0)
         if len(px) >= 120:
             factors["momentum_6m"] = float(px["close"].iloc[-1] / px["close"].iloc[-120] - 1.0)
-        # fcf_yield = 每股企业自由现金流量 / 收盘价（需要 close 价才能算，统一在价格 block 里完成）
-        if market == "a_share" and _fcf_per_share is not None and len(px) > 0:
+        # fcf_yield = 每股自由现金流 / 收盘价（A 股 & US 共享此路径；HK 暂无 fcf 数据源）
+        if market in ("a_share", "us_share") and _fcf_per_share is not None and len(px) > 0:
             close_at_asof = float(px["close"].iloc[-1])
             if close_at_asof > 0:
                 factors["fcf_yield"] = _fcf_per_share / close_at_asof
