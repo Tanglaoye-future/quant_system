@@ -33,4 +33,5 @@
 - [HK daily 参数修复 + US fundamentals 接入 2026-05](us_fundamentals_yfinance_2026-05.md) — run_daily.sh HK 用错参数 bug 修复；yfinance 93/93 ticker fundamentals cache 全落地；US 4y baseline Sharpe -0.22 不变（yaml 权重故意 0），待决策 quality sweep / 换 universe / 维持
 - [SP500 负结果 2026-05](sp500_negative_2026-05.md) — 工程完整 (503 ticker prefetch + loader 多 universe 支持 + 新策略 yaml)，4y Sharpe -0.18 / 胜率 37.5% FAIL；换 universe 不能救美股 momentum，问题在策略本身
 - [Equity_factor L9-A regime-aware partial_exit 2026-05](equity_factor_l9_partial_regime_2026-05.md) — 牛市 (HS300>MA) 跳过 partial 走全平；4y ma200 Sharpe 0.844 vs base 0.659，8y ma200 0.363 vs base 0.277；已落 yaml (commit 64b5274)
-- [组合层 P1 权重 + P2 zhuang capacity 2026-05](portfolio_p1_p2_weights_capacity_2026-05.md) — 6-asset grid search 当前 1.86→最优 2.22 Sharpe (zhuang 40/A_mom 降 20→10)；zhuang capacity ≤30M AUM 下 40% 配比保留 96% Sharpe
+- [组合层 P1 权重 + P2 zhuang capacity 2026-05](portfolio_p1_p2_weights_capacity_2026-05.md) — 6-asset grid search 当前 1.86→最优 2.22 Sharpe (zhuang 40/A_mom 降 20→10)；zhuang capacity ≤30M AUM 下 40% 配比保留 96% Sharpe；P1+ 稳健性 2022 熊市 v4 -0.62→v5 +0.47；已落 v5 deployment_plan
+- [P3 A_mr + Options BCS 基线 2026-05](portfolio_p3_amr_options_baseline_2026-05.md) — A_mr 弱(8y Sharpe~0,纯 hedge 价值)；Options BS 近似 Sharpe 1.2-1.4 高 vol(准-QQQ 替代)；捕获 A_mr DuckDB stale-data + v5 重验证通过

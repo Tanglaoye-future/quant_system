@@ -43,7 +43,8 @@ TRADING_DAYS = 252
 DEFAULT_PATHS = {
     "HK_mom":  ROOT / "data/backtest/equity_hk_momentum_hk_share_2018-01-01_2026-05-25/equity.csv",
     "A_mom":   ROOT / "data/backtest/equity_momentum_a_share_2018-01-01_2026-05-25/equity.csv",
-    "A_mr":    ROOT / "data/backtest/mean_reversion_a_share_2018-01-01_2026-05-04/equity.csv",
+    # A_mr: 2026-05-28 fresh run (post-DuckDB 数据层)；旧 _2026-05-04 曲线偏乐观已弃用
+    "A_mr":    ROOT / "data/backtest/mean_reversion_a_share_2018-01-01_2026-05-25/equity.csv",
     "zhuang":  ROOT / "data/backtest/zhuang_a_share_2018-01-01_2026-05-25/equity_curve.csv",
 }
 

@@ -133,9 +133,13 @@ deployment_plan 是个人多账户配置，大概率在 1-30M RMB 区间 → **4
 - **trade-off 标注**：v5 防守倾斜，beta 强反弹段少赚；若判断持续大牛市可回调 QQQ/GLD
 - **capacity 前提**：40% zhuang 仅 ≤30M AUM 无障碍；>100M 压回 20-25% 给 HK
 
+## v5 重验证（2026-05-28，P3 期间）
+
+P3 发现 grid 用的 A_mr 旧曲线是 pre-DuckDB（偏乐观）。用 fresh post-DuckDB A_mr 曲线重跑 P1 grid + P1+ 稳健性：**v5 仍 #1 最优（2.231）、2022 熊市仍 v4 -0.62→v5 +0.46**，结论不变。详见 [[portfolio_p3_amr_options_baseline_2026-05]]。P1 脚本 DEFAULT_PATHS["A_mr"] 已改指 fresh `_2026-05-25` 曲线。
+
 ## 后续候选（用户未指）
 
-- **P3**：A_mr / Options BCS 量化基线（仍是数据黑洞）
+- ✅ **P3 已完成**：A_mr 弱(hedge 价值) / Options BS 近似 Sharpe 1.2-1.4，见 [[portfolio_p3_amr_options_baseline_2026-05]]
 - **P4**：A_mr 优化（solo 0.25 但有 hedge 价值，提到 0.4-0.5 组合还能上台阶）
 - **实盘验证**：v5 跑 3 个月后用真实 daily return 对照回测 2.22 Sharpe
 
