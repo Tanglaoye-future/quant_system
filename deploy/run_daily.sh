@@ -51,6 +51,11 @@ PYTHON="$REPO_ROOT/venv/bin/python"
 SITE_PKGS="$REPO_ROOT/venv/lib/python3.14/site-packages"
 [ -d "$SITE_PKGS" ] && chflags -R nohidden "$SITE_PKGS" 2>/dev/null || true
 
+# 兜底②：直接把 src 放进 PYTHONPATH，彻底不依赖 editable .pth。
+# 即便 UF_HIDDEN flag 再次让 .pth 失效(chflags 偶尔被 TCC 阻塞)，
+# import quant_system / python -m quant_system.* 仍可用。
+export PYTHONPATH="$REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+
 LOG_DIR="$REPO_ROOT/logs"
 mkdir -p "$LOG_DIR" "$REPO_ROOT/report/data"
 

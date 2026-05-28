@@ -42,6 +42,8 @@ data/baseline_signals.txt
 data/prefetch_failed.txt
 data/prefetch_progress.txt
 data/today_candidates.txt
+data/scan_*.csv
+data/cross_market_audit_logs/
 
 # --- 日志 ---
 logs/
