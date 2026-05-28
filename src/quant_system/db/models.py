@@ -13,6 +13,7 @@ from datetime import date, datetime
 from typing import Any, Optional
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     Date,
     DateTime,
@@ -26,6 +27,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+# Postgres 用 JSONB，其它方言(单测用的内存 SQLite)退化为通用 JSON —
+# 让 repo 层不依赖 docker 也能单测，生产仍是 JSONB。
+JSONColumn = JSON().with_variant(JSONB(), "postgresql")
 
 
 class Base(DeclarativeBase):
@@ -51,7 +56,7 @@ class StrategyRun(Base):
 
     # 策略特有标量全进这里：ivr / signal_grade / qqq_price / universe_size /
     # candidates_count / benchmark_close / benchmark_ma60 / reason ...
-    metrics: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    metrics: Mapped[dict[str, Any]] = mapped_column(JSONColumn, nullable=False, default=dict)
 
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ok")
     created_at: Mapped[datetime] = mapped_column(
@@ -80,7 +85,7 @@ class Signal(Base):
     action: Mapped[Optional[str]] = mapped_column(String(32))
     score: Mapped[Optional[float]] = mapped_column(Float)
     reason: Mapped[Optional[str]] = mapped_column(Text)
-    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONColumn, nullable=False, default=dict)
 
     run: Mapped["StrategyRun"] = relationship(back_populates="signals")
 
@@ -100,7 +105,7 @@ class Position(Base):
     hold_days: Mapped[Optional[int]] = mapped_column(Integer)
     pnl_pct: Mapped[Optional[float]] = mapped_column(Float)
     action: Mapped[Optional[str]] = mapped_column(String(32))
-    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONColumn, nullable=False, default=dict)
 
     run: Mapped["StrategyRun"] = relationship(back_populates="positions")
 

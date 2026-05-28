@@ -1,6 +1,6 @@
 ---
 name: db-decouple-phase0-2026-05
-description: 2026-05-28 三层解耦改造启动 — 引入 Postgres 作运营真相源；Phase 0（DB 基建 schema+alembic）已落地验证
+description: 2026-05-28 三层解耦改造 — 引入 Postgres 作运营真相源；Phase 0(DB 基建) + Phase 1(repo 层+DB-first 路由)已落地；下一步 Phase 2 daily 双写
 metadata:
   type: project
 ---
@@ -16,10 +16,13 @@ metadata:
 ## 分阶段路线
 
 - **Phase 0（已完成）**: DB 基建 —— schema(ORM models) + alembic + docker postgres 起库验证
-- **Phase 1**: 写 `backend/repositories/`(唯一碰 DB 的 DAO 层)；API 路由改走 repo，DB 空时回退 JSON(过渡安全网)；repo 层单测
-- **Phase 2**: compute 层 daily 脚本**双写**(JSON + DB)，校验两边数据一致
+- **Phase 1（已完成）**: repo(DAO)层 + API 路由 DB-first、回退 JSON；repo 层单测。详见下方"Phase 1 落地物"
+- **Phase 2（下一步）**: compute 层 daily 脚本**双写**(JSON + DB)，校验两边数据一致
 - **Phase 3**: API 改 DB-only、移除 JSON fallback；daily 停写 JSON（或仅留导出产物）
 - **Phase 4**: docker-compose 加 backend/frontend/compute 服务，整套可多机部署
+
+> 注：架构愿景里 backend 应独立成顶层 `backend/`，但现 backend = `quant_system.report.api`。
+> Phase 1 把 repo 放在 `quant_system.report.repositories`（serving 侧），顶层 `backend/` 物理拆分推迟到 Phase 4。
 
 每个 Phase 收尾跑 CLAUDE.md 门控。
 
@@ -38,6 +41,19 @@ metadata:
 **验收**：`alembic upgrade head` 建出 6 表 + uq 约束；`alembic check` 报 "No new upgrade operations detected"(零漂移)；session 端到端写读+JSONB+级联删除通过；`pytest` 120 passed 无回归。
 
 关联：[[frontend-backend-refactor-2026-05]]（现有 FastAPI+React 层）、[[duckdb_migration_2026-05]]（价格层，保持不动）。
+
+## Phase 1 落地物（已验证）
+
+- `src/quant_system/report/repositories.py`：serving 侧 DAO，**唯一从 backend 读 DB 的地方**。
+  `quant_payload/options_payload/zhuang_payload(session)` 把 DB 行还原成前端既有 JSON 形状，无数据返回 `None`。
+- `routes.py` 新增 `_db_or_json(repo_fn, json_fn)`：先试 DB（`session_scope`），**DB 空或连不上**(任何异常)都回退 `report/data/*.json` 并 `logger.warning`。quant/options/zhuang/summary 四个端点全改走它。
+  - `/matrix` `/markets` `/health`（registry-backed）Phase 1 不动，仍扫 JSON，留到后续迁。
+- models 的 JSONB 改 `JSONColumn = JSON().with_variant(JSONB(),"postgresql")`：Postgres 仍 JSONB，单测用内存 SQLite 退化 JSON（repo 测不依赖 docker）。`alembic check` 确认 Postgres 端零漂移。
+
+**行↔JSON 映射约定**(写侧 Phase 2 须遵循)：Signal 归一列 code/name/score/reason/action + 策略特有字段进 `payload`；读出=归一列+payload 展开。options 全标量在 `metrics`，读出=`{date,market,**metrics}`。zhuang 候选落 signals(因子分项进 payload，total=score)，汇总在 metrics。
+
+**验收**：repo 单测 `tests/report/test_repositories.py` 5 passed（空库→None、合并带 _source 标签、取最新跑批、options flatten、zhuang top_candidates）；真 Postgres 双路径手测（有数据走 DB / 空库回退 JSON）；`pytest` 125 passed。
+**关键认知**：Phase 1 阶段 DB 为空，生产行为与改造前**完全一致**（永远走 JSON fallback）。Phase 2 daily 双写后 DB 有数据才自动切 DB 路径——零风险渐进。
 
 ## 起停命令
 

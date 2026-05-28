@@ -1,13 +1,35 @@
-"""Report API routes — reads report/data/*.json and serves via REST."""
+"""Report API routes — DB-first（repo 层），DB 空/不可达时回退 report/data/*.json。"""
 
 import json
+import logging
 from pathlib import Path
+from typing import Callable, Optional
 
 from fastapi import APIRouter
+
+from quant_system.db.session import session_scope
 
 router = APIRouter(prefix="/api/report")
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 DATA_DIR = PROJECT_ROOT / "report" / "data"
+
+logger = logging.getLogger(__name__)
+
+
+def _db_or_json(repo_fn: Callable, json_fn: Callable[[], dict]) -> dict:
+    """过渡安全网：先试 DB（repo），无数据或连不上则回退 JSON reader。
+
+    Phase 1 阶段 DB 为空，实际总是走 JSON —— 生产行为不变。
+    Phase 2 daily 双写后 DB 有数据，自动切到 DB 路径。
+    """
+    try:
+        with session_scope() as session:
+            payload: Optional[dict] = repo_fn(session)
+        if payload is not None:
+            return payload
+    except Exception as exc:  # DB 不可达 / 查询异常 —— 回退 JSON，不影响服务
+        logger.warning("DB read failed (%s), falling back to JSON", exc)
+    return json_fn()
 
 
 def _read_json(system: str) -> dict:
@@ -76,25 +98,31 @@ def _merge_quant() -> dict:
 
 @router.get("/quant")
 def get_quant():
-    return _merge_quant()
+    from quant_system.report import repositories
+
+    return _db_or_json(repositories.quant_payload, _merge_quant)
 
 
 @router.get("/options")
 def get_options():
-    return _read_json("options")
+    from quant_system.report import repositories
+
+    return _db_or_json(repositories.options_payload, lambda: _read_json("options"))
 
 
 @router.get("/zhuang")
 def get_zhuang():
-    return _read_json("zhuang")
+    from quant_system.report import repositories
+
+    return _db_or_json(repositories.zhuang_payload, lambda: _read_json("zhuang"))
 
 
 @router.get("/summary")
 def get_summary():
     return {
-        "quant": _merge_quant(),
-        "options": _read_json("options"),
-        "zhuang": _read_json("zhuang"),
+        "quant": get_quant(),
+        "options": get_options(),
+        "zhuang": get_zhuang(),
     }
 
 
