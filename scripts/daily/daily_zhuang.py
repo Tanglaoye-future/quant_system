@@ -97,6 +97,10 @@ def main():
     )
     print(f"[report] zhuang.json → {_REPORT_DATA / 'zhuang.json'}")
 
+    # 双写 Postgres（Phase 2，env QUANT_PG_DUALWRITE 控制，失败不影响 JSON 跑批）
+    from quant_system.db.ingest import maybe_ingest_zhuang
+    maybe_ingest_zhuang(report_payload)
+
     # 自动重建 HTML 报告
     from quant_system.report.builder import rebuild_html_report
     rebuild_html_report(args.date, open_browser=False)

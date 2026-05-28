@@ -59,6 +59,10 @@ def _write_report_json(
     )
     print(f"[report] {fname} → {_REPORT_DATA / fname}")
 
+    # 双写 Postgres（Phase 2，env QUANT_PG_DUALWRITE 控制，失败不影响 JSON 跑批）
+    from quant_system.db.ingest import maybe_ingest_options
+    maybe_ingest_options(payload)
+
 
 def parse_args():
     p = argparse.ArgumentParser(description="期权每日信号")

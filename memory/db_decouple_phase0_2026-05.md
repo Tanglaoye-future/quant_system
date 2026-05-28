@@ -1,6 +1,6 @@
 ---
 name: db-decouple-phase0-2026-05
-description: 2026-05-28 三层解耦改造 — 引入 Postgres 作运营真相源；Phase 0(DB 基建) + Phase 1(repo 层+DB-first 路由)已落地；下一步 Phase 2 daily 双写
+description: 2026-05-28 三层解耦改造 — Postgres 运营真相源；P0(DB基建)+P1(repo读+DB-first路由)+P2(daily双写)已落地；下一步 P3 切 DB-only
 metadata:
   type: project
 ---
@@ -17,8 +17,8 @@ metadata:
 
 - **Phase 0（已完成）**: DB 基建 —— schema(ORM models) + alembic + docker postgres 起库验证
 - **Phase 1（已完成）**: repo(DAO)层 + API 路由 DB-first、回退 JSON；repo 层单测。详见下方"Phase 1 落地物"
-- **Phase 2（下一步）**: compute 层 daily 脚本**双写**(JSON + DB)，校验两边数据一致
-- **Phase 3**: API 改 DB-only、移除 JSON fallback；daily 停写 JSON（或仅留导出产物）
+- **Phase 2（已完成）**: compute 层 daily 脚本**双写**(JSON + DB)，校验两边数据一致。详见下方"Phase 2 落地物"
+- **Phase 3（下一步）**: API 改 DB-only、移除 JSON fallback；daily 停写 JSON（或仅留导出产物）
 - **Phase 4**: docker-compose 加 backend/frontend/compute 服务，整套可多机部署
 
 > 注：架构愿景里 backend 应独立成顶层 `backend/`，但现 backend = `quant_system.report.api`。
@@ -54,6 +54,16 @@ metadata:
 
 **验收**：repo 单测 `tests/report/test_repositories.py` 5 passed（空库→None、合并带 _source 标签、取最新跑批、options flatten、zhuang top_candidates）；真 Postgres 双路径手测（有数据走 DB / 空库回退 JSON）；`pytest` 125 passed。
 **关键认知**：Phase 1 阶段 DB 为空，生产行为与改造前**完全一致**（永远走 JSON fallback）。Phase 2 daily 双写后 DB 有数据才自动切 DB 路径——零风险渐进。
+
+## Phase 2 落地物（已验证）
+
+- `src/quant_system/db/ingest.py`：compute 侧写库，与 repositories 读库**对称**。`ingest_quant/options/zhuang(session,payload)` 把**写 JSON 的同一份 dict** 落成 DB 行（同源 → 天然一致）；`_replace_run` 按 (run_date,strategy_name,market) 删旧插新做幂等（daily 重跑不累积）。
+- dual-write 入口 `maybe_ingest_quant/options/zhuang(payload)`：受 env `QUANT_PG_DUALWRITE`（默认开，设 `0/false/no/off` 关）控制；`session_scope` 包 try/except，**DB 不可达只 logger.warning 不抛**——daily 以 JSON 为主不被拖垮。
+- 3 个 `daily_*.py` 在写 JSON 后调对应 `maybe_ingest_*`（同一 payload）。options 的调用放在 `_write_report_json` 内覆盖所有出口。
+  - 注：daily 脚本需 `PYTHONPATH=src`（deploy/run_daily.sh 已设）才能 import quant_system，这是预存约定不是本次引入。
+- options 的 strategy_name 用 `underlying`（QQQ），zhuang 用 `"zhuang"`、market 默认 `a_share`（zhuang JSON 无 market 字段）。
+
+**验收**：往返单测 `tests/db/test_ingest.py` 4 passed（quant/options/zhuang round-trip + 幂等重跑只留 1 run）；真 Postgres 经**完整双写入口**喂现有 `report/data/*.json` 读回比对：options/zhuang DB==JSON 精确一致、quant positions 6 条 == 三文件并集；env 开关 `QUANT_PG_DUALWRITE=0` 跳过验证通过；`pytest` 129 passed。验证后清空 DB，等首次真实 daily 双写填充。
 
 ## 起停命令
 
