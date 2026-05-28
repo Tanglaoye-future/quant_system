@@ -31,6 +31,11 @@ api = [
     "fastapi>=0.100",
     "uvicorn[standard]>=0.23",
 ]
+db = [
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.1",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

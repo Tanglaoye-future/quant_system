@@ -56,3 +56,6 @@ report/strategy_report_*.html
 
 # --- Notebooks ---
 *.ipynb_checkpoints/
+
+# --- 环境密钥（含 DB 密码，不入仓库；模板见 .env.example） ---
+.env

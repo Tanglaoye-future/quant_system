@@ -1,0 +1,30 @@
+# quant_system 服务编排
+# Phase 0：先只起 Postgres（运营真相源 / OLTP）。
+# 后续 Phase 4 再加 backend / frontend / compute 服务。
+#
+# 用法:
+#   cp .env.example .env        # 首次：填 DB 密码
+#   docker compose up -d postgres
+#   docker compose down         # 停（数据保留在 named volume）
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: quant_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-quant}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quant}
+      POSTGRES_DB: ${POSTGRES_DB:-quant}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - quant_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quant} -d ${POSTGRES_DB:-quant}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  quant_pgdata:
