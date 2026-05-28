@@ -1,5 +1,6 @@
 # Memory Index
 
+- [2026-05-28 Session 记录](session_2026_05_28.md) — 确立"组合层优化 >> 单策略迭代"方法论；落 L9-A + P1 权重 grid(1.86→2.22) + P2 capacity + P1+ 稳健性落 v5 + P3 A_mr/Options 基线
 - [2026-05-27 Session 记录](session_2026_05_27.md) — HK daily 参数 bug 修复 + US fundamentals via yfinance 接入 + SP500 多 universe 基建 (4y FAIL 证伪换 universe 路径) + launchd 调度 TCC 阻塞决策手动跑
 - [2026-05-25 Session 记录](session_2026_05_25_phase1_complete.md) — Phase 1 A/B/C/D 全完成 + 12-cell 回测矩阵 + 前后端动态解耦 + 大厂规范确立
 - [quant_system project overview](project_quant_system.md) — Repo structure, key modules, scripts, and design principles for the Chinese A-share & HK quant trading system
