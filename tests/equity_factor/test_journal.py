@@ -58,10 +58,23 @@ def test_update_stop_loss(journal: Journal):
     assert journal.list_open()[0]["stop_loss_price"] == pytest.approx(9.5)
 
 
-def test_add_snapshot_does_not_break_reads(journal: Journal):
+def test_add_snapshot_idempotent_per_day(journal: Journal):
+    from sqlalchemy import func, select
+
+    from quant_system.db.models import JournalSnapshot
+
     tid = _open(journal, price=10.0)
     journal.add_snapshot(tid, "2026-05-23", price=10.5, risk_flag="normal")
-    # 快照不影响 trade 读取
+    journal.add_snapshot(tid, "2026-05-23", price=10.8, risk_flag="drawdown")  # 同日重跑
+
+    with journal._sm() as s:
+        rows = s.scalars(
+            select(JournalSnapshot).where(JournalSnapshot.trade_id == tid)
+        ).all()
+    assert len(rows) == 1                      # 当天只一行，不堆重复
+    assert rows[0].price == pytest.approx(10.8)  # 被后一次更新
+    assert rows[0].risk_flag == "drawdown"
+    # 不影响 trade 读取
     assert journal.list_open()[0]["id"] == tid
 
 

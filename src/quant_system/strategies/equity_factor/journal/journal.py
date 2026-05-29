@@ -153,17 +153,31 @@ class Journal:
         risk_flag: str = "normal",
         note: Optional[str] = None,
     ) -> None:
+        # 同 (trade_id, snapshot_date) 幂等 upsert：当天重跑 daily 只更新不堆重复行。
+        snap_date = _to_date(snapshot_date)
         with self._scope() as s:
             trade = s.get(JournalTrade, trade_id)
             unrealized = price / trade.entry_price - 1.0 if trade else None
-            s.add(JournalSnapshot(
-                trade_id=trade_id,
-                snapshot_date=_to_date(snapshot_date),
-                price=price,
-                unrealized_pnl_pct=unrealized,
-                risk_flag=risk_flag,
-                note=note,
-            ))
+            existing = s.scalars(
+                select(JournalSnapshot).where(
+                    JournalSnapshot.trade_id == trade_id,
+                    JournalSnapshot.snapshot_date == snap_date,
+                )
+            ).first()
+            if existing is not None:
+                existing.price = price
+                existing.unrealized_pnl_pct = unrealized
+                existing.risk_flag = risk_flag
+                existing.note = note
+            else:
+                s.add(JournalSnapshot(
+                    trade_id=trade_id,
+                    snapshot_date=snap_date,
+                    price=price,
+                    unrealized_pnl_pct=unrealized,
+                    risk_flag=risk_flag,
+                    note=note,
+                ))
 
     # ---------- reads ----------
 
