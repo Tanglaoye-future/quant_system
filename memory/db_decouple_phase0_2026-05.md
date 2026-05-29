@@ -1,6 +1,6 @@
 ---
 name: db-decouple-phase0-2026-05
-description: 三层解耦 — Postgres 运营真相源；P0(基建)+P1(repo+DB-first路由)+P2(daily双写)+P3软切(registry也DB-first,后端全读DB)已落地；JSON 降级为 builder输入+冷备
+description: 三层解耦 — Postgres 运营真相源；P0基建/P1 repo路由/P2 daily双写/P3软切(后端全读DB)/journal 已从SQLite迁入PG；JSON 降级 builder输入+冷备
 metadata:
   type: project
 ---
@@ -20,6 +20,15 @@ metadata:
 - **Phase 2（已完成）**: compute 层 daily 脚本**双写**(JSON + DB)，校验两边数据一致。详见下方"Phase 2 落地物"
 - **Phase 3 软切（已完成 2026-05-29）**: registry 也改 DB-first，**整个后端读 DB**；JSON 降级为 HTML builder 输入 + DB 宕机冷备；daily 不变（仍双写）。用户在 AskUserQuestion 选"软切"而非"硬切"（硬切=移除所有 fallback+停写 JSON+迁 builder，牺牲 DB 宕机韧性）。详见下方"Phase 3 落地物"
 - **Phase 3b / 未来（按需）**: 硬切 —— 迁 HTML builder 到 DB 后，才能停写 JSON + 移除冷备 fallback。
+
+## 分层解耦审计 + journal 迁移（2026-05-29）
+
+代码审计结论（查真实代码，非记忆）：报告/看板链路三层解耦扎实 —— 前端只连 `/api`(client.ts BASE='/api' + vite proxy→:8000)；后端 7 端点全 DB-first(repositories 返 dict 不漏 ORM)；`db/` 零向上依赖、`report/` 不依赖 `strategies/`；无旁路直连。DuckDB 价格层是设计内独立 OLAP。
+**审计发现的唯一实质缺口**：交易 journal 还在 SQLite（`journal.py` 直连 `data/journal.db`），Phase 0 建的 PG `JournalTrade/JournalSnapshot` 是死 schema（零引用）。→ 当场修复：
+- `strategies/equity_factor/journal/journal.py` 重写为 **Postgres 后端**（`db.session`+ORM），公开 API 不变（open/close/update_stop/add_snapshot/list_open/list_closed/attribution/init_schema）。`list_open/list_closed` 返 dict 且 **entry_date 转字符串**（消费者 monitor.py 用 `datetime.fromisoformat(trade["entry_date"])` 依赖 str）。`__init__(db_path 兼容忽略, sessionmaker= 可注入供单测内存 SQLite)`。
+- `scripts/migration/migrate_journal_to_pg.py`：一次性搬 SQLite→PG，snapshot 的 trade_id 重映射到 PG 新 id，`--force` 清空重迁。已跑：2 trades + 25 snapshots 入 PG（601939/601066 两笔持仓 + 16/9 快照），`list_open()` 验证返回正确。
+- `tests/equity_factor/test_journal.py` 5 passed；全量 pytest 140 passed。
+- **操作含义（韧性 trade-off）**：daily_equity 现在**硬依赖 Postgres**（journal 不再有 SQLite 本地兜底）。Postgres 容器 `restart: unless-stopped` 常驻；若 PG 宕机 daily_equity 会失败（区别于报告双写的 JSON 冷备）。旧 `data/journal.db` 成为孤立备份（gitignored，已不被读）。
 - **Phase 4**: docker-compose 加 backend/frontend/compute 服务，整套可多机部署
 
 > 注：架构愿景里 backend 应独立成顶层 `backend/`，但现 backend = `quant_system.report.api`。

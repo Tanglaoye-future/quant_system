@@ -36,4 +36,4 @@
 - [Equity_factor L9-A regime-aware partial_exit 2026-05](equity_factor_l9_partial_regime_2026-05.md) — 牛市 (HS300>MA) 跳过 partial 走全平；4y ma200 Sharpe 0.844 vs base 0.659，8y ma200 0.363 vs base 0.277；已落 yaml (commit 64b5274)
 - [组合层 P1 权重 + P2 zhuang capacity 2026-05](portfolio_p1_p2_weights_capacity_2026-05.md) — 6-asset grid search 当前 1.86→最优 2.22 Sharpe (zhuang 40/A_mom 降 20→10)；zhuang capacity ≤30M AUM 下 40% 配比保留 96% Sharpe；P1+ 稳健性 2022 熊市 v4 -0.62→v5 +0.47；已落 v5 deployment_plan
 - [P3 A_mr + Options BCS 基线 2026-05](portfolio_p3_amr_options_baseline_2026-05.md) — A_mr 弱(8y Sharpe~0,纯 hedge 价值)；Options BS 近似 Sharpe 1.2-1.4 高 vol(准-QQQ 替代)；捕获 A_mr DuckDB stale-data + v5 重验证通过
-- [三层解耦 P0-P3 — Postgres+repo+双写+软切 2026-05](db_decouple_phase0_2026-05.md) — 单repo强边界；P0基建/P1 repo路由/P2 daily双写(ingest,verify安全网)/P3软切(registry也DB-first,后端全读DB)；JSON降级builder输入+冷备；硬切待迁builder
+- [三层解耦 P0-P3+journal — Postgres 统一 2026-05](db_decouple_phase0_2026-05.md) — 单repo强边界；P0基建/P1 repo路由/P2 daily双写+verify/P3软切(后端全读DB)/journal已从SQLite迁入PG(daily_equity 现硬依赖PG)；JSON降级builder输入+冷备；硬切待迁builder
