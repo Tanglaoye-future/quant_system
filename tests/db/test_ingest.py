@@ -95,6 +95,31 @@ def test_zhuang_roundtrip(session: Session):
     assert first["total"] == 57.0 and first["ma_convergence"] == 100.0
 
 
+def test_zhuang_positions_roundtrip(session: Session):
+    """zhuang 持仓往返：ingest_zhuang 写 positions → zhuang_payload/run_to_payload 还原一致（verify 依赖对称）。"""
+    payload = {
+        "date": "2026-05-29", "market": "a_share", "universe_size": 3151,
+        "candidates_count": 1, "market_trend": True,
+        "top_candidates": [{"code": "300580", "total": 78.0}],
+        "positions": [
+            {"code": "300580", "name": "", "entry_date": "2026-05-26",
+             "hold_days": 3, "pnl_pct": -0.012, "action": "持有"},
+        ],
+    }
+    ingest.ingest_zhuang(session, payload)
+    session.commit()
+
+    out = repositories.zhuang_payload(session)
+    assert out["market"] == "a_share"
+    assert len(out["positions"]) == 1
+    pos = out["positions"][0]
+    assert pos["code"] == "300580" and pos["action"] == "持有"
+    assert pos["pnl_pct"] == -0.012
+
+    run = session.scalars(select(StrategyRun)).first()
+    assert repositories.run_to_payload(run) == payload
+
+
 def test_run_to_payload_matches_ingested_quant(session: Session):
     """单-run 还原（verify 依赖）：strategy_name 显式给定时 ingest→run_to_payload 精确往返。"""
     payload = {

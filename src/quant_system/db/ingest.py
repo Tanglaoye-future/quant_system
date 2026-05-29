@@ -152,6 +152,18 @@ def ingest_zhuang(session: Session, payload: dict[str, Any]) -> StrategyRun:
                 payload={k: v for k, v in c.items() if k not in ("code", "total")},
             )
         )
+    for p in payload.get("positions", []):
+        run.positions.append(
+            Position(
+                code=p["code"],
+                name=p.get("name"),
+                entry_date=_parse_date(p.get("entry_date")),
+                hold_days=p.get("hold_days"),
+                pnl_pct=p.get("pnl_pct"),
+                action=p.get("action"),
+                payload={k: v for k, v in p.items() if k not in _POSITION_COLS},
+            )
+        )
     session.add(run)
     return run
 

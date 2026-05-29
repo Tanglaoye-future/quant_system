@@ -116,8 +116,10 @@ if [ "$REPORT_ONLY" = false ]; then
   fi
 
   # ── 5. zhuang ─────────────────────────────────────────────────────────────
-  echo "▶ [zhuang] 吃货期扫描..."
-  if (cd "$REPO_ROOT" && "$PYTHON" scripts/daily/daily_zhuang.py --top 15 --min-score 45 \
+  # --capital 400000：部署计划 zhuang 占总资金 40%（示例总资金 100 万）。
+  # 闭环：Step1 风控盯市(advisory) → Step2 扫候选 → Step3 Phase-A 自动建仓写 zhuang_trades。
+  echo "▶ [zhuang] 建仓闭环..."
+  if (cd "$REPO_ROOT" && "$PYTHON" scripts/daily/daily_zhuang.py --top 15 --min-score 45 --capital 400000 \
         > "$LOG_DIR/${DATE}_zhuang.log" 2>&1); then
     echo "  ✅ zhuang 完成"
   else

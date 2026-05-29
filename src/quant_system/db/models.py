@@ -165,3 +165,63 @@ class JournalSnapshot(Base):
     note: Mapped[Optional[str]] = mapped_column(Text)
 
     trade: Mapped["JournalTrade"] = relationship(back_populates="snapshots")
+
+
+class ZhuangTrade(Base):
+    """zhuang 庄股策略交易流水 — 与 equity 的 journal_trades 完全隔离。
+
+    zhuang 出场逻辑（ATR/动量早止/10% 止盈/派发）与 equity 不同，故独立 ledger，
+    避免 equity 的 RiskMonitor 用错误的出场规则评估 zhuang 仓位。
+    """
+
+    __tablename__ = "zhuang_trades"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    market: Mapped[str] = mapped_column(String(32), nullable=False, default="a_share")
+    direction: Mapped[str] = mapped_column(String(8), nullable=False, default="long")
+
+    entry_date: Mapped[date] = mapped_column(Date, nullable=False)
+    entry_price: Mapped[float] = mapped_column(Float, nullable=False)
+    entry_size: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    accumulation_score: Mapped[Optional[float]] = mapped_column(Float)
+    phase: Mapped[str] = mapped_column(String(4), nullable=False, default="A")
+    atr_at_entry: Mapped[Optional[float]] = mapped_column(Float)
+    entry_reason: Mapped[Optional[str]] = mapped_column(Text)
+
+    stop_loss_price: Mapped[Optional[float]] = mapped_column(Float)
+    take_profit_price: Mapped[Optional[float]] = mapped_column(Float)
+
+    exit_date: Mapped[Optional[date]] = mapped_column(Date, index=True)
+    exit_price: Mapped[Optional[float]] = mapped_column(Float)
+    exit_reason: Mapped[Optional[str]] = mapped_column(String(64))
+    pnl: Mapped[Optional[float]] = mapped_column(Float)
+    pnl_pct: Mapped[Optional[float]] = mapped_column(Float)
+    hold_days: Mapped[Optional[int]] = mapped_column(Integer)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    snapshots: Mapped[list["ZhuangSnapshot"]] = relationship(
+        back_populates="trade", cascade="all, delete-orphan"
+    )
+
+
+class ZhuangSnapshot(Base):
+    """zhuang 持仓盯市快照。"""
+
+    __tablename__ = "zhuang_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trade_id: Mapped[int] = mapped_column(
+        ForeignKey("zhuang_trades.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    snapshot_date: Mapped[date] = mapped_column(Date, nullable=False)
+    price: Mapped[float] = mapped_column(Float, nullable=False)
+    unrealized_pnl_pct: Mapped[Optional[float]] = mapped_column(Float)
+    risk_flag: Mapped[Optional[str]] = mapped_column(String(16), default="normal")
+    note: Mapped[Optional[str]] = mapped_column(Text)
+
+    trade: Mapped["ZhuangTrade"] = relationship(back_populates="snapshots")

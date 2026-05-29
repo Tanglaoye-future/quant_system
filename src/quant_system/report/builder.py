@@ -169,6 +169,7 @@ def render(q: dict, o: dict, z: dict, report_date: str) -> str:
     z_max_score = z_top[0].get("total", 0) if z_top else 0
     z_status_badge = "badge-pass" if z_count > 0 else "badge-idle"
     z_missing = z.get("_missing", False)
+    z_positions = z.get("positions", [])
 
     # ── quant signals rows ──────────────────────────────────────────────────
     def signal_rows(signals):
@@ -441,6 +442,16 @@ def render(q: dict, o: dict, z: dict, report_date: str) -> str:
     <div style="margin-top:10px;color:var(--muted);font-size:12px">
       {'⚠ 最高分未达实盘门槛(65分)，今日仅监控，不建议入场。' if z_max_score < 65 else '✅ 存在达到实盘门槛的候选，请进一步人工确认。'}<br>
       权重：MA收敛×0.20 · 量价不对称×0.30 · 价格横盘×0.20 · 换手下降×0.15 · 量价背离×0.15
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><div class="card-title">当前持仓</div><div class="card-sub">{len(z_positions)} 笔 · 最大6仓 · 出场建议 advisory</div></div>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>代码</th><th>名称</th><th>入场日</th><th>持有天</th><th>浮盈</th><th>操作</th></tr></thead>
+      <tbody>{position_rows(z_positions)}</tbody>
+    </table>
     </div>
   </div>
 </div>

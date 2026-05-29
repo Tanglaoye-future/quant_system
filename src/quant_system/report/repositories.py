@@ -87,10 +87,12 @@ def run_to_payload(run: StrategyRun) -> dict[str, Any]:
             candidates.append(item)
         return {
             "date": str(run.run_date),
+            "market": run.market,
             "universe_size": metrics.get("universe_size"),
             "candidates_count": metrics.get("candidates_count"),
             "market_trend": metrics.get("market_trend"),
             "top_candidates": candidates,
+            "positions": [_position_to_dict(p) for p in run.positions],
         }
 
     # equity_factor (bottomup_timing / mean_reversion)
@@ -175,8 +177,10 @@ def zhuang_payload(session: Session) -> Optional[dict[str, Any]]:
         candidates.append(item)
     return {
         "date": str(run.run_date),
+        "market": run.market,
         "universe_size": metrics.get("universe_size"),
         "candidates_count": metrics.get("candidates_count", len(candidates)),
         "market_trend": metrics.get("market_trend"),
         "top_candidates": candidates,
+        "positions": [_position_to_dict(p) for p in run.positions],
     }
