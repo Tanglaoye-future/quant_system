@@ -1,6 +1,7 @@
 """Registry resolver unit tests."""
 import pytest
 
+from quant_system.report.registry import resolver
 from quant_system.report.registry.domain import CellStatus, StrategyCell
 from quant_system.report.registry.resolver import (
     resolve_matrix,
@@ -9,6 +10,13 @@ from quant_system.report.registry.resolver import (
     _normalize_market,
     _normalize_strategy,
 )
+
+
+@pytest.fixture(autouse=True)
+def _force_fs_discovery(monkeypatch):
+    # Phase 3 起 resolve_matrix 改 DB-first；本套测的是 FS/config/declaration 归并逻辑，
+    # 强制走文件系统发现，避免隐式依赖本机 Postgres 的实时数据。
+    monkeypatch.setattr(resolver, "_discover_from_db", lambda: None)
 
 
 class TestNormalize:

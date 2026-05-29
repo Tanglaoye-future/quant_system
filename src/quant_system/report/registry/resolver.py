@@ -214,6 +214,66 @@ def _discover_from_filesystem() -> dict[tuple[str, str], dict[str, Any]]:
     return cells
 
 
+# ── DB 扫描（三层解耦 Phase 3：matrix/markets/health 改读 Postgres）────────
+
+def _sname_from_db_run(strategy_kind: str, strategy_name: str | None) -> str:
+    """DB run → registry strategy_name（与 _discover_from_filesystem 归因一致）。"""
+    if strategy_kind == "bull_call_spread":
+        return "options_bull_call_spread"  # fs 从文件名 options 推得，DB 按 kind
+    if strategy_kind == "zhuang":
+        return "zhuang"
+    return strategy_name or "equity_momentum"
+
+
+def _runs_to_cells(runs) -> dict[tuple[str, str], dict[str, Any]]:
+    """StrategyRun 列表 → 与 _discover_from_filesystem 同款 cells 字典（取每 (market,kind) 最新）。"""
+    latest: dict[tuple[str, str], Any] = {}
+    for run in runs:  # 调用方按 run_date,id 升序传入 → 后者最新
+        latest[(run.market, run.strategy_kind)] = run
+
+    cells: dict[tuple[str, str], dict[str, Any]] = {}
+    for (market, kind), run in latest.items():
+        sname = _sname_from_db_run(kind, run.strategy_name)
+        # zhuang 候选/options signal 不是买入信号；与 JSON 文件无 signals/positions 数组对齐 → 0
+        if kind in ("bottomup_timing", "mean_reversion"):
+            sig_c, pos_c = len(run.signals), len(run.positions)
+        else:
+            sig_c, pos_c = 0, 0
+        m = run.metrics or {}
+        cells[(sname, market)] = {
+            "date": str(run.run_date),
+            "signals_count": sig_c,
+            "positions_count": pos_c,
+            "candidates_count": m.get("candidates_count", 0),
+            "market_gate": run.market_gate,
+            "ivr": m.get("ivr"),
+            "iv_mode": m.get("iv_mode", ""),
+            "signal_grade": m.get("signal_grade", ""),
+            "qqq_price": m.get("qqq_price"),
+            "qqq_rsi": m.get("qqq_rsi"),
+            "qqq_bullish": m.get("qqq_bullish"),
+            "reason": m.get("reason", ""),
+        }
+    return cells
+
+
+def _discover_from_db() -> dict[tuple[str, str], dict[str, Any]] | None:
+    """DB-first 数据发现。DB 不可达返回 None（caller 回退文件系统冷备）。"""
+    try:
+        from sqlalchemy import select
+
+        from quant_system.db import StrategyRun
+        from quant_system.db.session import session_scope
+
+        with session_scope() as session:
+            runs = session.scalars(
+                select(StrategyRun).order_by(StrategyRun.run_date, StrategyRun.id)
+            ).all()
+            return _runs_to_cells(runs)
+    except Exception:
+        return None
+
+
 # ── cells.yaml 声明 ─────────────────────────────────────────────────────
 
 def _load_declarations() -> list[dict[str, Any]]:
@@ -400,8 +460,11 @@ def _group_and_sort(cells: list[StrategyCell]) -> list[MarketGroup]:
 
 def resolve_matrix() -> tuple[list[StrategyCell], list[MarketGroup]]:
     cfg_cells = _discover_from_config()
-    fs_cells = _discover_from_filesystem()
+    # Phase 3：数据来源 DB-first；DB 不可达才回退扫文件（冷备）。
+    data_cells = _discover_from_db()
+    if data_cells is None:
+        data_cells = _discover_from_filesystem()
     decls = _load_declarations()
-    cells = _merge_status(cfg_cells, fs_cells, decls)
+    cells = _merge_status(cfg_cells, data_cells, decls)
     groups = _group_and_sort(cells)
     return cells, groups

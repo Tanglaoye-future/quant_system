@@ -1,6 +1,6 @@
 ---
 name: db-decouple-phase0-2026-05
-description: 2026-05-28 三层解耦改造 — Postgres 运营真相源；P0(DB基建)+P1(repo读+DB-first路由)+P2(daily双写)已落地；下一步 P3 切 DB-only
+description: 三层解耦 — Postgres 运营真相源；P0(基建)+P1(repo+DB-first路由)+P2(daily双写)+P3软切(registry也DB-first,后端全读DB)已落地；JSON 降级为 builder输入+冷备
 metadata:
   type: project
 ---
@@ -18,7 +18,8 @@ metadata:
 - **Phase 0（已完成）**: DB 基建 —— schema(ORM models) + alembic + docker postgres 起库验证
 - **Phase 1（已完成）**: repo(DAO)层 + API 路由 DB-first、回退 JSON；repo 层单测。详见下方"Phase 1 落地物"
 - **Phase 2（已完成）**: compute 层 daily 脚本**双写**(JSON + DB)，校验两边数据一致。详见下方"Phase 2 落地物"
-- **Phase 3（下一步）**: API 改 DB-only、移除 JSON fallback；daily 停写 JSON（或仅留导出产物）
+- **Phase 3 软切（已完成 2026-05-29）**: registry 也改 DB-first，**整个后端读 DB**；JSON 降级为 HTML builder 输入 + DB 宕机冷备；daily 不变（仍双写）。用户在 AskUserQuestion 选"软切"而非"硬切"（硬切=移除所有 fallback+停写 JSON+迁 builder，牺牲 DB 宕机韧性）。详见下方"Phase 3 落地物"
+- **Phase 3b / 未来（按需）**: 硬切 —— 迁 HTML builder 到 DB 后，才能停写 JSON + 移除冷备 fallback。
 - **Phase 4**: docker-compose 加 backend/frontend/compute 服务，整套可多机部署
 
 > 注：架构愿景里 backend 应独立成顶层 `backend/`，但现 backend = `quant_system.report.api`。
@@ -72,7 +73,15 @@ metadata:
 - **收尾一致性校验**（soak 期安全网）：`scripts/daily/verify_dualwrite.py` —— date-aware 扫 `report/data/*.json`，**只校验 date==今天**的文件 vs DB 读回（`repositories.run_to_payload` 单-run 还原），逐字段 diff；不一致或"今天写了 JSON 却没进 DB"→`exit 1`，DB 不可达/双写关闭→`exit 0` 跳过。run_daily.sh 报告后接此步（不一致 FAIL_COUNT++，分歧进退出码）。`--report-only` 也会跑校验。
   - 配套 `repositories.run_to_payload(run)`：按 strategy_kind 把单个 run 还原成对应 JSON 文件形状（区别于合并的 quant_payload）。
   - **已知映射 nuance**：ingest_quant 用 `strategy_name = strategy_name or strategy` 回填（mean_reversion 的 JSON strategy_name=null → DB 存 "mean_reversion"）。serving 不暴露此字段（quant_payload 用 market+kind 派生 _source），仅 verify 逐字段比对会显现 → verify 按同规则归一后再比，避免假阳。
-- **切 Phase 3 的放行条件**（不是数日历天，是覆盖场景）：连续 daily 无 verify 报警 + 至少覆盖到①有买入信号的 run（目前生产只跑过 0 信号）②带 options 的 run（下次 daily 去掉 `--no-options`，options 走 --no-ibkr 仍产 JSON+双写）。
+- **切 Phase 3 的放行条件**（不是数日历天，是覆盖场景）：连续 daily 无 verify 报警 + 至少覆盖到①有买入信号的 run②带 options 的 run。2026-05-29 跑了带 options 的完整 daily（5 个 run：HK/A momentum/A mr/QQQ options/zhuang），verify 5 个全一致 exit 0 → 放行。注：生产至今的 run 都是 0 买入信号（只有持仓），signal 写入路径仅单测覆盖。
+
+## Phase 3 落地物（软切，2026-05-29）
+
+- `report/registry/resolver.py`：新增 `_discover_from_db()`（查 strategy_runs 最新 per (market,kind)）+ 纯函数 `_runs_to_cells(runs)`（便于单测）。`resolve_matrix()` 改 **DB-first**：`_discover_from_db()` 返回 None（DB 不可达）才回退 `_discover_from_filesystem()`。至此 matrix/markets/health 全 DB-first → **整个 FastAPI 后端读 DB**（数据 routes 自 P1 已 DB-first）。
+- DB→cells 归因：options 按 kind 映射到 registry 名 `options_bull_call_spread`（DB strategy_name 存的是 underlying "QQQ"）；zhuang/options 的 `signals_count`/`positions_count`=0（其 JSON 无 signals/positions 数组，zhuang 的 signals 是候选不是买入信号）；quant kinds 用 len(signals)/len(positions)。
+- 黄金对比（现网 2026-05-29）：matrix(DB) 5 个 cell 全 active 且 date=今天；与 matrix(FS) 唯一差异是 (a_share, equity_momentum) DB=今天 vs FS=旧日期 —— **FS 被 stale 文件 `quant_a_share_equity_momentum.json` shadow，DB 路径更正确**（迁 DB 顺带修掉这隐患）。
+- `tests/report/test_resolver_db.py` 4 passed（quant 计数 / options 按 kind+signals=0 / zhuang signals=0 candidates 来自 metrics / 取最新跑批）；`test_resolver.py` 加 autouse fixture 强制 FS 路径（去掉我引入的"测试隐式依赖本机 Postgres"耦合）。`pytest` 135 passed。
+- **资源闭环未变**：postgres 容器 `restart: unless-stopped` 常驻；前端 useReportData 调 summary+markets+matrix 全部经 DB（DB 宕机时 routes 回退 JSON、registry 回退扫文件 → 前端仍可用）。
 
 ## 起停命令
 
