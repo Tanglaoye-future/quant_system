@@ -68,6 +68,46 @@ def _position_to_dict(pos: Position) -> dict[str, Any]:
     return out
 
 
+def run_to_payload(run: StrategyRun) -> dict[str, Any]:
+    """单个 run → 它对应的 daily JSON 文件形状（按 strategy_kind 分派）。
+
+    供双写一致性校验逐 run 比对（与合并的 quant_payload 不同，这是单文件粒度）。
+    """
+    if run.strategy_kind == "bull_call_spread":
+        return {"date": str(run.run_date), "market": run.market, **(run.metrics or {})}
+
+    if run.strategy_kind == "zhuang":
+        metrics = run.metrics or {}
+        candidates = []
+        for sig in run.signals:
+            item: dict[str, Any] = {"code": sig.code}
+            item.update(sig.payload or {})
+            if sig.score is not None:
+                item["total"] = sig.score
+            candidates.append(item)
+        return {
+            "date": str(run.run_date),
+            "universe_size": metrics.get("universe_size"),
+            "candidates_count": metrics.get("candidates_count"),
+            "market_trend": metrics.get("market_trend"),
+            "top_candidates": candidates,
+        }
+
+    # equity_factor (bottomup_timing / mean_reversion)
+    out: dict[str, Any] = {
+        "date": str(run.run_date),
+        "market": run.market,
+        "strategy_kind": run.strategy_kind,
+        "strategy_name": run.strategy_name,
+        "market_gate": run.market_gate,
+        "market_gate_msg": run.market_gate_msg,
+    }
+    out.update(run.metrics or {})  # strategy / benchmark_close / benchmark_ma60
+    out["signals"] = [_signal_to_dict(s) for s in run.signals]
+    out["positions"] = [_position_to_dict(p) for p in run.positions]
+    return out
+
+
 def quant_payload(session: Session) -> Optional[dict[str, Any]]:
     """合并 HK/A momentum + A mean-reversion 最新跑批 → /api/report/quant 形状。"""
     runs: list[tuple[StrategyRun, str]] = []

@@ -95,6 +95,39 @@ def test_zhuang_roundtrip(session: Session):
     assert first["total"] == 57.0 and first["ma_convergence"] == 100.0
 
 
+def test_run_to_payload_matches_ingested_quant(session: Session):
+    """单-run 还原（verify 依赖）：strategy_name 显式给定时 ingest→run_to_payload 精确往返。"""
+    payload = {
+        "date": "2026-05-26", "market": "a_share", "strategy": "equity_momentum",
+        "strategy_kind": "bottomup_timing", "strategy_name": "equity_momentum",
+        "market_gate": True, "market_gate_msg": "OK",
+        "benchmark_close": "—", "benchmark_ma60": "—",
+        "signals": [], "positions": [
+            {"code": "601939", "name": "建设银行", "entry_date": "2026-05-22",
+             "hold_days": 4, "pnl_pct": 0.0208, "action": "HOLD"},
+        ],
+    }
+    ingest.ingest_quant(session, payload)
+    session.commit()
+    run = session.scalars(select(StrategyRun)).first()
+    assert repositories.run_to_payload(run) == payload
+
+
+def test_quant_strategy_name_backfilled_from_strategy(session: Session):
+    """文档化映射：strategy_name 缺省回填自 strategy（verify 据此归一比对）。"""
+    payload = {
+        "date": "2026-05-26", "market": "a_share", "strategy": "mean_reversion",
+        "strategy_kind": "mean_reversion", "strategy_name": None,
+        "market_gate": True, "market_gate_msg": "",
+        "signals": [], "positions": [],
+    }
+    ingest.ingest_quant(session, payload)
+    session.commit()
+    run = session.scalars(select(StrategyRun)).first()
+    assert run.strategy_name == "mean_reversion"
+    assert repositories.run_to_payload(run)["strategy_name"] == "mean_reversion"
+
+
 def test_reingest_is_idempotent(session: Session):
     payload = {
         "date": "2026-05-26", "market": "a_share", "strategy_kind": "bottomup_timing",

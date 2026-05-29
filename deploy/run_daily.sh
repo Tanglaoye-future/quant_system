@@ -136,6 +136,18 @@ else
   FAIL_COUNT=$((FAIL_COUNT + 1))
 fi
 
+# ── 7. 双写一致性校验（DB ↔ JSON，三层解耦 soak 期安全网）──────────────────
+# 只校验今天写的 JSON vs DB 读回；DB 不可达/双写关闭自动跳过(exit 0)，
+# 真不一致才 exit 1 → FAIL_COUNT++，让分歧在退出码里显形。
+echo "▶ [verify] DB ↔ JSON 双写一致性校验..."
+if (cd "$REPO_ROOT" && "$PYTHON" scripts/daily/verify_dualwrite.py --date "$DATE" \
+      2>&1 | tee "$LOG_DIR/${DATE}_verify.log"); then
+  echo "  ✅ 双写一致"
+else
+  echo "  ⚠  双写不一致（详见 $LOG_DIR/${DATE}_verify.log）"
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+fi
+
 echo ""
 echo "═══════════════════════════════════════════════════════════"
 echo "  完成。"

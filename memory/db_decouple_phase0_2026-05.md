@@ -63,7 +63,16 @@ metadata:
   - 注：daily 脚本需 `PYTHONPATH=src`（deploy/run_daily.sh 已设）才能 import quant_system，这是预存约定不是本次引入。
 - options 的 strategy_name 用 `underlying`（QQQ），zhuang 用 `"zhuang"`、market 默认 `a_share`（zhuang JSON 无 market 字段）。
 
-**验收**：往返单测 `tests/db/test_ingest.py` 4 passed（quant/options/zhuang round-trip + 幂等重跑只留 1 run）；真 Postgres 经**完整双写入口**喂现有 `report/data/*.json` 读回比对：options/zhuang DB==JSON 精确一致、quant positions 6 条 == 三文件并集；env 开关 `QUANT_PG_DUALWRITE=0` 跳过验证通过；`pytest` 129 passed。验证后清空 DB，等首次真实 daily 双写填充。
+**验收**：往返单测 `tests/db/test_ingest.py`（quant/options/zhuang round-trip + 幂等重跑只留 1 run + run_to_payload 往返 + strategy_name 回填）；真 Postgres 经**完整双写入口**喂现有 `report/data/*.json` 读回比对：options/zhuang DB==JSON 精确一致、quant positions 6 条 == 三文件并集；env 开关 `QUANT_PG_DUALWRITE=0` 跳过验证通过。验证后清空 DB，等首次真实 daily 双写填充。
+
+## 首次真实 daily 双写（2026-05-28）+ soak 安全网
+
+- 当天 `./deploy/run_daily.sh --no-options` 跑通：HK/A momentum + A mean-reversion + zhuang 全部 JSON+DB 双写成功（4 个 strategy_runs 入库），HTML 报告生成；DB↔JSON 全一致。options 因 `--no-options` 未跑。
+- 撞到并修复预存的 editable-install 失效（见 [[feedback-venv-naming]]：非 dot venv 的 .pth 也被 UF_HIDDEN，run_daily.sh 加 `export PYTHONPATH=src` 兜底）。
+- **收尾一致性校验**（soak 期安全网）：`scripts/daily/verify_dualwrite.py` —— date-aware 扫 `report/data/*.json`，**只校验 date==今天**的文件 vs DB 读回（`repositories.run_to_payload` 单-run 还原），逐字段 diff；不一致或"今天写了 JSON 却没进 DB"→`exit 1`，DB 不可达/双写关闭→`exit 0` 跳过。run_daily.sh 报告后接此步（不一致 FAIL_COUNT++，分歧进退出码）。`--report-only` 也会跑校验。
+  - 配套 `repositories.run_to_payload(run)`：按 strategy_kind 把单个 run 还原成对应 JSON 文件形状（区别于合并的 quant_payload）。
+  - **已知映射 nuance**：ingest_quant 用 `strategy_name = strategy_name or strategy` 回填（mean_reversion 的 JSON strategy_name=null → DB 存 "mean_reversion"）。serving 不暴露此字段（quant_payload 用 market+kind 派生 _source），仅 verify 逐字段比对会显现 → verify 按同规则归一后再比，避免假阳。
+- **切 Phase 3 的放行条件**（不是数日历天，是覆盖场景）：连续 daily 无 verify 报警 + 至少覆盖到①有买入信号的 run（目前生产只跑过 0 信号）②带 options 的 run（下次 daily 去掉 `--no-options`，options 走 --no-ibkr 仍产 JSON+双写）。
 
 ## 起停命令
 
