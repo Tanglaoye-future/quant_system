@@ -142,13 +142,20 @@ def quant_payload(session: Session) -> Optional[dict[str, Any]]:
             d["_source"] = label
             positions.append(d)
 
+    # AShareSection 把 quant.benchmark_close 标成「HS300」→ 取 a_share momentum 的真实数字。
+    # 之前硬编码 "—"，与矩阵卡 (resolver index) 显示的数字不一致。
+    bench_run = next(
+        (r for r, _ in runs if r.market == "a_share" and r.strategy_kind == "bottomup_timing"),
+        None,
+    )
+    bench_metrics = (bench_run.metrics if bench_run else {}) or {}
     return {
         "date": merged_date,
         "market": merged_market,
         "market_gate": merged_gate,
         "market_gate_msg": merged_gate_msg,
-        "benchmark_close": "—",
-        "benchmark_ma60": "—",
+        "benchmark_close": bench_metrics.get("benchmark_close", "—"),
+        "benchmark_ma60": bench_metrics.get("benchmark_ma60", "—"),
         "signals": signals,
         "positions": positions,
     }
