@@ -58,6 +58,13 @@ metadata:
 **Why**: 用户要的是真原因(本次结论是"momentum 追突破短期回撤 + 板块集中 + 持有才几天",而非策略失效),并接受"判盈亏太早"这种直话。
 **How to apply**: 区分"正常短期回撤"与"真问题";诊断完主动给 2-3 个可执行后续(查 bug / 看出场状态 / 看其它腿)让用户选。
 
+## 8. 测试做完再 commit，不能跑一半就提
+
+2026-05-30：写完 deploy/start_api.sh 后，我跑了 syntax check + --help + 冲突分支 + happy path (但 happy path 出了 unbound var bug)，修完 bug 没重测就 commit 了。用户明确："你先测试好再提交，我看测试到一半"。
+
+**Why**: 修 bug 后不重测就提，等于把"待验证"包成"已通过"提交，破坏 git log 的可信度；用户不放心。
+**How to apply**: bug fix 后**必须重跑该项测试**确认绿了再 commit；commit message 里写"已验证"的项必须真的跑过最新代码。区分 "code-complete" 与 "tested-complete"——只有后者才进 commit。
+
 ## 6. Commit 按逻辑单元打包，不按文件
 
 一次 commit 含完整逻辑单元（实验脚本 + unit test + yaml 改动 + memory + index）。本会话两次成功示范：

@@ -38,3 +38,6 @@
 - [组合层 P1 权重 + P2 zhuang capacity 2026-05](portfolio_p1_p2_weights_capacity_2026-05.md) — 6-asset grid search 当前 1.86→最优 2.22 Sharpe (zhuang 40/A_mom 降 20→10)；zhuang capacity ≤30M AUM 下 40% 配比保留 96% Sharpe；P1+ 稳健性 2022 熊市 v4 -0.62→v5 +0.47；已落 v5 deployment_plan
 - [P3 A_mr + Options BCS 基线 2026-05](portfolio_p3_amr_options_baseline_2026-05.md) — A_mr 弱(8y Sharpe~0,纯 hedge 价值)；Options BS 近似 Sharpe 1.2-1.4 高 vol(准-QQQ 替代)；捕获 A_mr DuckDB stale-data + v5 重验证通过
 - [三层解耦 P0-P3+journal — Postgres 统一 2026-05](db_decouple_phase0_2026-05.md) — 单repo强边界；P0基建/P1 repo路由/P2 daily双写+verify/P3软切(后端全读DB)/journal已从SQLite迁入PG(daily_equity 现硬依赖PG)；JSON降级builder输入+冷备；硬切待迁builder
+- [A_mr 重写 + v6 grid 反向洞察 2026-05](a_mr_rebuild_v6_grid_2026-05.md) — SwingReversion(dip+bounce+ATR target) 4y Sharpe -0.27 仍 FAIL；v6 grid 验证砍 A_mr 反而组合 Sharpe -0.10 + 2022 熊市从+0.47翻-0.32 → **A_mr hedge 价值 > solo 价值**，保留 v5
+- [HK AH 溢价 alpha 微研究 2026-05](hk_ah_premium_research_2026-05.md) — 5 只 H+A 双股 8y 测试，z60≥1 lift 均值 +0.32pp 但 std 大（1强1负3弱）→ 按 zhuang_hk_research 模板"先调研不实现"，避免投 1-2 天工程换 +0.05 弱 Sharpe
+- [v6 regime overlay 证伪 2026-05](v6_regime_overlay_2026-05.md) — HS300+HSCHK100 双 MA200 动态权重，全窗口 Sharpe 2.142 < v5 静态 2.231；4 段微优 + 2025-26 反弹 -0.40（rebalance lag）→ **v5 已是 efficient frontier**，未来 alpha 在 strategy 层而非组合层

@@ -74,6 +74,16 @@ def build_strategy(kind: str, loader: DataLoader, cfg, market: str,
             market_ctx=market_ctx,
         )
 
+    if kind == "swing_reversion":
+        from quant_system.strategies.equity_factor.engine.strategy import SwingReversionStrategy, SwingReversionConfig
+        sr_node = (market_cfg.get("swing_reversion") or {}) if isinstance(market_cfg, dict) else {}
+        return SwingReversionStrategy(
+            loader=loader, market=market,
+            universe_codes=universe["code"].tolist(),
+            cfg=SwingReversionConfig(**sr_node),
+            market_ctx=market_ctx,
+        )
+
     if kind == "bottomup_timing":
         tcfg = timing_config_from_yaml_node(params["timing"])
         m4_cfg = m4_config_from_yaml(params["m4"])
