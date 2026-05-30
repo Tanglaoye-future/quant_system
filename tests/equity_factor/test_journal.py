@@ -19,9 +19,10 @@ def journal() -> Journal:
     return j
 
 
-def _open(j, symbol="601939", entry_date="2026-05-22", price=10.0, size=100):
+def _open(j, symbol="601939", entry_date="2026-05-22", price=10.0, size=100,
+          market="a_share", strategy=None):
     return j.open_trade(TradeOpen(
-        symbol=symbol, market="a_share", entry_date=entry_date,
+        symbol=symbol, market=market, strategy=strategy, entry_date=entry_date,
         entry_price=price, entry_size=size, entry_score=8.0,
         stop_loss_price=price * 0.9, reason_timing="突破",
     ))
@@ -37,6 +38,19 @@ def test_open_and_list_open_returns_string_dates(journal: Journal):
     assert row["entry_date"] == "2026-05-22"
     assert isinstance(row["entry_date"], str)  # 消费者 datetime.fromisoformat 依赖字符串
     assert row["stop_loss_price"] == pytest.approx(9.0)
+
+
+def test_list_open_filters_by_market_and_strategy(journal: Journal):
+    """风控隔离：HK/mean_reversion 的 run 不应看到 a_share momentum 的仓位。"""
+    _open(journal, symbol="601939", market="a_share", strategy="equity_momentum")
+    _open(journal, symbol="00700", market="hk_share", strategy="equity_hk_momentum")
+
+    assert {t["symbol"] for t in journal.list_open()} == {"601939", "00700"}
+    a_mom = journal.list_open(market="a_share", strategy="equity_momentum")
+    assert {t["symbol"] for t in a_mom} == {"601939"}
+    # HK run 只看 HK；A 股 mean_reversion run 看不到 momentum 的仓
+    assert {t["symbol"] for t in journal.list_open(market="hk_share")} == {"00700"}
+    assert journal.list_open(market="a_share", strategy="mean_reversion") == []
 
 
 def test_close_trade_computes_pnl_and_moves_to_closed(journal: Journal):

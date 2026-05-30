@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import SystemStatusBar from '../components/SystemStatusBar';
+import TradeActionsBar from '../components/TradeActionsBar';
 import TabNav from '../components/TabNav';
 import MarketSection from './MarketSection';
 import AShareSection from './AShareSection';
@@ -18,10 +19,10 @@ export default function DashboardPage({ data, markets, matrix }: Props) {
 
   // 优先使用动态 matrix 渲染；无 matrix 时回退旧硬编码渲染
   if (matrix && matrix.markets.length > 0) {
-    const activeMarket = matrix.markets.find(m => m.market_label === activeTab);
     return (
       <>
         <SystemStatusBar markets={markets} matrix={matrix} />
+        <TradeActionsBar data={data} />
         <TabNav
           tabs={matrix.markets.map(m => m.market_label)}
           active={activeTab}
@@ -46,6 +47,7 @@ export default function DashboardPage({ data, markets, matrix }: Props) {
   return (
     <>
       <SystemStatusBar markets={markets} matrix={null} />
+      <TradeActionsBar data={data} />
 
       <TabNav tabs={['A 股', '美股', '港股']} active={activeTab} onChange={setActiveTab} />
 

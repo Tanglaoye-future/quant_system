@@ -246,6 +246,10 @@ def _runs_to_cells(runs) -> dict[tuple[str, str], dict[str, Any]]:
             "positions_count": pos_c,
             "candidates_count": m.get("candidates_count", 0),
             "market_gate": run.market_gate,
+            "market_gate_msg": run.market_gate_msg or "",
+            "benchmark_close": m.get("benchmark_close", "—"),
+            "benchmark_ma60": m.get("benchmark_ma60", "—"),
+            "market_trend": m.get("market_trend"),
             "ivr": m.get("ivr"),
             "iv_mode": m.get("iv_mode", ""),
             "signal_grade": m.get("signal_grade", ""),
@@ -412,35 +416,43 @@ def _group_and_sort(cells: list[StrategyCell]) -> list[MarketGroup]:
 
     groups: list[MarketGroup] = []
     for mname, cell_list in sorted(by_market.items(), key=lambda kv: _MARKET_ORDER.get(kv[0], 99)):
-        # 取第一个 ACTIVE cell 的 index 数据
+        # index 数据来源 cell：优先选携带市况门的 momentum/options，避免落到
+        # mean_reversion（无 market_gate → regime 永远 unknown，前端显示「—」）。
+        _index_kind_priority = {
+            "bottomup_timing": 0, "bull_call_spread": 1, "zhuang": 2, "mean_reversion": 3,
+        }
         index: dict[str, Any] = {}
-        for c in cell_list:
-            if c.status == CellStatus.ACTIVE and c.has_data:
-                metrics = c.metrics
-                if c.strategy_kind == "bull_call_spread":
-                    index = {
-                        "name": "QQQ", "symbol": "QQQ",
-                        "close": metrics.get("qqq_price"),
-                        "ma200": metrics.get("qqq_ma200"),
-                        "regime": "bullish" if metrics.get("qqq_bullish") else "bearish",
-                    }
-                elif c.strategy_kind == "zhuang":
-                    index = {
-                        "name": "中证500", "symbol": "000905",
-                        "close": "—", "ma": "—",
-                        "regime": "ok" if metrics.get("gate_ok") else "unknown",
-                    }
-                else:
-                    gate = metrics.get("market_gate")
-                    index = {
-                        "name": "沪深300" if mname == "a_share" else ("恒生中国100" if "hk" in mname else "NASDAQ100"),
-                        "symbol": "000300" if mname == "a_share" else ("HSCHK100" if "hk" in mname else "NDX"),
-                        "close": metrics.get("benchmark_close", "—"),
-                        "ma60": metrics.get("benchmark_ma60", "—"),
-                        "regime": "ok" if gate is True else ("closed" if gate is False else "unknown"),
-                        "regime_msg": metrics.get("market_gate_msg", ""),
-                    }
-                break
+        index_cells = sorted(
+            (c for c in cell_list if c.status == CellStatus.ACTIVE and c.has_data),
+            key=lambda c: _index_kind_priority.get(c.strategy_kind, 9),
+        )
+        for c in index_cells:
+            metrics = c.metrics
+            if c.strategy_kind == "bull_call_spread":
+                index = {
+                    "name": "QQQ", "symbol": "QQQ",
+                    "close": metrics.get("qqq_price"),
+                    "ma200": metrics.get("qqq_ma200"),
+                    "regime": "bullish" if metrics.get("qqq_bullish") else "bearish",
+                }
+            elif c.strategy_kind == "zhuang":
+                _mt = metrics.get("market_trend")
+                index = {
+                    "name": "中证500", "symbol": "000905",
+                    "close": "—", "ma": "—",
+                    "regime": "ok" if _mt is True else ("closed" if _mt is False else "unknown"),
+                }
+            else:
+                gate = metrics.get("market_gate")
+                index = {
+                    "name": "沪深300" if mname == "a_share" else ("恒生中国100" if "hk" in mname else "NASDAQ100"),
+                    "symbol": "000300" if mname == "a_share" else ("HSCHK100" if "hk" in mname else "NDX"),
+                    "close": metrics.get("benchmark_close", "—"),
+                    "ma60": metrics.get("benchmark_ma60", "—"),
+                    "regime": "ok" if gate is True else ("closed" if gate is False else "unknown"),
+                    "regime_msg": metrics.get("market_gate_msg", ""),
+                }
+            break
 
         groups.append(MarketGroup(
             market_name=mname,

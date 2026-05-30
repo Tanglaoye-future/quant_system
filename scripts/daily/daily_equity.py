@@ -106,7 +106,11 @@ def main() -> None:
     print("=" * 78)
 
     # ---------------- Step 1: 风控 ----------------
-    monitor = RiskMonitor(loader=loader, journal=j, timing_cfg=tcfg)
+    # 有效策略标识：mean_reversion 等 kind 式调用 strategy_name 为 None，回退到 args.strategy，
+    # 否则风控的 strategy 过滤失效 → 又会评估到 momentum 的仓位（串台）。
+    eff_strategy = args.strategy_name or args.strategy
+    monitor = RiskMonitor(loader=loader, journal=j, timing_cfg=tcfg,
+                          market=args.market, strategy=eff_strategy)
     positions, port = monitor.daily_check(asof=args.asof, write_snapshots=not args.no_write)
 
     catalyst = CatalystMonitor(cache_dir=cfg.cache_dir,
@@ -291,6 +295,7 @@ def main() -> None:
             t = TradeOpen(
                 symbol=code,
                 market=args.market,
+                strategy=eff_strategy,
                 entry_date=args.asof,
                 entry_price=c["entry_price"],
                 entry_size=entry_size,
@@ -335,6 +340,21 @@ def main() -> None:
         gate_ok = ok  # noqa: F821  (defined in the branch above)
         gate_msg_str = msg  # noqa: F821
 
+    # 基准指数 close + MA（前端市况卡/矩阵展示用）。与择时门同窗口（m2_regime_ma_days）。
+    bench_close_val: float | str = "—"
+    bench_ma_val: float | str = "—"
+    try:
+        import pandas as _pd
+        _ma_days = int(tcfg.m2_regime_ma_days or 60)
+        _idx = loader.get_index_daily(str(bench))
+        _idx = _idx[_idx["date"].astype(str).str[:10] <= args.asof]
+        _c = _pd.to_numeric(_idx["close"], errors="coerce").dropna()
+        if len(_c) >= _ma_days:
+            bench_close_val = round(float(_c.iloc[-1]), 2)
+            bench_ma_val = round(float(_c.rolling(_ma_days).mean().iloc[-1]), 2)
+    except Exception:
+        pass
+
     report_signals = []
     for c in hits[: args.top]:
         reasons_str = " · ".join(c.get("reasons", []))
@@ -368,8 +388,8 @@ def main() -> None:
         "strategy_name": args.strategy_name,
         "market_gate": gate_ok,
         "market_gate_msg": gate_msg_str,
-        "benchmark_close": "—",
-        "benchmark_ma60": "—",
+        "benchmark_close": bench_close_val,
+        "benchmark_ma60": bench_ma_val,
         "signals": report_signals,
         "positions": report_positions,
     }

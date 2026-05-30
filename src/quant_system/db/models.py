@@ -118,6 +118,7 @@ class JournalTrade(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     market: Mapped[str] = mapped_column(String(32), nullable=False)
+    strategy: Mapped[Optional[str]] = mapped_column(String(64), index=True)
     direction: Mapped[str] = mapped_column(String(8), nullable=False, default="long")
 
     entry_date: Mapped[date] = mapped_column(Date, nullable=False)

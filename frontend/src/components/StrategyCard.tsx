@@ -1,10 +1,10 @@
-import type { CellResponse, QuantData, ZhuangData, OptionsData, QuantSignal } from '../types';
+import type { CellResponse, QuantData, ZhuangData, OptionsData, QuantSignal, QuantPosition } from '../types';
 import CellStatusBadge from './CellStatusBadge';
 import GlassCard from './GlassCard';
 import MetricCard from './MetricCard';
 import MetricGrid from './MetricGrid';
 import DataTable from './DataTable';
-import { signalColumns, positionColumns, zhuangColumns } from './tableColumns';
+import { signalColumns, positionColumns, zhuangColumns, zhuangPositionColumns } from './tableColumns';
 
 /** _source label → strategy_name 映射, 用于从 quant 合并数据中提取对应策略的信号/持仓 */
 const SOURCE_TO_STRATEGY: Record<string, string> = {
@@ -30,8 +30,9 @@ export default function StrategyCard({ cell, showPlaceholder = true, quantData, 
 
   // ── 提取该策略对应的详细数据 ──────────────────────────────────────
   let signals: QuantSignal[] = [];
-  let positions: QuantSignal[] = [];
+  let positions: QuantPosition[] = [];
   let zhuangCandidates = zhuangData?.top_candidates ?? [];
+  const zhuangPositions = zhuangData?.positions ?? [];
 
   if (quantData && (strategy_kind === 'bottomup_timing' || strategy_kind === 'mean_reversion')) {
     // 找到匹配的 _source label
@@ -59,11 +60,19 @@ export default function StrategyCard({ cell, showPlaceholder = true, quantData, 
       {isActive && strategy_kind === 'zhuang' && (
         <>
           <MetricGrid>
+            <MetricCard label="当前持仓" value={zhuangPositions.length} sub="最大 6 仓" />
             <MetricCard label="候选数" value={zhuangCandidates.length} sub="score≥45" />
             <MetricCard label="最高分" value={zhuangCandidates[0]?.total?.toFixed(1) ?? '—'} sub="入场门槛 65" />
-            <MetricCard label="Universe" value={zhuangData?.universe_size ?? '—'} sub="50–2000亿" />
             <MetricCard label="市场趋势" value={zhuangData?.market_trend ? '金叉' : '未达'} sub="CSI500 MA60" />
           </MetricGrid>
+          {zhuangPositions.length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: 'var(--color-text)' }}>
+                当前持仓
+              </div>
+              <DataTable columns={zhuangPositionColumns} data={zhuangPositions} />
+            </div>
+          )}
           {zhuangCandidates.length > 0 && (
             <div style={{ marginTop: 14 }}>
               <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: 'var(--color-text)' }}>

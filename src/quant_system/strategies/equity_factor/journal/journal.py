@@ -27,6 +27,7 @@ class TradeOpen:
     entry_date: str
     entry_price: float
     entry_size: int
+    strategy: Optional[str] = None
     entry_score: Optional[float] = None
     reason_topdown: Optional[str] = None
     reason_bottomup: Optional[str] = None
@@ -51,6 +52,7 @@ def _trade_row(t: JournalTrade) -> dict[str, Any]:
         "id": t.id,
         "symbol": t.symbol,
         "market": t.market,
+        "strategy": t.strategy,
         "direction": t.direction,
         "entry_date": str(t.entry_date) if t.entry_date else None,
         "entry_price": t.entry_price,
@@ -107,6 +109,7 @@ class Journal:
             trade = JournalTrade(
                 symbol=t.symbol,
                 market=t.market,
+                strategy=t.strategy,
                 direction="long",
                 entry_date=_to_date(t.entry_date),
                 entry_price=t.entry_price,
@@ -181,13 +184,18 @@ class Journal:
 
     # ---------- reads ----------
 
-    def list_open(self) -> list[dict[str, Any]]:
+    def list_open(
+        self, market: Optional[str] = None, strategy: Optional[str] = None
+    ) -> list[dict[str, Any]]:
+        """未平仓交易。可选 market / strategy 过滤 —— 避免一个 run 的风控
+        评估到别的市场/策略的仓位（含误自动平仓）。"""
         with self._scope() as s:
-            rows = s.scalars(
-                select(JournalTrade)
-                .where(JournalTrade.exit_date.is_(None))
-                .order_by(JournalTrade.entry_date)
-            ).all()
+            stmt = select(JournalTrade).where(JournalTrade.exit_date.is_(None))
+            if market is not None:
+                stmt = stmt.where(JournalTrade.market == market)
+            if strategy is not None:
+                stmt = stmt.where(JournalTrade.strategy == strategy)
+            rows = s.scalars(stmt.order_by(JournalTrade.entry_date)).all()
             return [_trade_row(t) for t in rows]
 
     def list_closed(self) -> list[dict[str, Any]]:

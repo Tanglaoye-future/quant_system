@@ -3,7 +3,7 @@ import MetricGrid from '../components/MetricGrid';
 import MetricCard from '../components/MetricCard';
 import DataTable from '../components/DataTable';
 import StatusBadge from '../components/StatusBadge';
-import type { ColumnDef, QuantData, QuantSignal, QuantPosition, ZhuangData, ZhuangCandidate } from '../types';
+import type { ColumnDef, QuantData, QuantSignal, QuantPosition, ZhuangData, ZhuangCandidate, ZhuangPosition } from '../types';
 
 type Column<T> = ColumnDef<T>;
 
@@ -43,6 +43,24 @@ const positionColumns: Column<QuantPosition>[] = [
       const v = r.action === 'EXIT' ? 'bg-[#ffe8e6] text-[#c0392b]' : 'bg-[#e5f9e8] text-[#1a7f37]';
       return <span className={`inline-flex px-2 py-0.5 text-[11px] font-semibold rounded-md ${v}`}>{r.action === 'EXIT' ? '卖出' : '持有'}</span>;
     },
+  },
+];
+
+function zhuangActionStyle(action: string): string {
+  if (action === '卖出') return 'bg-[#ffe8e6] text-[#c0392b]';
+  if (action === '建仓') return 'bg-[#e6f0ff] text-[#0050b3]';
+  return 'bg-[#e5f9e8] text-[#1a7f37]';
+}
+
+const zhuangPositionColumns: Column<ZhuangPosition>[] = [
+  { key: 'code', header: '代码', render: (r) => <span className="font-semibold">{r.code}</span> },
+  { key: 'entry_date', header: '入场日', render: (r) => r.entry_date || '—' },
+  { key: 'hold_days', header: '持有天', render: (r) => (r.hold_days != null ? `${r.hold_days} 天` : '—') },
+  { key: 'pnl_pct', header: '浮盈', render: (r) => <span className={`font-semibold ${colorPnl(r.pnl_pct)}`}>{fmtPct(r.pnl_pct)}</span> },
+  {
+    key: 'action',
+    header: '操作',
+    render: (r) => <span className={`inline-flex px-2 py-0.5 text-[11px] font-semibold rounded-md ${zhuangActionStyle(r.action)}`}>{r.action || '持有'}</span>,
   },
 ];
 
@@ -95,9 +113,10 @@ export default function AShareSection({ quant, zhuang }: { quant: QuantData; zhu
   const gateLabel = gateOk === true ? '通过' : gateOk === false ? '关闭' : '—';
   const gateColor = gateOk ? 'text-[#30d158]' : 'text-[#ff453a]';
 
+  const zhuangPositions = zhuang.positions || [];
   const momStatus = momSignals.length > 0 ? 'active' as const : 'idle' as const;
   const mrStatus = mrSignals.length > 0 ? 'active' as const : 'idle' as const;
-  const zhuangStatus = (zhuang.candidates_count ?? 0) > 0 ? 'active' as const : 'idle' as const;
+  const zhuangStatus = ((zhuang.candidates_count ?? 0) > 0 || zhuangPositions.length > 0) ? 'active' as const : 'idle' as const;
 
   if (quant._missing && zhuang._missing) {
     return (
@@ -171,11 +190,17 @@ export default function AShareSection({ quant, zhuang }: { quant: QuantData; zhu
       {!zhuang._missing && (
         <StrategySection name="庄股跟庄" status={zhuangStatus}>
           <MetricGrid>
-            <MetricCard label="Universe" value={zhuang.universe_size ?? '—'} sub="50-2000 亿" />
+            <MetricCard label="当前持仓" value={zhuangPositions.length} sub="最大 6 仓" colorClass={zhuangPositions.length > 0 ? 'text-[#0071e3]' : ''} />
             <MetricCard label="候选数" value={zhuang.candidates_count ?? 0} sub="≥45 分" colorClass={(zhuang.candidates_count ?? 0) > 0 ? 'text-[#0071e3]' : ''} />
             <MetricCard label="最高评分" value={(zhuang.top_candidates?.[0]?.total ?? 0).toFixed(1)} sub={(zhuang.top_candidates?.[0]?.total ?? 0) >= 65 ? '达标' : '门槛 65'} colorClass={(zhuang.top_candidates?.[0]?.total ?? 0) >= 65 ? 'text-[#30d158]' : 'text-[#ff9f0a]'} />
-            <MetricCard label="市场趋势" value={zhuang.market_trend ? '金叉 OK' : '未达'} sub="CSI500 MA60" colorClass={zhuang.market_trend ? 'text-[#30d158]' : 'text-[#ff453a]'} />
+            <MetricCard label="市场趋势" value={zhuang.market_trend === null || zhuang.market_trend === undefined ? '—' : zhuang.market_trend ? '金叉 OK' : '未达'} sub="CSI500 MA60" colorClass={zhuang.market_trend ? 'text-[#30d158]' : 'text-[#ff453a]'} />
           </MetricGrid>
+          {zhuangPositions.length > 0 && (
+            <div className="mb-3">
+              <div className="text-xs font-medium text-[#86868b] mb-2">当前持仓（出场为 advisory 建议）</div>
+              <DataTable columns={zhuangPositionColumns} data={zhuangPositions} emptyText="当前空仓" />
+            </div>
+          )}
           {(zhuang.top_candidates || []).length > 0 && (
             <>
               <div className="text-xs font-medium text-[#86868b] mb-2">吃货期候选 · TOP 15</div>
@@ -184,6 +209,9 @@ export default function AShareSection({ quant, zhuang }: { quant: QuantData; zhu
                 权重：MA 收敛 ×0.20 · 量价不对称 ×0.30 · 价格横盘 ×0.20 · 换手下降 ×0.15 · 量价背离 ×0.15
               </div>
             </>
+          )}
+          {zhuangPositions.length === 0 && (zhuang.top_candidates || []).length === 0 && (
+            <div className="text-center py-6 text-[#aeaeb2] text-sm">今日无候选，无持仓</div>
           )}
         </StrategySection>
       )}

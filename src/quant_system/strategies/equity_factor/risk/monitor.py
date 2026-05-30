@@ -68,10 +68,15 @@ class RiskMonitor:
         loader: DataLoader,
         journal: Journal,
         timing_cfg: Optional[TimingConfig] = None,
+        market: Optional[str] = None,
+        strategy: Optional[str] = None,
     ):
         self.loader = loader
         self.journal = journal
         self.cfg = timing_cfg or TimingConfig()
+        # 限定本次 run 只评估自己 (market, strategy) 的持仓，避免串台 + 误自动平仓
+        self.market = market
+        self.strategy = strategy
 
     def daily_check(
         self, asof: Optional[str] = None, write_snapshots: bool = True
@@ -81,7 +86,7 @@ class RiskMonitor:
         start = "2024-01-01"
 
         positions: list[PositionRisk] = []
-        for trade in self.journal.list_open():
+        for trade in self.journal.list_open(market=self.market, strategy=self.strategy):
             try:
                 px = self.loader.get_daily(trade["market"], trade["symbol"], start, asof)
             except Exception:

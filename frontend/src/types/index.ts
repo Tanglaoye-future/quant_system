@@ -69,12 +69,23 @@ export interface ZhuangCandidate {
   total: number;
 }
 
+export interface ZhuangPosition {
+  code: string;
+  name: string;
+  entry_date: string;
+  hold_days: number | null;
+  pnl_pct: number | null;
+  action: string;
+}
+
 export interface ZhuangData {
   date: string;
+  market?: string;
   universe_size: number;
   candidates_count: number;
   market_trend: boolean | null;
   top_candidates: ZhuangCandidate[];
+  positions?: ZhuangPosition[];
   _missing?: boolean;
 }
 

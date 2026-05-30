@@ -1,4 +1,4 @@
-import type { ColumnDef, QuantSignal, QuantPosition, ZhuangCandidate } from '../types';
+import type { ColumnDef, QuantSignal, QuantPosition, ZhuangCandidate, ZhuangPosition } from '../types';
 
 function fmtPct(v: number | null): string {
   if (v === null || v === undefined) return '—';
@@ -34,6 +34,24 @@ export const positionColumns: ColumnDef<QuantPosition>[] = [
       const v = r.action === 'EXIT' ? 'bg-[#ffe8e6] text-[#c0392b]' : 'bg-[#e5f9e8] text-[#1a7f37]';
       return <span className={`inline-flex px-2 py-0.5 text-[11px] font-semibold rounded-md ${v}`}>{r.action === 'EXIT' ? '卖出' : '持有'}</span>;
     },
+  },
+];
+
+function zhuangActionStyle(action: string): string {
+  if (action === '卖出') return 'bg-[#ffe8e6] text-[#c0392b]';
+  if (action === '建仓') return 'bg-[#e6f0ff] text-[#0050b3]';
+  return 'bg-[#e5f9e8] text-[#1a7f37]';
+}
+
+export const zhuangPositionColumns: ColumnDef<ZhuangPosition>[] = [
+  { key: 'code', header: '代码', render: (r) => <span className="font-semibold">{r.code}</span> },
+  { key: 'entry_date', header: '入场日', render: (r) => r.entry_date || '—' },
+  { key: 'hold_days', header: '持有天', render: (r) => (r.hold_days != null ? `${r.hold_days} 天` : '—') },
+  { key: 'pnl_pct', header: '浮盈', render: (r) => <span className={`font-semibold ${colorPnl(r.pnl_pct)}`}>{fmtPct(r.pnl_pct)}</span> },
+  {
+    key: 'action',
+    header: '操作',
+    render: (r) => <span className={`inline-flex px-2 py-0.5 text-[11px] font-semibold rounded-md ${zhuangActionStyle(r.action)}`}>{r.action || '持有'}</span>,
   },
 ];
 
