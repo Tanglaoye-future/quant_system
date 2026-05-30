@@ -238,12 +238,20 @@ class SwingReversionConfig:
     vol_ma_period: int = 20
     vol_mult: float = 1.0             # 今日量 ≥ MA20
 
+    # v2 入场新增：MA200 buffer + 斜率门
+    ma_long_buffer_pct: float = 0.0       # close 必须 > MA200 × (1+buffer)，过滤瓶口反弹
+    ma_long_slope_enabled: bool = False   # MA200 vs N 日前必须 > 0 (上升趋势)
+    ma_long_slope_lookback: int = 20      # MA200 斜率回看天数
+
     # 出场
     atr_period: int = 14
     atr_stop_mult: float = 1.5        # 止损 = entry - 1.5×ATR
     atr_target_mult: float = 3.0      # take_profit = entry + 3.0×ATR
     rsi_exit_min: float = 70.0        # RSI ≥ 此出场（vs old MR 55，放走赢家）
     max_hold_days: int = 20           # vs old MR 10，给 mean-reversion 完整周期
+
+    # v2 出场新增：break_ma200 grace period (连续 N 天 < MA 才砍)
+    break_ma_grace_days: int = 0      # 0=立刻 (v1 行为); >=2=连续 N 天 close < MA 才出
 
 
 class SwingReversionStrategy:
@@ -332,9 +340,19 @@ class SwingReversionStrategy:
             if vol_ma <= 0 or atr_v <= 0:
                 continue
 
-            # 长期趋势门
-            if close <= float(ma_l):
+            # 长期趋势门 (v2: 加 buffer，过滤瓶口反弹)
+            ma_l_threshold = float(ma_l) * (1.0 + self.cfg.ma_long_buffer_pct)
+            if close <= ma_l_threshold:
                 continue
+            # v2: MA200 斜率门 (要求 MA 上升才入场)
+            if self.cfg.ma_long_slope_enabled:
+                lb = int(self.cfg.ma_long_slope_lookback)
+                if len(sub) > lb:
+                    ma_past = sub.iloc[-1 - lb]["ma_long"]
+                    if pd.isna(ma_past) or float(ma_l) <= float(ma_past):
+                        continue
+                else:
+                    continue
             # 量能确认
             if float(vol) < float(vol_ma) * self.cfg.vol_mult:
                 continue
@@ -398,8 +416,21 @@ class SwingReversionStrategy:
             rs = f"atr_target: close={close:.2f} >= target={position.take_profit:.2f}"
             return ExitSignal(action="EXIT", reason=rs, exit_layer=exit_layer_from_reason("take_profit"))
         if pd.notna(ma_l) and close < float(ma_l):
-            rs = f"break_ma{self.cfg.ma_long}: close={close:.2f} < MA={float(ma_l):.2f}"
-            return ExitSignal(action="EXIT", reason=rs, exit_layer=exit_layer_from_reason("break_ma"))
+            # v2: grace_days 要求连续 N 天 < MA 才出，避免单日抖动 churn
+            grace = int(self.cfg.break_ma_grace_days)
+            if grace <= 1:
+                rs = f"break_ma{self.cfg.ma_long}: close={close:.2f} < MA={float(ma_l):.2f}"
+                return ExitSignal(action="EXIT", reason=rs, exit_layer=exit_layer_from_reason("break_ma"))
+            # 检查过去 grace-1 天 (含今日共 grace 天) 是否都 close < MA
+            recent = sub.iloc[-grace:]
+            if len(recent) >= grace:
+                rec_close = pd.to_numeric(recent["close"], errors="coerce")
+                rec_ma = pd.to_numeric(recent["ma_long"], errors="coerce")
+                if (rec_close < rec_ma).all():
+                    rs = (f"break_ma{self.cfg.ma_long}_grace{grace}: "
+                          f"连续 {grace} 天 close < MA={float(ma_l):.2f}")
+                    return ExitSignal(action="EXIT", reason=rs, exit_layer=exit_layer_from_reason("break_ma"))
+            # 否则 HOLD，等满足 grace
         if pd.notna(rsi_v) and float(rsi_v) >= self.cfg.rsi_exit_min:
             rs = f"rsi_overbought: RSI={float(rsi_v):.1f} >= {self.cfg.rsi_exit_min}"
             return ExitSignal(action="EXIT", reason=rs, exit_layer=exit_layer_from_reason("overbought:"))

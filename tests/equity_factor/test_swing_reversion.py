@@ -185,3 +185,79 @@ def test_evaluate_time_stop_hit():
     res = strat.evaluate(pos, date(2099, 12, 31))
     assert res.action == "EXIT"
     assert res.reason.startswith("time_stop")
+
+
+# ---------- v2: MA200 buffer + 斜率 + grace period ----------
+
+def test_v2_ma_buffer_blocks_thin_bounce():
+    """v2: bounce_close 略高于 MA200 (e.g. close 102, MA 101) 但 buffer=3% 要求 close>104 → 挡住"""
+    df = _make_price_series(base=100.0, dip_close=90.0, bounce_close=102.0)
+    # v1: buffer=0 应该过 (close 102 > MA 101)；v2: buffer=0.03 要求 > 101*1.03=104 → 挡住
+    cfg_v1 = SwingReversionConfig(
+        rsi_dip_max=40.0, rsi_bounce_min_today=45.0, rsi_bounce_pts=2.0,
+        ma_long_buffer_pct=0.0,
+    )
+    cfg_v2 = SwingReversionConfig(
+        rsi_dip_max=40.0, rsi_bounce_min_today=45.0, rsi_bounce_pts=2.0,
+        ma_long_buffer_pct=0.03,
+    )
+    strat_v1 = _build_strategy(df, cfg_v1)
+    strat_v2 = _build_strategy(df, cfg_v2)
+    hits_v1 = strat_v1.screen(date(2099, 12, 31))
+    hits_v2 = strat_v2.screen(date(2099, 12, 31))
+    # v1 应该有信号；v2 应该被 buffer 挡住
+    assert len(hits_v1) == 1, f"v1 baseline 应该有信号，实际 {len(hits_v1)}"
+    assert len(hits_v2) == 0, f"v2 buffer=0.03 应该挡住贴 MA200 的弱反弹"
+
+
+def test_v2_ma_slope_blocks_downtrend():
+    """v2: MA200 在下降 (vs 20d ago) → 斜率门挡住"""
+    # 构造一个 MA200 下降的序列：前段高、后段持续下行
+    n = 260
+    rs = np.random.RandomState(42)
+    close = np.full(n, 0.0)
+    close[:130] = 110.0 + rs.normal(0, 0.5, 130)
+    close[130:] = np.linspace(110.0, 95.0, n - 130) + rs.normal(0, 0.5, n - 130)
+    # 末段注入 dip + bounce
+    close[-5] = 88.0
+    close[-4] = 89.0
+    close[-3] = 90.0
+    close[-2] = 91.0
+    close[-1] = 100.0  # bounce 上去，但 MA200 在下行
+    df = pd.DataFrame({
+        "date": pd.date_range("2023-01-01", periods=n, freq="B").strftime("%Y-%m-%d"),
+        "open": close, "high": close + 0.5, "low": close - 0.5,
+        "close": close, "volume": [1_000_000] * n,
+    })
+    cfg = SwingReversionConfig(
+        rsi_dip_max=40.0, rsi_bounce_min_today=40.0, rsi_bounce_pts=2.0,
+        ma_long_buffer_pct=0.0,
+        ma_long_slope_enabled=True, ma_long_slope_lookback=20,
+    )
+    strat = _build_strategy(df, cfg)
+    hits = strat.screen(date(2099, 12, 31))
+    assert hits == [], "MA200 下行应该被斜率门挡住"
+
+
+def test_v2_break_ma_grace_holds_single_day_dip():
+    """v2: grace_days=3 时单日 close<MA 不出场 (HOLD)"""
+    # 构造序列：close 一直 > MA，仅最后一天 close < MA
+    n = 260
+    base = 100.0
+    rs = np.random.RandomState(42)
+    close = base + np.linspace(0, 5, n) + rs.normal(0, 0.3, n)
+    # 单日下穿：最后 1 天 close 远低于 MA
+    close[-1] = 95.0  # MA200 大约 102；单日跌 5%，但前一天还 > MA
+    df = pd.DataFrame({
+        "date": pd.date_range("2023-01-01", periods=n, freq="B").strftime("%Y-%m-%d"),
+        "open": close, "high": close + 0.5, "low": close - 0.5,
+        "close": close, "volume": [1_000_000] * n,
+    })
+    cfg = SwingReversionConfig(break_ma_grace_days=3)
+    strat = _build_strategy(df, cfg)
+    pos = _position(entry_price=100.0, entry_date=date(2024, 11, 1), stop=80.0, target=130.0)
+    res = strat.evaluate(pos, date(2099, 12, 31))
+    # 单日 break 不应触发 EXIT — 应该是 HOLD 或 time_stop (取决于持有天数)
+    # 但不应该是 break_ma
+    assert not res.reason.startswith("break_ma"), \
+        f"grace=3 单日下穿不应砍，实际 reason={res.reason}"

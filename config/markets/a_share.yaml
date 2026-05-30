@@ -11,3 +11,9 @@ industry_concentration: true      # 启用 M4 行业集中度约束（依赖 loa
 
 fees:
   stamp_tax: 0.001                # A 股印花税 (仅卖出)
+
+# A_mr 优化探索全证伪 (memory: a_mr_v2_falsified_2026-05.md):
+#   - v1 (RSI dip+bounce+ATR target) 4y Sharpe -0.27 ❌
+#   - v2 (+MA200 buffer+slope+grace) sweep 5 case 全 plateau -0.27~-0.34 ❌
+# swing_reversion 节默认用代码 default (== v1)；不在此覆盖参数。
+# 实盘 A_mr 仍走 mean_reversion (kind=mean_reversion)，等价 RSI<30 旧版。
