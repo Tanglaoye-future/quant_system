@@ -42,3 +42,4 @@
 - [HK AH 溢价 alpha 微研究 2026-05](hk_ah_premium_research_2026-05.md) — 5 只 H+A 双股 8y 测试，z60≥1 lift 均值 +0.32pp 但 std 大（1强1负3弱）→ 按 zhuang_hk_research 模板"先调研不实现"，避免投 1-2 天工程换 +0.05 弱 Sharpe
 - [v6 regime overlay 证伪 2026-05](v6_regime_overlay_2026-05.md) — HS300+HSCHK100 双 MA200 动态权重，全窗口 Sharpe 2.142 < v5 静态 2.231；4 段微优 + 2025-26 反弹 -0.40（rebalance lag）→ **v5 已是 efficient frontier**，未来 alpha 在 strategy 层而非组合层
 - [A_mr v2 证伪 + 4 条路径全死 2026-05](a_mr_v2_falsified_2026-05.md) — v2 (MA200 buffer+slope+grace) 4y Sharpe -0.26 与 v1 持平；sweep 5 case 全 plateau -0.27~-0.34 → 连同 v6 grid/regime 共 4 条 A_mr 优化路径全证伪。**A_mr 是 noise diversification 不是 alpha**，未来不再投 strategy 层；alpha 在新资产/fundamentals/HK 做空
+- [v5 = efficient frontier + 实盘 KPI checklist 2026-05](v5_efficient_frontier_2026-05.md) — +IBIT/+TLT/+CSI1000 三新资产 5/10% 测试全负贡献 (-0.10~-0.87 Sharpe)；**5 条组合层路径全证伪 → v5 是真 efficient frontier**；转入 3 月实盘窗口，月度 KPI + 3 月节点判定 + 季度再平衡 plan 已落
