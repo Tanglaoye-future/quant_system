@@ -13,7 +13,7 @@ metadata:
 - 4 个 commit：1c4e247 / dfcbac9 / 0584dd8 / 77ea9b6
 - 7 个新 memory: a_mr_rebuild / a_mr_v2_falsified / hk_ah_premium_research / v6_regime_overlay / v5_efficient_frontier / zhuang_l6a_weights / 本文件
 
-## 11 条已证伪路径（不要重做）
+## 12 条已证伪路径（不要重做）
 
 | 类别 | 路径 | 证伪结论 |
 |---|---|---|
@@ -28,6 +28,7 @@ metadata:
 | zhuang weights | strong-volume / strong-conso (过拟合) | 单维放大 < equal |
 | zhuang L7-A | position_max_count 6→8/10 | 3y 三 case 同分 / cap 永不 binding (mean concurrent 0.5) |
 | zhuang L7-B | accumulation_score_entry 70→67/65 | 3y 单调下 1.505→0.925→0.843, win 51.7%→36.8% |
+| zhuang L8 | fundamentals gate (ROE>0 + 营收>0) | winner/loser ROE>0 占比 73% vs 79% 反向, 误杀比 47% ≈ 随机 |
 
 ## 下个 session 的 backlog（按 ROI 排）
 
@@ -50,14 +51,13 @@ metadata:
 - **工程量**: 写 monthly_report.py 脚本读 journal + 出 markdown
 - **预期总时间**: 1 个 session
 
-### 3. L7-B: zhuang fundamentals quality gate（中等 ROI，谨慎）
+### 3. ~~L8: zhuang fundamentals quality gate~~ — **2026-05-31 软证伪**
 
-- **假设**: 入场加 ROE > 0 + 营收增速 > 0 过滤业绩差股
-- **风险**: [[zhuang_l1_l2_l3_experiments_2026-05]] L2/L3 (信号 overlay) 已证负转移 — 庄股本来就业绩烂，fundamentals gate 可能砍掉好笔
-- **执行前**: 先做小样本测试（5-10 只历史 winner trades 看是否有 ROE < 0 但真赚钱的 — 如有，gate 会误杀）
-- **工程量**: 中等（需接 baostock fundamentals + cache）
-- **预期**: 不确定（可能 +0 ~ +0.05 sleeve Sharpe）
-- **预期总时间**: 1-2 个 session
+- 58 笔 trades fundamentals 预检查: winner/loser ROE>0 占比 73% vs 79% 几乎反向
+- 联合 gate (ROE>0 AND 营收>0) 误杀比 47% ≈ 随机
+- 庄股 alpha 与 fundamentals 结构性正交（业绩低谷启动）
+- 详见 [[zhuang_l8_fundamentals_falsified_2026-05]]
+- **下个 zhuang 优化方向已收敛到**: L4 出场端续作 / L5 仓位 sizing / 资金流维度（北向流入、龙虎榜机构席位）；策略层参数 + fundamentals 通道全部封死
 
 ### 4. fundamentals 升级 (L9-A 因子加 ROIC / 应收增速)
 

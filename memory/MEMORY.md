@@ -49,3 +49,4 @@
 - [zhuang L6-A accumulation_weights → equal 2026-05](zhuang_l6a_weights_2026-05.md) — 5 维信号权重 6 hypothesis sweep + 6y verify；**equal (0.20×5) 双窗口同向赢 baseline** (3y +0.065 / 6y +0.041 Sharpe)；组合层 v5 +0.018 噪音级 (sleeve vol 3.5% 被稀释)；已落 yaml；放大率经验值 sleeve→组合 ≈ 0.45×
 - [zhuang L7-A position_max_count 证伪 2026-05](zhuang_l7a_falsified_2026-05.md) — 3y 三 case (6/8/10) 同分 Sharpe 1.505；mean concurrent 0.5 / 打满 cap 0.5% 天数 → cap 永不 binding；反向洞察: 真正瓶颈在入场严格度而非仓位上限
 - [zhuang L7-B score 阈值反向证伪 2026-05](zhuang_l7b_falsified_2026-05.md) — score 70→67→65 单调下 (1.505→0.925→0.843)；win rate 51.7%→36.8%；与 L7-A 联合得 **L1-E 是 sleeve sweet spot**，未来 zhuang alpha 必须靠外部信号
+- [zhuang L8 fundamentals gate 软证伪 2026-05](zhuang_l8_fundamentals_falsified_2026-05.md) — winner/loser ROE>0 占比 73% vs 79% 几乎反向；联合 gate 误杀比 47% ≈ 随机；庄股 alpha 与 fundamentals 结构性正交；跳完整 sweep 省 1-2 hr
