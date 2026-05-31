@@ -39,17 +39,13 @@ metadata:
 - **结构性结论**: L1-E (score=70 + pos=0.4) 是 zhuang sleeve 当前架构 sweet spot
 - **未来 zhuang alpha 必须靠外部信号增量**（fundamentals / 新维度 / 出场端 L4 续作），strategy 层参数 sweep 不再做
 
-### 2. 实盘月度 KPI 报告（2026-06-30 节点）
+### 2. ~~实盘月度 KPI 报告脚手架~~ — **2026-05-31 已落 Phase 1**
 
-- **触发**: 实盘运行 1 个月后第一次 KPI 检查
-- **数据源**: journal (Postgres) + report.builder
-- **报告模板**: 见 [[v5_efficient_frontier_2026-05]] 末尾"3 月实盘验证 KPI checklist"
-- **关键 KPI**:
-  - 各账户 MTD 收益 vs 回测同期方向（偏离 ±5pp 触发诊断）
-  - 跨账户 60d 滚动 ρ（< 0.30 为正常）
-  - 组合月收益 < -2% 立即诊断
-- **工程量**: 写 monthly_report.py 脚本读 journal + 出 markdown
-- **预期总时间**: 1 个 session
+- `scripts/reporting/monthly_kpi_report.py` + `tests/reporting/test_monthly_kpi_report.py` (10 单测 pass)
+- closed trades 聚合 6 sleeve + 告警阈值 + markdown 输出
+- 详见 [[monthly_kpi_scaffold_2026-05]]
+- **2026-07-01 第一次跑**: `./venv/bin/python scripts/reporting/monthly_kpi_report.py --month 2026-06 --aum-cny <true> --qqq-return <x> --gld-return <y>`
+- Phase 2 (60d 滚动 ρ + MTD Sharpe) 待实盘 ≥60 天后补 (2026-09 后)
 
 ### 3. ~~L8: zhuang fundamentals quality gate~~ — **2026-05-31 软证伪**
 
