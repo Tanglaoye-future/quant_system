@@ -13,7 +13,7 @@ metadata:
 - 4 个 commit：1c4e247 / dfcbac9 / 0584dd8 / 77ea9b6
 - 7 个新 memory: a_mr_rebuild / a_mr_v2_falsified / hk_ah_premium_research / v6_regime_overlay / v5_efficient_frontier / zhuang_l6a_weights / 本文件
 
-## 10 条已证伪路径（不要重做）
+## 11 条已证伪路径（不要重做）
 
 | 类别 | 路径 | 证伪结论 |
 |---|---|---|
@@ -27,15 +27,16 @@ metadata:
 | HK overlay | AH 溢价 (微研究) | alpha 不稳定 (1/5 负 4 弱正) |
 | zhuang weights | strong-volume / strong-conso (过拟合) | 单维放大 < equal |
 | zhuang L7-A | position_max_count 6→8/10 | 3y 三 case 同分 / cap 永不 binding (mean concurrent 0.5) |
+| zhuang L7-B | accumulation_score_entry 70→67/65 | 3y 单调下 1.505→0.925→0.843, win 51.7%→36.8% |
 
 ## 下个 session 的 backlog（按 ROI 排）
 
-### 1. ~~L7-A: zhuang position_max_count~~ — **2026-05-31 已证伪**
+### 1. ~~L7-A/B: zhuang 入场参数 sweep~~ — **2026-05-31 双向证伪**
 
-- 3y 三 case (6/8/10) 完全同分 Sharpe 1.505 / 58 trades
-- mean concurrent 0.5 仓位 / 打满 cap 仅 0.5% 交易日
-- 详见 [[zhuang_l7a_falsified_2026-05]]
-- **反向洞察**: 未来 zhuang sleeve 优化先看 trades.csv 的 concurrent 分布；瓶颈在入场层而非仓位上限
+- L7-A: position_max_count 6/8/10 三 case 同分 Sharpe 1.505，cap 永不 binding ([[zhuang_l7a_falsified_2026-05]])
+- L7-B: accumulation_score_entry 70→67/65 Sharpe 单调下 1.505→0.925→0.843，win rate -15pp ([[zhuang_l7b_falsified_2026-05]])
+- **结构性结论**: L1-E (score=70 + pos=0.4) 是 zhuang sleeve 当前架构 sweet spot
+- **未来 zhuang alpha 必须靠外部信号增量**（fundamentals / 新维度 / 出场端 L4 续作），strategy 层参数 sweep 不再做
 
 ### 2. 实盘月度 KPI 报告（2026-06-30 节点）
 
