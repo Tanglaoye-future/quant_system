@@ -1,5 +1,8 @@
 # Memory Index
 
+- **[2026-05-31 收工 + 下个 session backlog](session_2026_05_31_handoff.md)** ⭐ — 新 session cold-start 读此文件；9 条证伪路径 + 4 commit + 7 memory 浓缩；L7-A position_max_count 是下个最高 ROI 待做
+
+
 - [实盘入场诊断 + zhuang 建仓闭环 2026-05](project_live_entry_diagnosis_2026-05.md) — "持仓都在亏"四步诊断;entry_score=0 已查清(非bug,纯择时突破);真问题=实盘只上A_mom腿,已补 zhuang 建仓闭环(独立 zhuang_trades ledger)
 - [2026-05-28 Session 记录](session_2026_05_28.md) — 确立"组合层优化 >> 单策略迭代"方法论；落 L9-A + P1 权重 grid(1.86→2.22) + P2 capacity + P1+ 稳健性落 v5 + P3 A_mr/Options 基线
 - [2026-05-27 Session 记录](session_2026_05_27.md) — HK daily 参数 bug 修复 + US fundamentals via yfinance 接入 + SP500 多 universe 基建 (4y FAIL 证伪换 universe 路径) + launchd 调度 TCC 阻塞决策手动跑
