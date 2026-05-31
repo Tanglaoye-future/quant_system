@@ -47,3 +47,4 @@
 - [A_mr v2 证伪 + 4 条路径全死 2026-05](a_mr_v2_falsified_2026-05.md) — v2 (MA200 buffer+slope+grace) 4y Sharpe -0.26 与 v1 持平；sweep 5 case 全 plateau -0.27~-0.34 → 连同 v6 grid/regime 共 4 条 A_mr 优化路径全证伪。**A_mr 是 noise diversification 不是 alpha**，未来不再投 strategy 层；alpha 在新资产/fundamentals/HK 做空
 - [v5 = efficient frontier + 实盘 KPI checklist 2026-05](v5_efficient_frontier_2026-05.md) — +IBIT/+TLT/+CSI1000 三新资产 5/10% 测试全负贡献 (-0.10~-0.87 Sharpe)；**5 条组合层路径全证伪 → v5 是真 efficient frontier**；转入 3 月实盘窗口，月度 KPI + 3 月节点判定 + 季度再平衡 plan 已落
 - [zhuang L6-A accumulation_weights → equal 2026-05](zhuang_l6a_weights_2026-05.md) — 5 维信号权重 6 hypothesis sweep + 6y verify；**equal (0.20×5) 双窗口同向赢 baseline** (3y +0.065 / 6y +0.041 Sharpe)；组合层 v5 +0.018 噪音级 (sleeve vol 3.5% 被稀释)；已落 yaml；放大率经验值 sleeve→组合 ≈ 0.45×
+- [zhuang L7-A position_max_count 证伪 2026-05](zhuang_l7a_falsified_2026-05.md) — 3y 三 case (6/8/10) 同分 Sharpe 1.505；mean concurrent 0.5 / 打满 cap 0.5% 天数 → cap 永不 binding；反向洞察: 真正瓶颈在入场严格度而非仓位上限

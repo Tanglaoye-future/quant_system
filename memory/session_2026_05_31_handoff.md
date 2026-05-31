@@ -13,7 +13,7 @@ metadata:
 - 4 个 commit：1c4e247 / dfcbac9 / 0584dd8 / 77ea9b6
 - 7 个新 memory: a_mr_rebuild / a_mr_v2_falsified / hk_ah_premium_research / v6_regime_overlay / v5_efficient_frontier / zhuang_l6a_weights / 本文件
 
-## 9 条已证伪路径（不要重做）
+## 10 条已证伪路径（不要重做）
 
 | 类别 | 路径 | 证伪结论 |
 |---|---|---|
@@ -26,21 +26,16 @@ metadata:
 | 新资产 | +CSI1000 5/10% | -0.10 / -0.34 |
 | HK overlay | AH 溢价 (微研究) | alpha 不稳定 (1/5 负 4 弱正) |
 | zhuang weights | strong-volume / strong-conso (过拟合) | 单维放大 < equal |
+| zhuang L7-A | position_max_count 6→8/10 | 3y 三 case 同分 / cap 永不 binding (mean concurrent 0.5) |
 
 ## 下个 session 的 backlog（按 ROI 排）
 
-### 1. L7-A: zhuang position_max_count 6 → 8/10 + L1-E 联调【最高 ROI，先做这个】
+### 1. ~~L7-A: zhuang position_max_count~~ — **2026-05-31 已证伪**
 
-- **现状**: `config/zhuang.yaml: strategy.position_max_count: 6`
-- **假设**: [[zhuang_l1_l2_l3_experiments_2026-05]] 里 L1D-pos8 单独试过 Sharpe 0.928（弱），但 baseline，没和 L1-E (`entry_price_position_min=0.4` + `accumulation_score_entry=70`) 联调过；联调可能不同
-- **工程量**: 极小（1 参 sweep）
-- **预期**: +0.02-0.05 sleeve Sharpe，组合层 +0.01-0.02
-- **执行步骤**:
-  1. 复用 `scripts/backtest/run_experiment_zhuang.py` 加 `--strategy position_max_count=8 / 10`
-  2. 3y baseline + max_pos=6/8/10 三 case，看是否有 winner
-  3. winner 6y verify 双窗口
-  4. 落 yaml 前 AskUserQuestion
-- **预期总时间**: 1 个 session (~2-3 hr)
+- 3y 三 case (6/8/10) 完全同分 Sharpe 1.505 / 58 trades
+- mean concurrent 0.5 仓位 / 打满 cap 仅 0.5% 交易日
+- 详见 [[zhuang_l7a_falsified_2026-05]]
+- **反向洞察**: 未来 zhuang sleeve 优化先看 trades.csv 的 concurrent 分布；瓶颈在入场层而非仓位上限
 
 ### 2. 实盘月度 KPI 报告（2026-06-30 节点）
 
