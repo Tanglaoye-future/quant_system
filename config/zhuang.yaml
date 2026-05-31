@@ -93,11 +93,16 @@ strategy:
 
 accumulation_weights:
   # 吃货期五维信号权重（总和须 = 1.0）
+  # L6-A 落地 (2026-05-31): 6 hypothesis sweep + 6y verify 选 equal weights
+  # - 3y Sharpe 1.44 (baseline) → 1.51 (equal), Δ+0.065
+  # - 6y Sharpe 1.088 → 1.129, Δ+0.041 (双窗口同向 = 非过拟合)
+  # - 组合层 v5 + equal: 2.347 → 2.365 Δ+0.018 (噪音级，sleeve vol 3.5% 被稀释)
+  # equal 哲学: 无 prior weight → anti-overfit，5 维信号 alpha 大致均等
   ma_convergence: 0.20        # MA5/MA10/MA20 收敛程度（趋势趋平）
-  volume_asymmetry: 0.30      # 上涨日成交量 vs 下跌日成交量之比（正向积累特征）
+  volume_asymmetry: 0.20      # L6-A: 0.30 → 0.20 (vol 信号过载在 sweep 中证伪 -0.026 Sharpe)
   price_consolidation: 0.20   # 价格振幅收窄（横盘整理）
-  turnover_decline: 0.15      # 换手率近期趋势下降（浮筹减少）
-  vp_divergence: 0.15         # 量价背离：成交量下降但股价未跌（资金锁仓特征）
+  turnover_decline: 0.20      # L6-A: 0.15 → 0.20 (浮筹信号略微上调)
+  vp_divergence: 0.20         # L6-A: 0.15 → 0.20 (量价背离信号略微上调)
 
 backtest:
   initial_capital: 1_000_000
