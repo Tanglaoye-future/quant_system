@@ -27,6 +27,8 @@ class FactorWeights:
     momentum_6m: float = 0.0    # 默认关闭；US/动量市场可设 >0 启用6个月动量
     fcf_yield: float = 0.0      # A股 Level2：每股经营现金流/收盘价（现金流质量）
     rev_accel: float = 0.0      # A股 Level2：营收增速加速度（本期增速 − 上期增速）
+    roic: float = 0.0           # A股 L9-B：投入资本回报率（资本效率，类 ROE 但剥离金融杠杆）
+    ar_turnover_yoy: float = 0.0  # A股 L9-B：应收账款周转率同比变化（正值=收款效率提升；负值=应收扩张快于营收=造假风险）
 
     def as_series(self) -> pd.Series:
         return pd.Series({
@@ -38,6 +40,8 @@ class FactorWeights:
             "momentum_6m": self.momentum_6m,
             "fcf_yield": self.fcf_yield,
             "rev_accel": self.rev_accel,
+            "roic": self.roic,
+            "ar_turnover_yoy": self.ar_turnover_yoy,
         })
 
 
@@ -59,6 +63,7 @@ def compute_raw_factors(
         "roe": np.nan, "revenue_growth": np.nan,
         "momentum_3m": np.nan, "momentum_6m": np.nan,
         "fcf_yield": np.nan, "rev_accel": np.nan,
+        "roic": np.nan, "ar_turnover_yoy": np.nan,
     }
     _fcf_per_share: float | None = None   # 暂存，待有 close 价后计算 fcf_yield
 
@@ -94,6 +99,20 @@ def compute_raw_factors(
             )
             if fcf_vals:
                 _fcf_per_share = fcf_vals[0]
+
+            # L9-B: ROIC（投入资本回报率）— 同 asof + 90 天披露窗口
+            roic_v = loader.latest_indicator_value(
+                abstract, "投入资本回报率", asof=asof
+            )
+            if roic_v is not None:
+                factors["roic"] = float(roic_v)
+
+            # L9-B: 应收账款周转率同比 — 取最近两期对比，正值 = 收款加速 (好)
+            ar_vals = loader.latest_n_indicator_values(
+                abstract, "应收账款周转率", asof=asof, n=2
+            )
+            if len(ar_vals) >= 2 and ar_vals[1] is not None and ar_vals[1] != 0:
+                factors["ar_turnover_yoy"] = (ar_vals[0] - ar_vals[1]) / abs(ar_vals[1])
         except Exception:
             pass
 

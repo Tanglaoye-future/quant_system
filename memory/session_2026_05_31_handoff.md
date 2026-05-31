@@ -13,7 +13,7 @@ metadata:
 - 4 个 commit：1c4e247 / dfcbac9 / 0584dd8 / 77ea9b6
 - 7 个新 memory: a_mr_rebuild / a_mr_v2_falsified / hk_ah_premium_research / v6_regime_overlay / v5_efficient_frontier / zhuang_l6a_weights / 本文件
 
-## 12 条已证伪路径（不要重做）
+## 13 条已证伪路径（不要重做）
 
 | 类别 | 路径 | 证伪结论 |
 |---|---|---|
@@ -29,6 +29,7 @@ metadata:
 | zhuang L7-A | position_max_count 6→8/10 | 3y 三 case 同分 / cap 永不 binding (mean concurrent 0.5) |
 | zhuang L7-B | accumulation_score_entry 70→67/65 | 3y 单调下 1.505→0.925→0.843, win 51.7%→36.8% |
 | zhuang L8 | fundamentals gate (ROE>0 + 营收>0) | winner/loser ROE>0 占比 73% vs 79% 反向, 误杀比 47% ≈ 随机 |
+| equity L9-B | +ROIC 10% / +AR YoY 10% (HS300) | 4y 0.857 → 0.761 (ROIC) / 0.826 (AR) / 0.838 (联合), 三 case 全负 |
 
 ## 下个 session 的 backlog（按 ROI 排）
 
@@ -55,14 +56,14 @@ metadata:
 - 详见 [[zhuang_l8_fundamentals_falsified_2026-05]]
 - **下个 zhuang 优化方向已收敛到**: L4 出场端续作 / L5 仓位 sizing / 资金流维度（北向流入、龙虎榜机构席位）；策略层参数 + fundamentals 通道全部封死
 
-### 4. fundamentals 升级 (L9-A 因子加 ROIC / 应收增速)
+### 4. ~~L9-B: ROIC + 应收账款 YoY (HS300)~~ — **2026-05-31 4y 证伪**
 
-- **现状**: L9-A 8y Sharpe 0.363（边缘 PASS），单策略空间还有
-- **加因子候选**: ROIC（资本回报率）/ 应收账款增速（造假信号）/ 经营性现金流质量
-- **数据**: A 股 baostock + akshare; HK 不支持（[[hk_optimization_2026-05]] 价值因子反 alpha 不做）
-- **工程量**: 大（需扩 factors.py + 数据接入 + asof 截断 + 单测）
-- **预期**: +0.05-0.10 L9-A sleeve Sharpe，组合层 +0.02-0.04（按本 session 实测放大率 0.45×）
-- **预期总时间**: 2-3 个 session
+- ROIC 10% → 4y Sharpe 0.857 → **0.761 (-0.096)** (与 ROE 重复)
+- AR YoY 10% → 0.826 (-0.031) (大盘行业属性)
+- 联合 5%+5% → 0.838 (-0.019)
+- factors.py + 9 单测 + akshare 数据接入工程已落, 默认权重 0; 未来 small-cap universe 可重启
+- 详见 [[equity_factor_l9b_falsified_2026-05]]
+- **结构性结论**: L8D2 是 HS300 因子层 efficient set, 与 zhuang L1-E 同构
 
 ### 5. HK 真做空 leverage（高 ROI 但高风险）
 

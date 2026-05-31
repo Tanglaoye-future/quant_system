@@ -51,3 +51,4 @@
 - [zhuang L7-B score 阈值反向证伪 2026-05](zhuang_l7b_falsified_2026-05.md) — score 70→67→65 单调下 (1.505→0.925→0.843)；win rate 51.7%→36.8%；与 L7-A 联合得 **L1-E 是 sleeve sweet spot**，未来 zhuang alpha 必须靠外部信号
 - [zhuang L8 fundamentals gate 软证伪 2026-05](zhuang_l8_fundamentals_falsified_2026-05.md) — winner/loser ROE>0 占比 73% vs 79% 几乎反向；联合 gate 误杀比 47% ≈ 随机；庄股 alpha 与 fundamentals 结构性正交；跳完整 sweep 省 1-2 hr
 - [v5 实盘月度 KPI 报告脚手架 2026-05](monthly_kpi_scaffold_2026-05.md) — `scripts/reporting/monthly_kpi_report.py` + 10 单测 + dry-run；为 2026-06-30 第一次 checkpoint 准备；Phase 2 (60d 滚动 ρ) 待实盘 ≥60 天后补
+- [equity_factor L9-B ROIC/AR YoY 证伪 2026-05](equity_factor_l9b_falsified_2026-05.md) — ROIC -0.096 (与 ROE 重复) + AR YoY -0.031 (行业属性非 alpha) + 联合 -0.019; **L8D2 是 HS300 因子层 efficient set**; 与 zhuang L1-E 同构
