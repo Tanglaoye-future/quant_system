@@ -524,7 +524,8 @@ class BottomupTimingStrategy:
 
         regime_ctx = None
         if (self.tcfg.m3_regime_rsi_band or self.tcfg.m3_reg_vol_tighten_hi
-                or self.tcfg.m3_southbound_widen_enabled):
+                or self.tcfg.m3_southbound_widen_enabled
+                or self.tcfg.m3_southbound_gate_enabled):
             regime_ctx = build_timing_regime_context(
                 self.loader,
                 self._regime_benchmark_symbol,
@@ -534,6 +535,10 @@ class BottomupTimingStrategy:
                 atr_pct_median_window=self.tcfg.m3_reg_index_atr_pct_median_window,
                 southbound_enabled=self.tcfg.m3_southbound_widen_enabled,
                 southbound_ma_window=self.tcfg.m3_southbound_ma_window,
+                southbound_gate_lookback_days=(
+                    self.tcfg.m3_southbound_gate_lookback_days
+                    if self.tcfg.m3_southbound_gate_enabled else 0
+                ),
                 marginal_flow_market=self.market,
             )
 

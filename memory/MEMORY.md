@@ -53,3 +53,5 @@
 - [zhuang L8 fundamentals gate 软证伪 2026-05](zhuang_l8_fundamentals_falsified_2026-05.md) — winner/loser ROE>0 占比 73% vs 79% 几乎反向；联合 gate 误杀比 47% ≈ 随机；庄股 alpha 与 fundamentals 结构性正交；跳完整 sweep 省 1-2 hr
 - [v5 实盘月度 KPI 报告脚手架 2026-05](monthly_kpi_scaffold_2026-05.md) — `scripts/reporting/monthly_kpi_report.py` + 10 单测 + dry-run；为 2026-06-30 第一次 checkpoint 准备；Phase 2 (60d 滚动 ρ) 待实盘 ≥60 天后补
 - [equity_factor L9-B ROIC/AR YoY 证伪 2026-05](equity_factor_l9b_falsified_2026-05.md) — ROIC -0.096 (与 ROE 重复) + AR YoY -0.031 (行业属性非 alpha) + 联合 -0.019; **L8D2 是 HS300 因子层 efficient set**; 与 zhuang L1-E 同构
+- [A1 北向死 + A1' 南向预检查 2026-06](a1_northbound_dead_southbound_alive_2026-06.md) — A1 北向 2024-08 起官方停更日级披露 (akshare 全接口测试无替代) 永久封死; pivot 到 A1' HK 南向 overlay, 预检查 PROCEED
+- [A1' HK 南向 gate 证伪 2026-06](a1prime_southbound_gate_falsified_2026-06.md) — 4y Sharpe 1.080→1.022 (-0.058), 预检查 mean+37% 是 base rate spurious; widen+gate 互斥; **HK sleeve 当前架构已饱和** → 四层 efficient set 同构升级

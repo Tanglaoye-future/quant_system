@@ -33,6 +33,7 @@ class TimingRegimeContext:
     index_atr_pct: float | None
     index_atr_pct_rel: float | None
     southbound_strength: float | None = None
+    southbound_cum_lookback: float | None = None  # A1' gate: lookback N 日累计净流入(亿元)
     # Plan B (L7-B): 强势 regime gate + 相对强度过滤所需
     index_close_vs_ma200: float | None = None  # (close/MA200 - 1)，>0 = 大牛
     index_drawdown_from_20d_high: float | None = None  # (close/max_close_20d - 1)，≤0
@@ -79,6 +80,7 @@ def build_timing_regime_context(
     atr_pct_median_window: int = 20,
     southbound_enabled: bool = False,
     southbound_ma_window: int = 20,
+    southbound_gate_lookback_days: int = 0,    # A1' gate: 0 = 禁用累计计算；>0 = 算 lookback N 日累计净流入
     marginal_flow_market: str | None = None,   # "hk_share" / "a_share"，None 时禁用
 ) -> TimingRegimeContext:
     """
@@ -140,29 +142,41 @@ def build_timing_regime_context(
             ret_20d = last_close / c_20 - 1.0
 
     # 边际资金强度信号（按市场分发：HK→南向，A 股→北向）
+    # 同时计算 A1' gate 用的 lookback 累计净流入(亿元)
     sb_strength: float | None = None
-    if southbound_enabled and marginal_flow_market:
+    sb_cum_lb: float | None = None
+    needs_flow = (southbound_enabled or southbound_gate_lookback_days > 0) and marginal_flow_market
+    if needs_flow:
         try:
             sb_df = loader.get_marginal_flow(marginal_flow_market)
             if sb_df is not None and not sb_df.empty:
                 sb_sub = sb_df[sb_df["date"] <= asof_str].copy()
-                w = max(2, int(southbound_ma_window))
-                if len(sb_sub) >= w + 1:
-                    nb = pd.to_numeric(sb_sub["net_buy"], errors="coerce")
-                    ma = nb.rolling(w, min_periods=w).mean()
-                    last_nb = float(nb.iloc[-1])
-                    last_ma = float(ma.iloc[-1])
-                    if pd.notna(last_ma) and abs(last_ma) > 1e-9:
-                        # 标准化偏差：(today - MA20) / |MA20|，>0 = 强于近期均值
-                        sb_strength = (last_nb - last_ma) / abs(last_ma)
+                nb = pd.to_numeric(sb_sub["net_buy"], errors="coerce")
+                # widen 信号 (today vs MA20)
+                if southbound_enabled:
+                    w = max(2, int(southbound_ma_window))
+                    if len(sb_sub) >= w + 1:
+                        ma = nb.rolling(w, min_periods=w).mean()
+                        last_nb = float(nb.iloc[-1]) if pd.notna(nb.iloc[-1]) else None
+                        last_ma = float(ma.iloc[-1]) if pd.notna(ma.iloc[-1]) else None
+                        if last_nb is not None and last_ma is not None and abs(last_ma) > 1e-9:
+                            sb_strength = (last_nb - last_ma) / abs(last_ma)
+                # A1' gate 信号: lookback 日累计 (跳过 NaN, 保守要求 ≥ lookback/2 个有效日)
+                lb = int(southbound_gate_lookback_days)
+                if lb > 0:
+                    tail = nb.dropna().tail(lb)
+                    if len(tail) >= max(1, lb // 2):
+                        sb_cum_lb = float(tail.sum())
         except Exception:
             sb_strength = None
+            sb_cum_lb = None
 
     return TimingRegimeContext(
         index_close_vs_ma=vs_ma,
         index_atr_pct=last_atr_pct,
         index_atr_pct_rel=rel,
         southbound_strength=sb_strength,
+        southbound_cum_lookback=sb_cum_lb,
         index_close_vs_ma200=vs_ma200,
         index_drawdown_from_20d_high=dd_20d,
         index_return_20d=ret_20d,

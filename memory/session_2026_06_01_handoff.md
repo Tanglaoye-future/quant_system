@@ -36,15 +36,24 @@ metadata:
 - HK overlay AH 溢价 alpha 不稳定
 - equity_factor L9-B ROIC + AR YoY (HS300) 三 case 全负
 
-## 🔑 三层 efficient set 同构（本 session 最大结构发现）
+## 🔑 四层 efficient set 同构（2026-06-01 update: A1' HK 也饱和）
 
 | 层 | efficient 配置 | 证伪路径 |
 |---|---|---|
 | 组合层 | v5 (HK25/A_mom10/A_mr10/zhuang40/QQQ5/GLD10) | 5 |
 | 因子层 (HS300) | L8D2 (pe 0.15 / pb 0.10 / roe 0.20 / rev_g 0.15 / mom3m 0.20, fcf=0 + L9-B=0) | 2 |
 | zhuang sleeve | L1-E (score=70 + pos=0.4) + L6-A equal weights | 3 |
+| **HK sleeve** | **widen on + L9-A regime partial + factor weights (gate=off)** | **1 (A1')** |
 
-**结论**: strategy 层 (zhuang) + 因子层 (HS300) + 组合层 (6-asset) **三层都已饱和**。在当前 universe + 信号集合下, alpha 已被吃完。
+**结论**: strategy 层 (zhuang + HK) + 因子层 (HS300) + 组合层 (6-asset) **四层都已饱和**。在当前 universe + 信号集合下, alpha 已被吃完。
+
+## A1 北向永久死 + A1' HK 南向 4y 证伪 (2026-06-01)
+
+- A1 北向: 2024-08-19 起官方停更日级 net_buy 披露, akshare 全接口测试无替代; 即使有 alpha 实盘失效
+- A1' HK 南向 gate (lookback=10 / threshold=200亿): 4y Sharpe 1.080 → 1.022 (-0.058)
+- 预检查 mean +37% 是 base rate spurious correlation, 没翻译成可交易 alpha
+- 工程已落保留 (TimingConfig + regime ctx + 8 单测), 默认 disabled
+- 详见 [[a1_northbound_dead_southbound_alive_2026-06]] + [[a1prime_southbound_gate_falsified_2026-06]]
 
 ## 剩余 alpha 通道（极度收敛）
 

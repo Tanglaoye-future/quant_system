@@ -91,6 +91,14 @@ class TimingConfig:
     m3_southbound_widen_hi_pts: float = 3.0   # RSI 上沿放宽点数（追高动量也宽松）
     m3_southbound_vol_relax: float = 0.3      # 量能门槛 vol_breakout_mult × (1-relax)（南向强买时 1.5×→1.05×）
 
+    # --- A1' 南向 gate（与 widen 互补；可独立或叠加启用）---
+    # 入场前要求南向 N 日累计净流入 >= threshold(亿元)，否则拒入场。
+    # 预检查 (8y, 331 HK trades): 10d>200亿 → mean pnl_pct +37% / win rate +4.9pp
+    # 见 [[a1_northbound_dead_southbound_alive_2026-06]]
+    m3_southbound_gate_enabled: bool = False
+    m3_southbound_gate_lookback_days: int = 10
+    m3_southbound_gate_threshold_yi: float = 200.0   # 亿元
+
     # --- M5：为 true 时技术出场未触发且指数市况门不通过则强制 EXIT（REGIME 层）---
     m5_regime_exit_enabled: bool = False
 
@@ -517,6 +525,22 @@ def entry_signal_from_enriched(
     close = float(today["close"])
     a = float(today["atr"]) if pd.notna(today["atr"]) else None
     reasons: list[str] = []
+
+    # A1' 南向 gate（仅当 enabled 时检查；regime_ctx 必须由 screen() 触发计算）
+    # 数据缺失（southbound_cum_lookback is None）= 实盘日北向类停更情形 = 保守拒入场
+    if cfg.m3_southbound_gate_enabled:
+        if regime_ctx is None:
+            return _no_entry("南向gateX: regime_ctx 缺失", close, None, None)
+        cum = getattr(regime_ctx, "southbound_cum_lookback", None)
+        thr = float(cfg.m3_southbound_gate_threshold_yi)
+        if cum is None:
+            return _no_entry("南向gateX: 累计数据不可用", close, None, None)
+        if cum < thr:
+            return _no_entry(
+                f"南向gateX: {int(cfg.m3_southbound_gate_lookback_days)}d 累计 {cum:.1f}亿 < {thr:.1f}亿",
+                close, None, None,
+            )
+        reasons.append(f"南向gate OK: {int(cfg.m3_southbound_gate_lookback_days)}d 累计 {cum:.1f}亿 >= {thr:.1f}亿")
 
     # ── Pullback 模式（L7 低位识别）— 与突破/金叉模式互斥 ────────────────────
     if cfg.m2_pullback_mode:
