@@ -1,6 +1,7 @@
 # Memory Index
 
-- **[2026-05-31 收工 + 下个 session backlog](session_2026_05_31_handoff.md)** ⭐ — 新 session cold-start 读此文件；9 条证伪路径 + 4 commit + 7 memory 浓缩；L7-A position_max_count 是下个最高 ROI 待做
+- **[2026-06-01 收工 + 下个 session backlog](session_2026_06_01_handoff.md)** ⭐ — 新 session cold-start 读此文件；13 条证伪累积 + 三层 efficient set 同构发现（L8D2 HS300 / L1-E zhuang / v5 组合）; 下个最高 ROI = A1 北向资金流 overlay (数据已在 loader, 工程极轻)
+- [2026-05-31 收工 + 下个 session backlog](session_2026_05_31_handoff.md) — 9→13 证伪累积 base; 已被 06-01 handoff supersede, 历史归档
 
 
 - [实盘入场诊断 + zhuang 建仓闭环 2026-05](project_live_entry_diagnosis_2026-05.md) — "持仓都在亏"四步诊断;entry_score=0 已查清(非bug,纯择时突破);真问题=实盘只上A_mom腿,已补 zhuang 建仓闭环(独立 zhuang_trades ledger)
