@@ -1,8 +1,29 @@
 ---
 name: session-2026-06-01-handoff
-description: 2026-05-31~06-01 session 总账 + 下个 session cold-start backlog；5 条新证伪 (10→14) + 月度 KPI 脚手架 + 南向 gate 接入；四层 efficient set 同构 (L8D2 HS300 / L1-E zhuang / v5 组合 / HK widen-on) → strategy + 因子 + 组合三层架构全饱和；剩余 alpha 通道仅 small-cap / 真做空 / 实盘 KPI
+description: 2026-05-31~06-01 session 总账 + 06-01 续盘 backlog；6 条新证伪 (10→15) + 月度 KPI 脚手架 + 南向 gate 接入 + A2 CSI1000 paradox 软证伪；五层 efficient set 同构 (含 A 股因子 universe 维度); 剩余 alpha 通道仅 C ensemble precheck / 新数据源 / 真做空 / 实盘 KPI
 metadata:
   type: project
+---
+
+## 🆕 2026-06-01 续盘 (A2 paradox 软证伪)
+
+接 cold-start backlog #1 (A2 CSI1000 L9-B 重启), 路径走 paradox 预检查 → 软证伪, 不投 backtest。详见 [[a2_csi1000_l9b_paradox_falsified_2026-06]]。
+
+**关键发现**: HS300 现有 abstract 数据 4 个 asof Spearman(ROIC, ROE) ∈ [0.92, 0.95], AR YoY 横截面 median ≈ -0.78 一致负 (中国累计申报季节性 artifact)。切 CSI1000 不可能解耦。第 15 条证伪 + 五层 efficient set 升级 (加 "A 股因子 universe 维度" 层)。
+
+**省**: ~3-5 hr (loader 接 csi1000 + 1000 ticker daily/abstract/val prefetch + 4 case sweep + 8y verify)
+
+**handoff 教训矫正**: handoff 说 "工程已落改 universe 即可" 不准确 — loader.get_universe 当前 A 股仅支持 hs300, 需新接入。但 paradox precheck 在 HS300 数据上就证伪, 这层工程没必要做了。
+
+**新工具**: `scripts/research/a2_csi1000_l9b_paradox_precheck.py` — "切 universe 救信号重复" 类提议的通用 sanity 模板, 任何 "用 X universe 上 Y 因子" 提议都应先跑此模板 (改 indicator 名)。
+
+**新 backlog 优先级** (替换原 backlog):
+1. ~~A2 CSI1000~~ — 已软证伪 (本续盘)
+2. **C 多策略 ensemble mom3m + mom6m** — 同样需 paradox precheck (mom3m × mom6m 横截面 ρ); 若 > 0.7 同样软证伪不做 backtest
+3. **B1 2026-06-30 月度 KPI** — 硬节点不变
+4. **D HK 真做空 leverage** — 需用户批准 + 实盘资金确认
+5. **AR YoY 算法重写** (低 ROI) — 若未来想救 AR 信号, 需改 `factors.py` 用真年度对比而非 quarter-of-cumulative; 但 ROIC ≡ ROE 主结构问题没解, 不优先
+
 ---
 
 ## 当前状态 (2026-06-01 收工)

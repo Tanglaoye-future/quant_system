@@ -1,6 +1,7 @@
 # Memory Index
 
-- **[2026-06-01 收工 + 下个 session backlog](session_2026_06_01_handoff.md)** ⭐ — 新 session cold-start 读此文件；13 条证伪累积 + 三层 efficient set 同构发现（L8D2 HS300 / L1-E zhuang / v5 组合）; 下个最高 ROI = A1 北向资金流 overlay (数据已在 loader, 工程极轻)
+- **[2026-06-01 收工 + 下个 session backlog](session_2026_06_01_handoff.md)** ⭐ — 新 session cold-start 读此文件；15 条证伪累积 + 五层 efficient set 同构 (含 A 股因子 universe 维度); A2 CSI1000 paradox 软证伪 (06-01 续盘); 下个 alpha 通道仅剩 C ensemble precheck / 新数据源 / 真做空 / 实盘 KPI
+- [A2 CSI1000 L9-B paradox 软证伪 2026-06](a2_csi1000_l9b_paradox_falsified_2026-06.md) — HS300 ROIC×ROE Spearman 全 asof 0.92-0.95, AR YoY 是中国累计申报季节性 artifact; 切 universe 不解耦 → 第 15 条证伪 + 五层 efficient set 升级; paradox precheck 脚本可复用
 - [2026-05-31 收工 + 下个 session backlog](session_2026_05_31_handoff.md) — 9→13 证伪累积 base; 已被 06-01 handoff supersede, 历史归档
 
 
