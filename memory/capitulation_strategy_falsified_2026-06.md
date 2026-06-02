@@ -81,27 +81,43 @@ metadata:
 3. **资金量稀释**: 14% × 你当前小仓位规模 ≠ 14% × 10倍仓位 (信号容量上限低)
 4. **Sample 死亡**: 即使有 L2 数据接入, 4y 训练样本仍可能 < 100, 过拟合不可避免
 
-## 替代方案 — dashboard 辅人工
+## 替代方案 — dashboard 辅人工 (已实现 2026-06-02)
 
-不做 strategy 不进 v5 不动 yaml. 做扫描工具帮你人工 T:
+不做 strategy 不进 v5 不动 yaml. 扫描工具帮人工 T:
 
-```
-scripts/reporting/daily_panic_dashboard.py
-  每日扫:
-    - HS300 + CSI1000 当日跌幅 ≤ -5% / -7% (panic 候选)
-    - 量比 > 1.5 / > 2.0 (放量阴线)
-    - 距 20 日高回撤排序
-    - 最近 5 日 LHB 机构净买 top 20
-    - 反包候选 (前日 -5% + 今日开盘高于昨收 1%)
-    - 同 zhuang 当前候选名单重叠标记
-  输出: HTML 报告 (沿用现有 report/ 体系)
-```
+**实现**: `scripts/reporting/daily_panic_dashboard.py` (单文件 MVP).
+
+5 个 section:
+1. **Panic candidates** — HS300 + CSI1000 当日跌幅 ≤ -5% + 量比 ≥ 1.5, 距 20d 高回撤
+2. **反包候选** — T-1 panic + T 开盘 gap > 1% (历史 base rate 仅 3.4%, 显示是为完整性)
+3. **LHB 机构净买 top 20** — 最近 5 个交易日, **作 confirmation 非 entry trigger** (T+1 滞后)
+4. **大盘情绪** — 财新 + CCTV news 关键词 (个股 news akshare stock_news_em ArrowInvalid 死, 降级)
+5. **Sleeve overlap** — zhuang/A_mom/A_mr 当前候选 ∩ panic / 反包, 标"双重信号"高优先级
+
+输出: `report/panic_dashboard_<date>.html` (独立, 不动 strategy 主报告) + `report/data/panic_dashboard.json`
 
 特点:
-- **不进 backtest** (避免第 17 条证伪)
-- **不影响 v5 / yaml** (不进生产)
+- **不进 backtest** (避免第 17 条证伪 = 实际 18 条)
+- **不影响 v5 / yaml / strategies/** (新独立工具)
 - **执行决策仍是用户人工** (execution alpha 保留在用户脑里)
-- 工程 1 session, 数据全部 akshare 现成
+- 工程 ~1 session, 16 单测 pass, 全 akshare 现成数据
+
+**降级方案补丁**:
+- 个股新闻 (akshare stock_news_em) → 大盘情绪 (财新 + CCTV) + 个股 attention 用涨跌幅/量比代
+- LHB 机构净买 T+1 滞后 → 仅作 confirmation, dashboard 明示提示
+
+**调用**:
+```
+./venv/bin/python scripts/reporting/daily_panic_dashboard.py            # 今日
+./venv/bin/python scripts/reporting/daily_panic_dashboard.py --date X   # 指定日
+./venv/bin/python scripts/reporting/daily_panic_dashboard.py --open     # 开浏览器
+./venv/bin/python scripts/reporting/daily_panic_dashboard.py --quick    # 跳大盘 news
+```
+
+**未来可能扩展**:
+- 接 L2 tick 数据 (wind/同花顺, 3-10万/年) → 真做散户单 vs 机构单 拆分
+- 接付费舆情 API (同花顺 iFinD) → 替代 akshare news 死亡
+- 加 Telegram / 飞书 推送 (现在仅本地 HTML)
 
 ## paradox 教训累积
 
