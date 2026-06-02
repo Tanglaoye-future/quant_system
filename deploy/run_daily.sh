@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
 # run_daily.sh — quant_system 日报联合运行脚本（monorepo 版）
 #
-# 跑 5 个子策略：
+# 跑 5 个子策略 + 1 个辅助工具：
 #   1. equity_factor (HK)              → report/data/quant_hk.json
 #   2. equity_factor (A momentum)      → report/data/quant_a_mom.json
 #   3. equity_factor (A mean-reversion) → report/data/quant_a_mr.json
 #   4. options (QQQ Bull Call Spread)  → report/data/options.json
 #   5. zhuang (吃货期扫描)              → report/data/zhuang.json
+#   5.5 panic dashboard (capitulation 反向情绪辅人工 T)
+#                                      → report/data/panic_dashboard.json
+#                                      → report/panic_dashboard_<date>.html
 #
 # 最后由 quant_system.report.builder 合成 HTML 日报。
 #
 # 用法:
 #   ./deploy/run_daily.sh              # 全部运行
 #   ./deploy/run_daily.sh --no-options # 跳过期权（无 IBKR 时使用）
+#   ./deploy/run_daily.sh --no-dashboard # 跳过 panic dashboard (默认开启)
 #   ./deploy/run_daily.sh --report-only
 #
 # 调度：macOS launchd 每个工作日 16:30 执行
@@ -27,11 +31,13 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 DATE=$(date +%Y-%m-%d)
 
 SKIP_OPTIONS=false
+SKIP_DASHBOARD=false
 REPORT_ONLY=false
 for arg in "$@"; do
   case $arg in
-    --no-options)  SKIP_OPTIONS=true ;;
-    --report-only) REPORT_ONLY=true ;;
+    --no-options)    SKIP_OPTIONS=true ;;
+    --no-dashboard)  SKIP_DASHBOARD=true ;;
+    --report-only)   REPORT_ONLY=true ;;
   esac
 done
 
@@ -126,6 +132,25 @@ if [ "$REPORT_ONLY" = false ]; then
     echo "  ⚠  zhuang 失败（继续，日志: $LOG_DIR/${DATE}_zhuang.log）"
   fi
   echo ""
+
+  # ── 5.5 panic dashboard (capitulation 辅人工 T) ──────────────────────────
+  # 见 [[capitulation_strategy_falsified_2026-06]] 第 16 条证伪后替代方案.
+  # 默认 --quick 跳大盘 news 节省 5-10s; 默认仅 HS300 扫 (不开 csi1000 因 1000 ticker daily fetch 过重).
+  # 失败 warn 继续不影响 strategy 主报告.
+  if [ "$SKIP_DASHBOARD" = false ]; then
+    echo "▶ [dashboard] panic / capitulation 辅人工 T 扫描..."
+    if (cd "$REPO_ROOT" && "$PYTHON" scripts/reporting/daily_panic_dashboard.py \
+          --date "$DATE" --quick \
+          > "$LOG_DIR/${DATE}_dashboard.log" 2>&1); then
+      echo "  ✅ dashboard 完成 → report/panic_dashboard_${DATE}.html"
+    else
+      echo "  ⚠  dashboard 失败（继续，日志: $LOG_DIR/${DATE}_dashboard.log）"
+    fi
+    echo ""
+  else
+    echo "▶ [dashboard] 已跳过 (--no-dashboard)"
+    echo ""
+  fi
 
 fi
 

@@ -27,21 +27,26 @@ metadata:
 - 详见 [[capitulation_strategy_falsified_2026-06]]
 - **替代方案**: dashboard 辅人工 (新立项, 未完成)
 
-### dashboard 工具立项 (尚未实现, 下个会话首要工程)
-- 每日扫: HS300 + CSI1000 panic 候选 + LHB 机构净买 + zhuang 候选 overlap + akshare news 关键词情绪
-- 输出: HTML (沿用 report/ 体系) / Telegram 可选
-- **不进 backtest 体系**, 不动 v5 / yaml, 执行决策仍归用户
-- 工程 ~1 sess, 数据 100% akshare 现成
-- 含 user 选项 A: akshare news 情绪关键词标签 (绝望/抄底/破发/狂欢 等)
+### dashboard 工具 ✅ 已实现 + 集成 daily (commit a9f1b4f)
+- 单文件 `scripts/reporting/daily_panic_dashboard.py` MVP, 16 单测 pass
+- 5 个 section: panic / 反包 / LHB top 20 / 大盘情绪 / sleeve overlap
+- 集成 `deploy/run_daily.sh` 5.5 步 (默认 --quick), `--no-dashboard` 可跳
+- 实跑 2026-06-02 验证: 5 panic + 1 rebound + 20 LHB; 东山精密跌停板机构净买 10 亿 = 用户描述场景捕获
+- 输出 `report/panic_dashboard_<date>.html` (gitignored) + `report/data/panic_dashboard.json` (gitignored)
+- 降级方案: 个股 news akshare 死 → 大盘情绪代; CSI1000 1000 ticker 重 → 默认仅 HS300 + 可选 flag
+- 详见 [[capitulation_strategy_falsified_2026-06]] 末尾
 
-### 本日总计
-- **3 commit**:
-  - 8e3d4d6 A2 CSI1000 paradox 软证伪
-  - f90d3b9 capitulation 4 重证伪 (第 16 条)
-  - **C ensemble unit** 本 commit (含第 17 条 memory + 3 scripts + handoff 续盘)
+### 本日总计 (2026-06-02 完整 session)
+- **4 commit** (全 push origin/main):
+  - 8e3d4d6 A2 CSI1000 paradox 软证伪 (第 15)
+  - f90d3b9 capitulation 4 重证伪 (第 16, paradox 类 5 新增)
+  - 4cd7624 C ensemble 双窗口反向 (第 17, paradox 类 6 新增)
+  - a9f1b4f daily_panic_dashboard 实现 + daily 集成 (16 单测)
 - **3 条新证伪累积 (15→17)**
 - **paradox 类别 4→6** (新增 5 execution-vs-strategy + 6 窗口依赖)
 - **六层 efficient set** 第 4 次因子层锁定 + 反向情绪不可 sleeve 化
+- **新工具**: daily_panic_dashboard, 集成 deploy/run_daily.sh
+- **AMBIGUOUS verdict 升级 ≡ SOFT-FALSIFY** 新规则
 
 ### 新 backlog 优先级 (替换 06-01)
 1. **Dashboard 实现 (含情绪标签)** — 工程 ~1 sess, 用户已选 ✅, 下个 session 首做
