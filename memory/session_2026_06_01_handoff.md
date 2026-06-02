@@ -1,8 +1,63 @@
 ---
 name: session-2026-06-01-handoff
-description: 2026-05-31~06-01 session 总账 + 06-01 续盘 backlog；6 条新证伪 (10→15) + 月度 KPI 脚手架 + 南向 gate 接入 + A2 CSI1000 paradox 软证伪；五层 efficient set 同构 (含 A 股因子 universe 维度); 剩余 alpha 通道仅 C ensemble precheck / 新数据源 / 真做空 / 实盘 KPI
+description: 2026-05-31~06-02 跨日 session 总账 — 8 条新证伪 (10→17) + 月度 KPI 脚手架 + 南向 gate 接入 + A2 + capitulation + C ensemble (4y PASS / 8y FAIL); 六层 efficient set 同构 (含因子 universe + 反向情绪 dashboard 层); paradox 第 6 类新增 (窗口依赖); AMBIGUOUS 升级 ≡ SOFT-FALSIFY; 剩余 alpha 仅 dashboard 工具 / B1 KPI / D HK 真做空 / 新付费数据源
 metadata:
   type: project
+---
+
+## 🆕 2026-06-02 续盘 (C ensemble 双窗口反向 + capitulation 4 重证伪 + dashboard 立项)
+
+承 06-01 续盘 A2 之后, 接 backlog #2 (C ensemble) + 用户新提反向情绪 strategy.
+
+### C ensemble mom3m + mom6m — AMBIGUOUS → PASS → FAIL 双窗口反向
+- paradox precheck Spearman 4 asof ∈ [0.596, 0.775] (平均 0.69) + 残差 |Spearman| max 0.20 → **AMBIGUOUS**
+- 4y sweep: C-split (mom3m 0.10 + mom6m 0.10) Sharpe 0.890 vs base 0.808 (**+0.082 PASS**), C-mom6-swap 严重崩 (-0.284) 证实 mom3m 主信号
+- 8y verify: C-split 0.314 vs base 0.366 (**-0.052 FAIL**), DD 8y 改善 5.3pp 真实但用户严守双窗口
+- **不落 yaml**, 第 17 条证伪. 详见 [[equity_factor_c_ensemble_falsified_2026-06]]
+- **paradox 第 6 类新增: 窗口依赖** (mom6m 在 2022-2026 段 alpha 但 2018-2021 段 drag, regime-conditional)
+- **AMBIGUOUS verdict 升级 ≡ SOFT-FALSIFY**: 之前 threshold > 0.7 软证伪 / 0.5-0.7 AMBIGUOUS, 现 > 0.6 软证伪 / 0.4-0.6 AMBIGUOUS 等价软证伪 (省 4 hr 工程同模式)
+
+### 反向情绪 / capitulation 系统化 4 重证伪
+- 用户提议 "散户绝望卖出时吃货, 散户狂热时派发" 反向情绪 sleeve
+- **实验 1**: zhuang sleeve winner 入场 RSI 63 / 距高 -1.6% / panic 阴线 winner < loser → **信号互斥**, zhuang 是横盘吃货不是急跌吃货, 不可扩
+- **实验 2**: akshare 跌停撬开 / 炸板 / 涨停股池历史 4y 封死 (近 30 日限制), 同 A1 北向 2024-08
+- **实验 3**: HS300 2024 264 panic events, 反包 9 个 (3.4%), 反包+LHB 机构净买 **1 个** → **sample 完全压扁**
+- **实验 4**: LHB 机构净买 T+1 才公开 → **滞后, 不可作 entry trigger**
+- 第 16 条 + **paradox 第 5 类新增: execution-vs-strategy 错配** (用户 14% 日 alpha 在盘中分时 tick 级, 不可日级化)
+- 详见 [[capitulation_strategy_falsified_2026-06]]
+- **替代方案**: dashboard 辅人工 (新立项, 未完成)
+
+### dashboard 工具立项 (尚未实现, 下个会话首要工程)
+- 每日扫: HS300 + CSI1000 panic 候选 + LHB 机构净买 + zhuang 候选 overlap + akshare news 关键词情绪
+- 输出: HTML (沿用 report/ 体系) / Telegram 可选
+- **不进 backtest 体系**, 不动 v5 / yaml, 执行决策仍归用户
+- 工程 ~1 sess, 数据 100% akshare 现成
+- 含 user 选项 A: akshare news 情绪关键词标签 (绝望/抄底/破发/狂欢 等)
+
+### 本日总计
+- **3 commit**:
+  - 8e3d4d6 A2 CSI1000 paradox 软证伪
+  - f90d3b9 capitulation 4 重证伪 (第 16 条)
+  - **C ensemble unit** 本 commit (含第 17 条 memory + 3 scripts + handoff 续盘)
+- **3 条新证伪累积 (15→17)**
+- **paradox 类别 4→6** (新增 5 execution-vs-strategy + 6 窗口依赖)
+- **六层 efficient set** 第 4 次因子层锁定 + 反向情绪不可 sleeve 化
+
+### 新 backlog 优先级 (替换 06-01)
+1. **Dashboard 实现 (含情绪标签)** — 工程 ~1 sess, 用户已选 ✅, 下个 session 首做
+2. **B1 2026-06-30 月度 KPI** — 硬节点不变
+3. **D HK 真做空 leverage** — 需用户批准
+4. **付费 L2 / 同花顺 iFinD 舆情** — user 评 ROI 后决定 (3-10万/年)
+5. ~~A2 CSI1000~~ / ~~C ensemble~~ / ~~capitulation~~ — 已死
+
+### Cold-start 新增重要规则 (Session 2026-06-01/02 学到)
+- AMBIGUOUS verdict (Spearman 0.4-0.6) **等价 SOFT-FALSIFY**, 不再投 backtest
+- 信号 ρ paradox 阈值收紧: > 0.6 软证伪 (从 0.7), < 0.4 push backtest (从 0.5)
+- DD trade-off 不能撬动 "双窗口同向" 严守规则 (用户偏好 Sharpe-based, 不接受 DD-based)
+- akshare 实时类数据 (北向 / 涨跌停板 / 炸板 / 龙虎榜实时) 普遍**只保最近 30 日**, 任何依赖此类数据的 4y backtest 提议直接 N
+- LHB 机构净买**永远不可作 entry trigger** (T+1 公布滞后), 仅 confirmation
+- Execution alpha (盘中分时 tick / L2 大单 / 极小仓位 T+0) **不应尝试系统化**, dashboard 辅人工是合理出口
+
 ---
 
 ## 🆕 2026-06-01 续盘 (A2 paradox 软证伪)
