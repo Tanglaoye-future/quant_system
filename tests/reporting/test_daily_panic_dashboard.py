@@ -25,15 +25,22 @@ from daily_panic_dashboard import (
     PanicCandidate,
     ReboundCandidate,
     LHBRow,
+    LHBFrequencyRow,
+    SectorRow,
     SentimentScore,
     SleeveOverlap,
+    HistoryEntry,
     score_keywords,
     load_sleeve_candidates,
     compute_sleeve_overlap,
     scan_panic_and_rebound,
     render_html,
     _payload,
+    lhb_frequency_top,
+    load_panic_history,
+    update_panic_history,
 )
+import daily_panic_dashboard as dpd
 
 
 # ── score_keywords ────────────────────────────────────────────────────────
@@ -254,3 +261,130 @@ def test_payload_dataclass_serializable():
     back = json.loads(s)
     assert back["panic"][0]["code"] == "X"
     assert back["sentiment"][0]["source"] == "src"
+
+
+# ── §7 lhb_frequency_top ──────────────────────────────────────────────────
+
+def test_lhb_frequency_empty():
+    assert lhb_frequency_top(pd.DataFrame()) == []
+
+
+def test_lhb_frequency_filters_low_appearances():
+    # 同一 code 上 3 次 + 另 1 次 1 次 + 另 2 次, 应只返回 ≥ 2 次的
+    raw = pd.DataFrame({
+        "code": ["600519", "600519", "600519", "000001", "002345", "002345"],
+        "机构净买": [1e8, 2e8, 0.5e8, 1e8, 0.3e8, 0.4e8],
+        "名称": ["A", "A", "A", "B", "C", "C"],
+        "上榜日期": ["2026-05-28", "2026-05-29", "2026-06-01", "2026-05-30", "2026-05-29", "2026-06-01"],
+    })
+    rows = lhb_frequency_top(raw, top_n=10)
+    codes = [r.code for r in rows]
+    assert "600519" in codes
+    assert "002345" in codes
+    assert "000001" not in codes   # 仅 1 次, 过滤
+    a_row = next(r for r in rows if r.code == "600519")
+    assert a_row.appearances == 3
+    assert abs(a_row.total_jg_net_buy_yuan - 3.5e8) < 1e-3
+
+
+def test_lhb_frequency_sorts_by_count_then_amount():
+    raw = pd.DataFrame({
+        "code": ["A", "A", "B", "B", "B"],
+        "机构净买": [1e8, 1e8, 0.1e8, 0.1e8, 0.1e8],
+        "名称": ["a", "a", "b", "b", "b"],
+        "上榜日期": ["2026-05-28", "2026-05-29", "2026-05-27", "2026-05-28", "2026-05-29"],
+    })
+    rows = lhb_frequency_top(raw, top_n=10)
+    assert rows[0].code == "B"      # 3 次 > 2 次, 即使 amount 小
+    assert rows[1].code == "A"
+
+
+# ── §8 panic history persistence ──────────────────────────────────────────
+
+def test_history_first_run(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(dpd, "HISTORY_PATH", tmp_path / "hist.json")
+    out = update_panic_history("2026-06-02", panic_count=5, rebound_count=1, lhb_top_jg_buy=1.5e9)
+    assert len(out) == 1
+    assert out[0].date == "2026-06-02"
+    assert out[0].panic_count == 5
+
+
+def test_history_upsert_overwrites_same_date(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(dpd, "HISTORY_PATH", tmp_path / "hist.json")
+    update_panic_history("2026-06-02", 5, 1, 1.5e9)
+    out = update_panic_history("2026-06-02", 10, 2, 2.0e9)   # 同日改写
+    assert len(out) == 1
+    assert out[0].panic_count == 10
+
+
+def test_history_appends_new_dates(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(dpd, "HISTORY_PATH", tmp_path / "hist.json")
+    update_panic_history("2026-06-01", 3, 0, 1e8)
+    update_panic_history("2026-06-02", 5, 1, 2e8)
+    out = update_panic_history("2026-06-03", 2, 0, 1.5e8)
+    assert len(out) == 3
+    assert [e.date for e in out] == ["2026-06-01", "2026-06-02", "2026-06-03"]
+
+
+def test_history_rolling_keep(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(dpd, "HISTORY_PATH", tmp_path / "hist.json")
+    monkeypatch.setattr(dpd, "HISTORY_KEEP_DAYS", 3)
+    for i, d in enumerate(["2026-05-29", "2026-05-30", "2026-05-31", "2026-06-01", "2026-06-02"]):
+        update_panic_history(d, i, 0, 0.0)
+    out = load_panic_history(n=10)
+    assert len(out) == 3
+    assert out[0].date == "2026-05-31"   # 最早保留
+    assert out[-1].date == "2026-06-02"
+
+
+def test_load_history_missing_returns_empty(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(dpd, "HISTORY_PATH", tmp_path / "does_not_exist.json")
+    assert load_panic_history() == []
+
+
+def test_load_history_corrupt_returns_empty(tmp_path: Path, monkeypatch):
+    p = tmp_path / "hist.json"
+    p.write_text("not valid json {")
+    monkeypatch.setattr(dpd, "HISTORY_PATH", p)
+    assert load_panic_history() == []
+
+
+# ── render_html 新 section ────────────────────────────────────────────────
+
+def test_render_html_new_sections_in_empty_payload():
+    payload = _payload(panic=[], rebound=[], lhb=[], sentiment=[], overlaps=[])
+    html = render_html(payload, "2026-06-02")
+    assert "⑥ 板块涨跌" in html
+    assert "⑦ LHB 高频上榜" in html
+    assert "⑧ Panic 历史趋势" in html
+
+
+def test_render_html_with_sectors_and_freq_and_history():
+    sectors = {
+        "industry_top": [SectorRow("行业", "半导体", 4.5, "中芯国际", 5.1)],
+        "industry_bot": [SectorRow("行业", "酒店餐饮", -2.3, "锦江酒店", -2.5)],
+        "concept_top": [SectorRow("概念", "AI 大模型", 6.8, "寒武纪", 12.0)],
+        "concept_bot": [],
+    }
+    lhb_freq = [LHBFrequencyRow("600519", "贵州茅台", 3, 5.5e8, "2026-06-01")]
+    history = [
+        HistoryEntry("2026-05-29", 2, 0, 1e8),
+        HistoryEntry("2026-05-30", 5, 1, 3e8),
+        HistoryEntry("2026-06-02", 8, 2, 6e8),
+    ]
+    payload = _payload(panic=[], rebound=[], lhb=[], sentiment=[], overlaps=[],
+                       sectors=sectors, lhb_freq=lhb_freq, history=history)
+    html = render_html(payload, "2026-06-02")
+    assert "半导体" in html
+    assert "酒店餐饮" in html
+    assert "AI 大模型" in html
+    assert "贵州茅台" in html
+    assert "+4.50%" in html or "+4.5" in html
+    assert "5.50 亿" in html
+    assert "今日:" in html
+
+
+def test_render_html_history_missing_section_present():
+    payload = _payload(panic=[], rebound=[], lhb=[], sentiment=[], overlaps=[])
+    html = render_html(payload, "2026-06-02")
+    assert "首次采集" in html

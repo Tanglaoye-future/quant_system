@@ -197,8 +197,13 @@ class LHBRow:
     pct_change: float | None = None
 
 
-def fetch_lhb_top(target_date: str, lookback_days: int = LHB_LOOKBACK_DAYS, top_n: int = LHB_TOP_N) -> list[LHBRow]:
-    """拉最近 lookback_days 个 *自然* 日的 LHB 机构净买, 按净额 top_n."""
+def fetch_lhb_top(
+    target_date: str, lookback_days: int = LHB_LOOKBACK_DAYS, top_n: int = LHB_TOP_N,
+) -> tuple[list[LHBRow], pd.DataFrame]:
+    """拉最近 lookback_days 个 *自然* 日的 LHB 机构净买, 返回 (top_n 净买行, 全量 df).
+
+    全量 df 供 lhb_frequency_top 算"高频上榜"用 (Section §7).
+    """
     end_dt = pd.to_datetime(target_date)
     start_dt = end_dt - pd.Timedelta(days=lookback_days + 3)  # buffer for weekends
     try:
@@ -208,17 +213,18 @@ def fetch_lhb_top(target_date: str, lookback_days: int = LHB_LOOKBACK_DAYS, top_
         )
     except Exception as e:
         print(f"[LHB] ERROR: {e}", file=sys.stderr)
-        return []
+        return [], pd.DataFrame()
     if df is None or df.empty:
-        return []
+        return [], pd.DataFrame()
 
     jg_col = "机构买入净额" if "机构买入净额" in df.columns else "机构净买额"
     df["机构净买"] = pd.to_numeric(df[jg_col], errors="coerce")
-    df = df.dropna(subset=["机构净买"])
-    df = df.sort_values("机构净买", ascending=False).head(top_n)
+    df = df.dropna(subset=["机构净买"]).copy()
+    df["code"] = df["代码"].astype(str).str.zfill(6) if "代码" in df.columns else ""
 
+    top_df = df.sort_values("机构净买", ascending=False).head(top_n)
     rows: list[LHBRow] = []
-    for _, r in df.iterrows():
+    for _, r in top_df.iterrows():
         rows.append(LHBRow(
             code=str(r.get("代码", "")).zfill(6),
             name=str(r.get("名称", "")),
@@ -227,7 +233,174 @@ def fetch_lhb_top(target_date: str, lookback_days: int = LHB_LOOKBACK_DAYS, top_
             reason=str(r.get("上榜原因", "")),
             pct_change=float(r["涨跌幅"]) if "涨跌幅" in r and pd.notna(r["涨跌幅"]) else None,
         ))
+    return rows, df
+
+
+# ───────────────────────── Section §7: LHB 高频上榜 ─────────────────────────
+
+@dataclass
+class LHBFrequencyRow:
+    code: str
+    name: str
+    appearances: int
+    total_jg_net_buy_yuan: float
+    last_date: str
+
+
+def lhb_frequency_top(lhb_raw: pd.DataFrame, top_n: int = 10) -> list[LHBFrequencyRow]:
+    """从 LHB 全量 df 按 code group, count 上榜次数 + sum 机构净买, 取 top.
+
+    "高频上榜" = 短期内反复上榜 = 资金高度关注 (不论方向).
+    """
+    if lhb_raw is None or lhb_raw.empty or "code" not in lhb_raw.columns:
+        return []
+    grp = (
+        lhb_raw.groupby("code")
+        .agg(
+            appearances=("机构净买", "size"),
+            total_jg_net_buy=("机构净买", "sum"),
+            name=("名称", "last"),
+            last_date=("上榜日期", "max"),
+        )
+        .reset_index()
+        .sort_values(["appearances", "total_jg_net_buy"], ascending=[False, False])
+    )
+    grp = grp[grp["appearances"] >= 2].head(top_n)   # 至少 2 次才算"高频"
+    rows: list[LHBFrequencyRow] = []
+    for _, r in grp.iterrows():
+        rows.append(LHBFrequencyRow(
+            code=str(r["code"]),
+            name=str(r["name"]),
+            appearances=int(r["appearances"]),
+            total_jg_net_buy_yuan=float(r["total_jg_net_buy"]),
+            last_date=str(r["last_date"]),
+        ))
     return rows
+
+
+# ───────────────────────── Section §6: 板块涨跌 ─────────────────────────
+
+@dataclass
+class SectorRow:
+    sector_type: str       # 行业 / 概念
+    name: str
+    pct_change: float
+    representative_stock: str
+    representative_pct: float | None = None
+
+
+def fetch_sector_rankings(top_n: int = 5) -> dict[str, list[SectorRow]]:
+    """同花顺接口 stock_sector_spot 拉 行业 / 概念 板块, 各取 top_n / bottom_n.
+
+    返回: {'industry_top': [...], 'industry_bot': [...], 'concept_top': [...], 'concept_bot': [...]}
+    避开 push2.eastmoney.com 代理拦截问题.
+    """
+    out: dict[str, list[SectorRow]] = {
+        "industry_top": [], "industry_bot": [],
+        "concept_top": [], "concept_bot": [],
+    }
+    for indicator, key_top, key_bot in [
+        ("行业", "industry_top", "industry_bot"),
+        ("概念", "concept_top", "concept_bot"),
+    ]:
+        df = None
+        for attempt in range(3):
+            try:
+                df = ak.stock_sector_spot(indicator=indicator)
+                break
+            except Exception:
+                if attempt == 2:
+                    print(f"[sector] {indicator} ERROR after 3 retries", file=sys.stderr)
+                else:
+                    time.sleep(1)
+        if df is None or df.empty or "涨跌幅" not in df.columns:
+            continue
+        df["涨跌幅"] = pd.to_numeric(df["涨跌幅"], errors="coerce")
+        df = df.dropna(subset=["涨跌幅"]).sort_values("涨跌幅", ascending=False)
+        for _, r in df.head(top_n).iterrows():
+            out[key_top].append(SectorRow(
+                sector_type=indicator,
+                name=str(r.get("板块", "")),
+                pct_change=float(r["涨跌幅"]),
+                representative_stock=str(r.get("股票名称", "")),
+                representative_pct=float(r["个股-涨跌幅"]) if "个股-涨跌幅" in r and pd.notna(r["个股-涨跌幅"]) else None,
+            ))
+        for _, r in df.tail(top_n).iloc[::-1].iterrows():
+            out[key_bot].append(SectorRow(
+                sector_type=indicator,
+                name=str(r.get("板块", "")),
+                pct_change=float(r["涨跌幅"]),
+                representative_stock=str(r.get("股票名称", "")),
+                representative_pct=float(r["个股-涨跌幅"]) if "个股-涨跌幅" in r and pd.notna(r["个股-涨跌幅"]) else None,
+            ))
+    return out
+
+
+# ───────────────────────── Section §8: Panic 历史趋势 ─────────────────────────
+
+HISTORY_PATH = ROOT / "report" / "data" / "panic_dashboard_history.json"
+HISTORY_KEEP_DAYS = 60   # 滚动保留
+
+
+@dataclass
+class HistoryEntry:
+    date: str
+    panic_count: int
+    rebound_count: int
+    lhb_top_jg_buy_yuan: float    # top 净买 (gauge of 机构活跃度)
+
+
+def load_panic_history(n: int = 20) -> list[HistoryEntry]:
+    """读最近 n 天历史. 不存在或损坏返回空."""
+    if not HISTORY_PATH.exists():
+        return []
+    try:
+        raw = json.loads(HISTORY_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    if not isinstance(raw, list):
+        return []
+    entries = [
+        HistoryEntry(
+            date=str(e.get("date", "")),
+            panic_count=int(e.get("panic_count", 0)),
+            rebound_count=int(e.get("rebound_count", 0)),
+            lhb_top_jg_buy_yuan=float(e.get("lhb_top_jg_buy_yuan", 0.0)),
+        )
+        for e in raw if isinstance(e, dict) and e.get("date")
+    ]
+    entries.sort(key=lambda x: x.date)
+    return entries[-n:]
+
+
+def update_panic_history(date_str: str, panic_count: int, rebound_count: int, lhb_top_jg_buy: float) -> list[HistoryEntry]:
+    """把今日数据追加到 history JSON (upsert by date), 滚动保留 HISTORY_KEEP_DAYS 天."""
+    HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    existing: list[dict] = []
+    if HISTORY_PATH.exists():
+        try:
+            raw = json.loads(HISTORY_PATH.read_text(encoding="utf-8"))
+            if isinstance(raw, list):
+                existing = [e for e in raw if isinstance(e, dict) and e.get("date") != date_str]
+        except Exception:
+            existing = []
+    existing.append({
+        "date": date_str,
+        "panic_count": int(panic_count),
+        "rebound_count": int(rebound_count),
+        "lhb_top_jg_buy_yuan": float(lhb_top_jg_buy),
+    })
+    existing.sort(key=lambda x: x["date"])
+    existing = existing[-HISTORY_KEEP_DAYS:]
+    HISTORY_PATH.write_text(json.dumps(existing, ensure_ascii=False, indent=2))
+    return [
+        HistoryEntry(
+            date=e["date"], panic_count=int(e["panic_count"]),
+            rebound_count=int(e["rebound_count"]),
+            lhb_top_jg_buy_yuan=float(e["lhb_top_jg_buy_yuan"]),
+        )
+        for e in existing
+    ]
 
 
 # ───────────────────────── Section 4: 大盘情绪 ─────────────────────────
@@ -390,6 +563,9 @@ def render_html(payload: dict, report_date: str) -> str:
     lhb = payload["lhb"]
     sentiment = payload["sentiment"]
     overlaps = payload["sleeve_overlap"]
+    sectors = payload.get("sectors", {})
+    lhb_freq = payload.get("lhb_frequency", [])
+    history = payload.get("history", [])
     gen_at = payload["generated_at"]
 
     panic_rows = "\n".join(
@@ -458,6 +634,77 @@ def render_html(payload: dict, report_date: str) -> str:
     if not overlap_html:
         overlap_html = "<tr><td colspan='4' class='muted center'>无 sleeve JSON 数据</td></tr>"
 
+    # ── §6 板块 ──
+    def _sec_rows(rows, cls):
+        if not rows:
+            return f"<tr><td colspan='3' class='muted center'>—</td></tr>"
+        return "\n".join(
+            f"<tr><td><strong>{r['name']}</strong></td>"
+            f"<td class='{cls}'>{r['pct_change']:+.2f}%</td>"
+            f"<td class='muted'>{r['representative_stock']}</td></tr>"
+            for r in rows
+        )
+    sector_html = f"""
+      <div class='grid'>
+        <div class='card'>
+          <strong>行业 top 5 (涨)</strong>
+          <table style='margin-top:6px'><tbody>{_sec_rows(sectors.get('industry_top', []), 'pos')}</tbody></table>
+        </div>
+        <div class='card'>
+          <strong>行业 bot 5 (跌)</strong>
+          <table style='margin-top:6px'><tbody>{_sec_rows(sectors.get('industry_bot', []), 'neg')}</tbody></table>
+        </div>
+        <div class='card'>
+          <strong>概念 top 5 (涨)</strong>
+          <table style='margin-top:6px'><tbody>{_sec_rows(sectors.get('concept_top', []), 'pos')}</tbody></table>
+        </div>
+        <div class='card'>
+          <strong>概念 bot 5 (跌)</strong>
+          <table style='margin-top:6px'><tbody>{_sec_rows(sectors.get('concept_bot', []), 'neg')}</tbody></table>
+        </div>
+      </div>"""
+
+    # ── §7 LHB 高频 ──
+    if lhb_freq:
+        freq_rows = "\n".join(
+            f"<tr><td><strong>{r['code']}</strong></td>"
+            f"<td>{r['name']}</td>"
+            f"<td><strong>{r['appearances']}</strong></td>"
+            f"<td class='{'pos' if r['total_jg_net_buy_yuan'] > 0 else 'neg'}'>{_yi(r['total_jg_net_buy_yuan'])}</td>"
+            f"<td class='muted'>{r['last_date']}</td></tr>"
+            for r in lhb_freq
+        )
+    else:
+        freq_rows = "<tr><td colspan='5' class='muted center'>无高频上榜数据 (近 5 日均仅 1 次)</td></tr>"
+
+    # ── §8 历史趋势 (sparkline ascii + 表) ──
+    if history:
+        # 计算简易 sparkline (用 panic_count 的 [0, max] 映射到 1-7 高度块)
+        panic_counts = [h["panic_count"] for h in history]
+        spark_blocks = "▁▂▃▄▅▆▇█"
+        max_p = max(panic_counts) or 1
+        spark = "".join(spark_blocks[min(7, int(v / max_p * 7))] for v in panic_counts)
+        avg_p = sum(panic_counts) / len(panic_counts)
+        latest = history[-1]
+        delta_class = "pos" if latest["panic_count"] < avg_p else ("neg" if latest["panic_count"] > avg_p * 1.5 else "muted")
+        history_rows = "\n".join(
+            f"<tr><td class='muted'>{h['date']}</td>"
+            f"<td>{h['panic_count']}</td>"
+            f"<td>{h['rebound_count']}</td>"
+            f"<td>{_yi(h['lhb_top_jg_buy_yuan'])}</td></tr>"
+            for h in reversed(history[-10:])   # 最近 10 行倒序
+        )
+        history_html = f"""
+        <div style='font-size:24px;letter-spacing:2px;margin:6px 0' title='panic count sparkline 最近 {len(history)} 日'>{spark}</div>
+        <div style='font-size:12px;margin-bottom:8px'>
+          最近 {len(history)} 日均: <strong>{avg_p:.1f}</strong> · 今日: <strong class='{delta_class}'>{latest['panic_count']}</strong>
+          (vs avg Δ {latest['panic_count']-avg_p:+.1f})
+        </div>
+        <table><thead><tr><th>日期</th><th>panic</th><th>rebound</th><th>top jg buy</th></tr></thead>
+        <tbody>{history_rows}</tbody></table>"""
+    else:
+        history_html = "<div class='muted center'>历史数据首次采集 (从今日起累积, 滚动 60 天)</div>"
+
     return f"""<!doctype html>
 <html lang='zh'><head><meta charset='utf-8'>
 <title>Panic Dashboard · {report_date}</title>
@@ -522,12 +769,36 @@ def render_html(payload: dict, report_date: str) -> str:
   <div class='muted' style='font-size:11px;margin-top:6px'>有 overlap 的股票 = 既被 sleeve 选中又有 panic / 反包信号, 优先级高</div>
 </section>
 
+<section>
+  <h2>⑥ 板块涨跌 top 5 / bot 5 (行业 + 概念)</h2>
+  {sector_html}
+  <div class='muted' style='font-size:11px;margin-top:8px'>数据源: 同花顺 stock_sector_spot (避开东财 push2 代理偶发拦截). 代表股 = 板块第一权重股</div>
+</section>
+
+<section>
+  <h2>⑦ LHB 高频上榜 top 10 (最近 5 日 ≥ 2 次)</h2>
+  <table><thead><tr><th>代码</th><th>名称</th><th>上榜次数</th><th>累计机构净买</th><th>最末上榜日</th></tr></thead>
+  <tbody>{freq_rows}</tbody></table>
+  <div class='muted' style='font-size:11px;margin-top:6px'>资金高度关注信号 (≥ 2 次 LHB), 净买正负不论 — 频次本身已说明问题</div>
+</section>
+
+<section>
+  <h2>⑧ Panic 历史趋势 (滚动 60d, 显示最近 10 日)</h2>
+  {history_html}
+  <div class='muted' style='font-size:11px;margin-top:6px'>用今日 vs 历史均值 判 "今天是否不寻常". 数据持久化在 report/data/panic_dashboard_history.json</div>
+</section>
+
 <div class='footer'>quant_system · daily_panic_dashboard · 不入 v5 组合 / 不动 yaml / 执行决策仍归用户</div>
 </body></html>
 """
 
 
-def _payload(panic, rebound, lhb, sentiment, overlaps) -> dict:
+def _payload(
+    panic, rebound, lhb, sentiment, overlaps,
+    sectors: dict[str, list] | None = None,
+    lhb_freq: list | None = None,
+    history: list | None = None,
+) -> dict:
     return {
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "panic": [asdict(p) for p in panic],
@@ -535,6 +806,9 @@ def _payload(panic, rebound, lhb, sentiment, overlaps) -> dict:
         "lhb": [asdict(r) for r in lhb],
         "sentiment": [asdict(s) for s in sentiment],
         "sleeve_overlap": [asdict(o) for o in overlaps],
+        "sectors": {k: [asdict(s) for s in v] for k, v in (sectors or {}).items()},
+        "lhb_frequency": [asdict(r) for r in (lhb_freq or [])],
+        "history": [asdict(h) for h in (history or [])],
     }
 
 
@@ -553,24 +827,24 @@ def main():
 
     loader = DataLoader(cache_dir=ROOT / "data/cache", refresh_days=999)
 
-    print("[1/5] universe fetch...")
+    print("[1/8] universe fetch...")
     codes_by_uni = fetch_universe_codes(loader, include_csi1000=args.include_csi1000)
     n_total = sum(len(v) for v in codes_by_uni.values())
     print(f"  hs300={len(codes_by_uni['hs300'])}  csi1000={len(codes_by_uni['csi1000'])}  total={n_total}")
 
-    print("[2/5] panic + 反包 scan...")
+    print("[2/8] panic + 反包 scan...")
     panic, rebound = scan_panic_and_rebound(loader, codes_by_uni, target)
     print(f"  panic={len(panic)}  rebound={len(rebound)}")
 
-    print("[3/5] LHB 机构净买...")
-    lhb = fetch_lhb_top(target)
-    print(f"  lhb top={len(lhb)}")
+    print("[3/8] LHB 机构净买...")
+    lhb, lhb_raw = fetch_lhb_top(target)
+    print(f"  lhb top={len(lhb)}, raw={len(lhb_raw)}")
 
-    print("[4/5] 大盘情绪...")
+    print("[4/8] 大盘情绪...")
     sentiment = fetch_market_sentiment(target, quick=args.quick)
     print(f"  sources={len(sentiment)}")
 
-    print("[5/5] sleeve overlap...")
+    print("[5/8] sleeve overlap...")
     overlaps = compute_sleeve_overlap(
         [p.code for p in panic],
         [r.code for r in rebound],
@@ -578,7 +852,22 @@ def main():
     )
     print(f"  sleeves={len(overlaps)}")
 
-    payload = _payload(panic, rebound, lhb, sentiment, overlaps)
+    print("[6/8] 板块涨跌...")
+    sectors = fetch_sector_rankings(top_n=5)
+    print(f"  industry top/bot={len(sectors['industry_top'])}/{len(sectors['industry_bot'])}  "
+          f"concept top/bot={len(sectors['concept_top'])}/{len(sectors['concept_bot'])}")
+
+    print("[7/8] LHB 高频上榜...")
+    lhb_freq = lhb_frequency_top(lhb_raw, top_n=10)
+    print(f"  high-freq codes={len(lhb_freq)}")
+
+    print("[8/8] panic 历史趋势 update...")
+    lhb_top_jg_buy = float(lhb[0].jg_net_buy_yuan) if lhb else 0.0
+    history = update_panic_history(target, len(panic), len(rebound), lhb_top_jg_buy)
+    print(f"  history entries (last {HISTORY_KEEP_DAYS}d): {len(history)}")
+
+    payload = _payload(panic, rebound, lhb, sentiment, overlaps,
+                       sectors=sectors, lhb_freq=lhb_freq, history=history[-20:])
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     json_path = DATA_DIR / "panic_dashboard.json"
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
