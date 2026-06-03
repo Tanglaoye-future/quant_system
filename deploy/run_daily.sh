@@ -154,14 +154,8 @@ if [ "$REPORT_ONLY" = false ]; then
 
 fi
 
-# ── 6. 生成 HTML 日报 ─────────────────────────────────────────────────────────
-echo "▶ [report] 生成 HTML 日报..."
-if (cd "$REPO_ROOT" && "$PYTHON" -m quant_system.report.builder --date "$DATE" --open); then
-  echo "  ✅ 报告已生成"
-else
-  echo "  ❌ 报告生成失败"
-  FAIL_COUNT=$((FAIL_COUNT + 1))
-fi
+# ── 6. JSON 数据汇总（前端 dashboard 通过 /api/report/* 读取） ───────────────
+echo "▶ [report] JSON 数据已就绪（前端 dashboard 为唯一查看入口）"
 
 # ── 7. 双写一致性校验（DB ↔ JSON，三层解耦 soak 期安全网）──────────────────
 # 只校验今天写的 JSON vs DB 读回；DB 不可达/双写关闭自动跳过(exit 0)，

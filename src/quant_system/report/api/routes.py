@@ -126,6 +126,26 @@ def get_summary():
     }
 
 
+# ── Panic / capitulation dashboard (Phase 3: frontend single-pane) ──────
+
+@router.get("/panic")
+def get_panic():
+    """Return panic dashboard data (panic candidates, rebound, LHB, sentiment,
+    sector rankings, sleeve overlap, history trend)."""
+    payload = _read_json("panic_dashboard")
+
+    # Merge history if available
+    history_path = DATA_DIR / "panic_dashboard_history.json"
+    if history_path.exists():
+        try:
+            history = json.loads(history_path.read_text(encoding="utf-8"))
+            payload["history"] = history
+        except Exception:
+            payload["history"] = payload.get("history", [])
+
+    return payload
+
+
 # ── Dynamic strategy-market matrix (Phase 2: registry-backed) ──────────
 
 @router.get("/matrix")

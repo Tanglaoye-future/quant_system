@@ -13,7 +13,7 @@ Section 3: LHB 机构净买 top — 最近 5 个交易日机构净买额 top 20
 Section 4: 大盘情绪 — 财新 + CCTV news 关键词 (个股 news akshare 死, 用大盘代)
 Section 5: Sleeve overlap — zhuang / A_mom 当前候选名单 ∩ panic 候选
 
-输出: report/panic_dashboard_<date>.html + report/data/panic_dashboard.json
+输出: report/data/panic_dashboard.json（前端 /api/report/panic 读取）
 
 用法:
   python scripts/reporting/daily_panic_dashboard.py                    # 今日
@@ -26,7 +26,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 import sys
 import time
 from dataclasses import dataclass, field, asdict
@@ -815,7 +814,6 @@ def _payload(
 def main():
     p = argparse.ArgumentParser(description="Daily panic / capitulation dashboard 辅助人工 T")
     p.add_argument("--date", default=date.today().strftime("%Y-%m-%d"))
-    p.add_argument("--open", action="store_true", dest="open_browser")
     p.add_argument("--quick", action="store_true", help="跳过大盘 news (节省 5-10s)")
     p.add_argument("--include-csi1000", action="store_true",
                    help="扫 CSI1000 1000 ticker (默认 off, 需先 prefetch daily cache)")
@@ -872,15 +870,9 @@ def main():
     json_path = DATA_DIR / "panic_dashboard.json"
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
 
-    REPORT_DIR.mkdir(parents=True, exist_ok=True)
-    html_path = REPORT_DIR / f"panic_dashboard_{target}.html"
-    html_path.write_text(render_html(payload, target), encoding="utf-8")
-
     print(f"\nelapsed: {time.time()-t0:.1f}s")
     print(f"  JSON → {json_path}")
-    print(f"  HTML → {html_path}")
-    if args.open_browser:
-        subprocess.Popen(["open", str(html_path)])
+    print(f"  (HTML 已迁移至前端 dashboard，此处不再生成)")
 
 
 if __name__ == "__main__":

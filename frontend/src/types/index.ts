@@ -194,6 +194,91 @@ export interface MarketsResponse {
   hk: MarketData;
 }
 
+// ── Panic / capitulation dashboard types ──
+
+export interface PanicCandidate {
+  code: string;
+  universe: string;
+  drop_pct: number;
+  vol_ratio: number;
+  close: number;
+  dd_from_20d_high: number;
+}
+
+export interface ReboundCandidate {
+  code: string;
+  universe: string;
+  prior_drop_pct: number;
+  prior_vol_ratio: number;
+  today_open_vs_prior_close: number;
+}
+
+export interface LHBRow {
+  code: string;
+  name: string;
+  date: string;
+  jg_net_buy_yuan: number;
+  reason: string;
+  pct_change?: number;
+}
+
+export interface LHBFrequencyRow {
+  code: string;
+  name: string;
+  appearances: number;
+  total_jg_net_buy_yuan: number;
+  last_date: string;
+}
+
+export interface SectorRow {
+  sector_type: string;
+  name: string;
+  pct_change: number;
+  representative_stock: string;
+  representative_pct?: number;
+}
+
+export interface SentimentScore {
+  source: string;
+  n_items: number;
+  n_bull: number;
+  n_bear: number;
+  score: number;
+  samples_bull: string[];
+  samples_bear: string[];
+}
+
+export interface SleeveOverlap {
+  sleeve: string;
+  candidates: string[];
+  overlap_with_panic: string[];
+  overlap_with_rebound: string[];
+}
+
+export interface HistoryEntry {
+  date: string;
+  panic_count: number;
+  rebound_count: number;
+  lhb_top_jg_buy_yuan: number;
+}
+
+export interface PanicData {
+  generated_at: string;
+  panic: PanicCandidate[];
+  rebound: ReboundCandidate[];
+  lhb: LHBRow[];
+  sentiment: SentimentScore[];
+  sleeve_overlap: SleeveOverlap[];
+  sectors: {
+    industry_top: SectorRow[];
+    industry_bot: SectorRow[];
+    concept_top: SectorRow[];
+    concept_bot: SectorRow[];
+  };
+  lhb_frequency: LHBFrequencyRow[];
+  history: HistoryEntry[];
+}
+
 export interface HealthResponse {
   status: string;
   data_available: {

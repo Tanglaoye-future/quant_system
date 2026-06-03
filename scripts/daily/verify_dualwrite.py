@@ -88,6 +88,8 @@ def _differences(db, js, path: str = "") -> list[str]:
 def _verify_file(session, fpath: Path, target_date: str) -> tuple[str, list[str]]:
     """返回 (status, diffs)。status ∈ ok/skip/missing/mismatch/unknown。"""
     payload = json.loads(fpath.read_text(encoding="utf-8"))
+    if isinstance(payload, list):
+        return "skip", []
     if payload.get("_missing"):
         return "skip", []
     kind = _classify(payload)

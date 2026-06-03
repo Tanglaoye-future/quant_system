@@ -30,6 +30,10 @@ export function getMarkets() {
   return fetchJSON<import('../types').MarketsResponse>('/markets');
 }
 
+export function getPanic() {
+  return fetchJSON<import('../types').PanicData>('/report/panic');
+}
+
 export function getMatrix() {
   return fetchJSON<import('../types').MatrixResponse>('/matrix');
 }

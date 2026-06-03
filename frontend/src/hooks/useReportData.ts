@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { ReportSummary, MarketsResponse, MatrixResponse } from '../types';
-import { getSummary, getMarkets, getMatrix } from '../api/client';
+import type { ReportSummary, MarketsResponse, MatrixResponse, PanicData } from '../types';
+import { getSummary, getMarkets, getMatrix, getPanic } from '../api/client';
 
 export default function useReportData() {
   const [data, setData] = useState<ReportSummary | null>(null);
   const [markets, setMarkets] = useState<MarketsResponse | null>(null);
   const [matrix, setMatrix] = useState<MatrixResponse | null>(null);
+  const [panicData, setPanicData] = useState<PanicData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string>('');
@@ -14,12 +15,13 @@ export default function useReportData() {
     try {
       setLoading(true);
       setError(null);
-      const [result, mkts, mtx] = await Promise.all([
-        getSummary(), getMarkets(), getMatrix(),
+      const [result, mkts, mtx, panic] = await Promise.all([
+        getSummary(), getMarkets(), getMatrix(), getPanic(),
       ]);
       setData(result);
       setMarkets(mkts);
       setMatrix(mtx);
+      setPanicData(panic);
       setUpdatedAt(new Date().toLocaleTimeString('zh-CN', { hour12: false }));
     } catch (e) {
       setError((e as Error).message);
@@ -32,5 +34,5 @@ export default function useReportData() {
     fetchData();
   }, [fetchData]);
 
-  return { data, markets, matrix, loading, error, updatedAt, refresh: fetchData };
+  return { data, markets, matrix, panicData, loading, error, updatedAt, refresh: fetchData };
 }
