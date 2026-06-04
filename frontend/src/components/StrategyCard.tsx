@@ -34,11 +34,18 @@ export default function StrategyCard({ cell, showPlaceholder = true, quantData, 
   let zhuangCandidates = zhuangData?.top_candidates ?? [];
   const zhuangPositions = zhuangData?.positions ?? [];
 
+  let portfolioAlerts: string[] = [];
   if (quantData && (strategy_kind === 'bottomup_timing' || strategy_kind === 'mean_reversion')) {
     // 找到匹配的 _source label
     const sourceLabel = Object.entries(SOURCE_TO_STRATEGY).find(([, s]) => s === strategy_name)?.[0];
     signals = (quantData.signals || []).filter(s => s._source === sourceLabel);
     positions = (quantData.positions || []).filter(p => p._source === sourceLabel);
+    if (sourceLabel) {
+      const prefix = `[${sourceLabel}] `;
+      portfolioAlerts = (quantData.portfolio_alerts || [])
+        .filter(a => a.startsWith(prefix))
+        .map(a => a.slice(prefix.length));
+    }
   }
 
   return (
@@ -86,6 +93,23 @@ export default function StrategyCard({ cell, showPlaceholder = true, quantData, 
 
       {isActive && (strategy_kind === 'bottomup_timing' || strategy_kind === 'mean_reversion') && (
         <>
+          {portfolioAlerts.length > 0 && (
+            <div style={{
+              marginBottom: 12,
+              padding: '10px 14px',
+              borderRadius: 8,
+              background: '#ffe8e6',
+              border: '1px solid #ff453a',
+              fontSize: 13,
+              color: '#c0392b',
+              lineHeight: 1.6,
+            }}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>⚠ 组合层告警</div>
+              {portfolioAlerts.map((a, i) => (
+                <div key={i}>· {a}</div>
+              ))}
+            </div>
+          )}
           <MetricGrid>
             <MetricCard label="买入信号" value={signals.length} sub="今日触发" />
             <MetricCard label="当前持仓" value={positions.length} sub="最大 10 仓" />

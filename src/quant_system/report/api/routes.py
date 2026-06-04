@@ -55,6 +55,7 @@ def _merge_quant() -> dict:
 
     merged_signals = []
     merged_positions = []
+    merged_alerts = []  # 组合层 alerts，前缀策略 label 后合并
     merged_date = ""
     merged_market = ""
     merged_gate = None
@@ -83,6 +84,8 @@ def _merge_quant() -> dict:
             p.setdefault("name", "")
             p["_source"] = label
             merged_positions.append(p)
+        for a in data.get("portfolio_alerts", []) or []:
+            merged_alerts.append(f"[{label}] {a}")
 
     return {
         "date": merged_date,
@@ -93,6 +96,7 @@ def _merge_quant() -> dict:
         "benchmark_ma60": "—",
         "signals": merged_signals,
         "positions": merged_positions,
+        "portfolio_alerts": merged_alerts,
     }
 
 

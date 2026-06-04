@@ -109,8 +109,18 @@ def main() -> None:
     # 有效策略标识：mean_reversion 等 kind 式调用 strategy_name 为 None，回退到 args.strategy，
     # 否则风控的 strategy 过滤失效 → 又会评估到 momentum 的仓位（串台）。
     eff_strategy = args.strategy_name or args.strategy
+    # 组合层风控（仅 alert，不自动平仓）；yaml `portfolio_risk:` 缺失或 enabled=false 时整段 noop
+    from quant_system.strategies.equity_factor.risk.monitor import PortfolioRiskConfig
+    pr_node = cfg.get("portfolio_risk") or {}
+    portfolio_risk_cfg = PortfolioRiskConfig(
+        enabled=bool(pr_node.get("enabled", False)),
+        max_single_weight_pct=pr_node.get("max_single_weight_pct"),
+        unrealized_pnl_floor_pct=pr_node.get("unrealized_pnl_floor_pct"),
+        exit_signal_ratio_max=pr_node.get("exit_signal_ratio_max"),
+    )
     monitor = RiskMonitor(loader=loader, journal=j, timing_cfg=tcfg,
-                          market=args.market, strategy=eff_strategy)
+                          market=args.market, strategy=eff_strategy,
+                          portfolio_risk_cfg=portfolio_risk_cfg)
     positions, port = monitor.daily_check(asof=args.asof, write_snapshots=not args.no_write)
 
     catalyst = CatalystMonitor(cache_dir=cfg.cache_dir,
@@ -353,6 +363,9 @@ def main() -> None:
         print(f"  单只最大占比 {port.max_single_weight*100:.1f}%  "
               f"最差单只浮亏 {port.worst_drawdown_pct*100:+.2f}%  "
               f"EXIT 信号 {port.n_at_risk}/{port.n_positions}")
+    # 组合层 alerts —— 仅显示警告，决策仍走个股层
+    for alert in port.alerts:
+        print(f"  ⚠ 组合层告警: {alert}")
     print()
 
     # ---------------- 输出报告 JSON ----------------
@@ -421,6 +434,8 @@ def main() -> None:
         "benchmark_ma60": bench_ma_val,
         "signals": report_signals,
         "positions": report_positions,
+        # 组合层风控 alerts —— 前端 banner 红字显示；空 list = 无告警
+        "portfolio_alerts": list(port.alerts),
     }
     _REPORT_DATA.mkdir(parents=True, exist_ok=True)
     # 按 market + kind 命名 JSON 文件，与 report builder / API 的硬编码引用兼容

@@ -55,6 +55,19 @@ class PositionRisk:
 
 
 @dataclass
+class PortfolioRiskConfig:
+    """组合层风控阈值（仅 alert，不自动平仓）—— 任一字段为 None 即禁用该项。
+
+    顶层 enabled=False 时整个评估跳过，PortfolioRisk.alerts 永远是空 list；
+    个股层 RiskMonitor.daily_check 的 EXIT/HOLD 决策完全不受本 config 影响。
+    """
+    enabled: bool = False
+    max_single_weight_pct: Optional[float] = None      # max_single_weight > X
+    unrealized_pnl_floor_pct: Optional[float] = None   # unrealized_pnl_pct < X (X 为负值)
+    exit_signal_ratio_max: Optional[float] = None      # n_at_risk / n_positions > X
+
+
+@dataclass
 class PortfolioRisk:
     n_positions: int
     cost_basis: float
@@ -64,6 +77,11 @@ class PortfolioRisk:
     max_single_weight: float       # 单只最大市值权重
     n_at_risk: int                 # 触发 EXIT 的笔数
     worst_drawdown_pct: float      # 单只最差浮亏
+    alerts: list[str] = None       # PortfolioRiskConfig 触发的告警文案列表（未配置时为空）
+
+    def __post_init__(self):
+        if self.alerts is None:
+            self.alerts = []
 
 
 class RiskMonitor:
@@ -74,6 +92,7 @@ class RiskMonitor:
         timing_cfg: Optional[TimingConfig] = None,
         market: Optional[str] = None,
         strategy: Optional[str] = None,
+        portfolio_risk_cfg: Optional[PortfolioRiskConfig] = None,
     ):
         self.loader = loader
         self.journal = journal
@@ -81,6 +100,7 @@ class RiskMonitor:
         # 限定本次 run 只评估自己 (market, strategy) 的持仓，避免串台 + 误自动平仓
         self.market = market
         self.strategy = strategy
+        self.portfolio_risk_cfg = portfolio_risk_cfg or PortfolioRiskConfig()
 
     def daily_check(
         self, asof: Optional[str] = None, write_snapshots: bool = True
@@ -174,17 +194,20 @@ class RiskMonitor:
                 dist_to_ma_long_pct=dist_ma,
             ))
 
-        port = self._aggregate(positions)
+        port = self._aggregate(positions, self.portfolio_risk_cfg)
         return positions, port
 
     @staticmethod
-    def _aggregate(positions: list[PositionRisk]) -> PortfolioRisk:
+    def _aggregate(
+        positions: list[PositionRisk],
+        portfolio_risk_cfg: Optional[PortfolioRiskConfig] = None,
+    ) -> PortfolioRisk:
         if not positions:
             return PortfolioRisk(0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0.0)
         cost = sum(p.entry_price * p.entry_size for p in positions)
         mvs = [p.current_price * p.entry_size for p in positions]
         mv = sum(mvs)
-        return PortfolioRisk(
+        port = PortfolioRisk(
             n_positions=len(positions),
             cost_basis=cost,
             market_value=mv,
@@ -194,3 +217,33 @@ class RiskMonitor:
             n_at_risk=sum(1 for p in positions if p.action == "EXIT"),
             worst_drawdown_pct=min(p.pnl_pct for p in positions),
         )
+        # 组合层 alerts —— 仅 alert，不自动平仓（个股层 EXIT 决策已在 daily_check 中独立完成）
+        if portfolio_risk_cfg and portfolio_risk_cfg.enabled:
+            thr = portfolio_risk_cfg
+            if (
+                thr.max_single_weight_pct is not None
+                and port.max_single_weight > thr.max_single_weight_pct
+            ):
+                port.alerts.append(
+                    f"单只权重 {port.max_single_weight*100:.1f}% > 上限 "
+                    f"{thr.max_single_weight_pct*100:.1f}%"
+                )
+            if (
+                thr.unrealized_pnl_floor_pct is not None
+                and port.unrealized_pnl_pct < thr.unrealized_pnl_floor_pct
+            ):
+                port.alerts.append(
+                    f"组合浮盈 {port.unrealized_pnl_pct*100:+.2f}% < 下限 "
+                    f"{thr.unrealized_pnl_floor_pct*100:+.2f}%"
+                )
+            if (
+                thr.exit_signal_ratio_max is not None
+                and port.n_positions > 0
+                and (port.n_at_risk / port.n_positions) > thr.exit_signal_ratio_max
+            ):
+                ratio = port.n_at_risk / port.n_positions
+                port.alerts.append(
+                    f"EXIT 信号占比 {ratio*100:.0f}% ({port.n_at_risk}/{port.n_positions}) "
+                    f"> 上限 {thr.exit_signal_ratio_max*100:.0f}%"
+                )
+        return port

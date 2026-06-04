@@ -36,6 +36,7 @@ export interface QuantData {
   benchmark_ma60: string;
   signals: QuantSignal[];
   positions: QuantPosition[];
+  portfolio_alerts?: string[];
   _missing?: boolean;
 }
 

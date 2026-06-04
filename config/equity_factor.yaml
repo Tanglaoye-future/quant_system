@@ -34,6 +34,18 @@ strategy:
   # 全局 timing 默认 — 留空，让 build_strategy 的 merge({**global, **mkt}) 走市场覆盖
   timing: {}
 
+# ----------- 组合层风控 alerts（仅警告，不自动平仓） -----------
+# 默认 enabled: false → 完全 noop；个股层 EXIT/HOLD 决策不受影响。
+# 上线时改 enabled: true 并按账户规模/风险偏好调阈值。任一阈值留 null = 该项禁用。
+# 触发后日报「组合摘要」段 ⚠ 红字 + dashboard 顶部 banner，由用户决定是否手动减仓。
+# TODO: max_drawdown_pct (相对历史峰值) 需要先建 portfolio_history 表（下个 phase）；
+#       当前用 unrealized_pnl_floor_pct (相对成本) 兜底。
+portfolio_risk:
+  enabled: false
+  max_single_weight_pct: 0.30      # 单只市值占比上限（当前 601066 ≈ 26.3%）
+  unrealized_pnl_floor_pct: -0.05  # 组合层未实现浮盈下限（账户层 stop alarm）
+  exit_signal_ratio_max: 0.50      # 同时 EXIT 信号笔数 / 持仓笔数 上限
+
 # 全局 factors — weights 留空（让 merge 走市场），m4 保留跨策略共享
 factors:
   weights: {}
