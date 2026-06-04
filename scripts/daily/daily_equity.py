@@ -135,15 +135,38 @@ def main() -> None:
     print(f"【持有维持】 ({len(holds)} 笔)")
     if not holds:
         print("  无")
+    # safety margin 阈值：距离 < 1% 算"贴线"，提示操盘人
+    CRITICAL_MARGIN = 0.01
+    n_critical = 0
     for p in holds:
         prev = f"{p.prev_stop:.2f}" if p.prev_stop is not None else "(无)"
         delta = " ↑" if (p.prev_stop is not None and p.new_stop > p.prev_stop) else ""
         cat = catalyst.summarize(p.symbol, asof=args.asof)
+        # safety margin 段：把距离止损 / 距离 MA60 暴露给操盘人，避免组合层 +0.30% 假象掩盖单只贴线
+        stop_seg = (
+            f"距 {p.dist_to_stop_pct*100:+.2f}%"
+            if p.dist_to_stop_pct is not None else "距 —"
+        )
+        ma_seg = (
+            f"MA60 距 {p.dist_to_ma_long_pct*100:+.2f}%"
+            if p.dist_to_ma_long_pct is not None else "MA60 距 —"
+        )
+        is_critical = (
+            (p.dist_to_stop_pct is not None and p.dist_to_stop_pct < CRITICAL_MARGIN)
+            or (p.dist_to_ma_long_pct is not None and p.dist_to_ma_long_pct < CRITICAL_MARGIN)
+        )
+        warn = " ⚠ 临界" if is_critical else ""
+        if is_critical:
+            n_critical += 1
         print(f"  #{p.trade_id} {p.symbol}  浮盈 {p.pnl_pct*100:+.2f}%  "
-              f"止损 {prev}→{p.new_stop:.2f}{delta}  持有 {p.hold_days} 天")
+              f"止损 {prev}→{p.new_stop:.2f}{delta} ({stop_seg})  "
+              f"{ma_seg}  持有 {p.hold_days} 天{warn}")
         if cat.to_label() != "-":
             flag = "⚠ 利空" if cat.is_negative() else ("✓ 利好" if cat.is_positive() else "")
             print(f"      催化剂: {cat.to_label()}  {flag}")
+    if n_critical > 0 and holds:
+        print(f"  ⚠ {n_critical}/{len(holds)} 只贴近触发线 (margin < {CRITICAL_MARGIN*100:.0f}%)，"
+              "组合层均值可能掩盖单只风险")
 
     # ---------------- Step 2: 全市场扫 entry signal ----------------
     print()

@@ -48,6 +48,10 @@ class PositionRisk:
     action: str       # HOLD / EXIT
     reason: str
     exit_layer: str = ""
+    # safety margin 视图：当前价相对触发线的剩余空间（HOLD 时给操盘人"还有多远到止损/MA60"）
+    ma_long: Optional[float] = None
+    dist_to_stop_pct: Optional[float] = None       # (close - new_stop) / close；None=无止损
+    dist_to_ma_long_pct: Optional[float] = None    # (close - MA60) / close；None=MA60 数据不足
 
 
 @dataclass
@@ -140,6 +144,23 @@ class RiskMonitor:
                 if new_stop > prev:
                     self.journal.update_stop_loss(trade["id"], new_stop)
 
+            # MA60 与 safety margin —— 仅展示用，不参与决策（决策仍在 exit_signal）
+            ma_long_val: Optional[float] = None
+            if len(px) >= self.cfg.ma_long:
+                m = px["close"].tail(self.cfg.ma_long).mean()
+                if m == m:  # not NaN
+                    ma_long_val = float(m)
+            dist_stop = (
+                (current_price - new_stop) / current_price
+                if current_price > 0 and new_stop and new_stop > 0
+                else None
+            )
+            dist_ma = (
+                (current_price - ma_long_val) / current_price
+                if current_price > 0 and ma_long_val is not None
+                else None
+            )
+
             positions.append(PositionRisk(
                 trade_id=trade["id"], symbol=trade["symbol"], market=trade["market"],
                 entry_date=trade["entry_date"], entry_price=trade["entry_price"],
@@ -148,6 +169,9 @@ class RiskMonitor:
                 pnl_pct=pnl_pct, pnl_amount=pnl_amount, hold_days=hold_days,
                 prev_stop=trade["stop_loss_price"], new_stop=new_stop,
                 action=action, reason=ex["reason"], exit_layer=ex_layer,
+                ma_long=ma_long_val,
+                dist_to_stop_pct=dist_stop,
+                dist_to_ma_long_pct=dist_ma,
             ))
 
         port = self._aggregate(positions)
