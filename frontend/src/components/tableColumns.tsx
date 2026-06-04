@@ -21,12 +21,39 @@ export const signalColumns: ColumnDef<QuantSignal>[] = [
   { key: 'reason', header: '入场理由', render: (r) => <span className="text-xs text-[#86868b]">{r.reason}</span> },
 ];
 
+// safety margin 视图：< 1% 算"贴线"，红色高亮提醒操盘人有触发风险
+const CRITICAL_MARGIN = 0.01;
+function fmtMargin(v: number | null | undefined): { text: string; cls: string } {
+  if (v === null || v === undefined) return { text: '—', cls: 'text-[#86868b]' };
+  const text = `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)}%`;
+  const cls = v < CRITICAL_MARGIN ? 'text-[#ff453a] font-semibold' : 'text-[#1a7f37]';
+  return { text, cls };
+}
+
 export const positionColumns: ColumnDef<QuantPosition>[] = [
   { key: 'code', header: '代码', render: (r) => <span className="font-semibold">{r.code}</span> },
   { key: 'name', header: '名称', render: (r) => r.name || '—' },
   { key: 'entry_date', header: '入场日', render: (r) => r.entry_date },
   { key: 'hold_days', header: '持有天', render: (r) => `${r.hold_days} 天` },
   { key: 'pnl_pct', header: '浮盈', render: (r) => <span className={`font-semibold ${colorPnl(r.pnl_pct)}`}>{fmtPct(r.pnl_pct)}</span> },
+  {
+    key: 'dist_to_stop_pct',
+    header: '距止损',
+    render: (r) => {
+      const m = fmtMargin(r.dist_to_stop_pct);
+      const warn = (r.dist_to_stop_pct ?? 1) < CRITICAL_MARGIN ? ' ⚠' : '';
+      return <span className={m.cls}>{m.text}{warn}</span>;
+    },
+  },
+  {
+    key: 'dist_to_ma_long_pct',
+    header: '距 MA60',
+    render: (r) => {
+      const m = fmtMargin(r.dist_to_ma_long_pct);
+      const warn = (r.dist_to_ma_long_pct ?? 1) < CRITICAL_MARGIN ? ' ⚠' : '';
+      return <span className={m.cls}>{m.text}{warn}</span>;
+    },
+  },
   {
     key: 'action',
     header: '操作',

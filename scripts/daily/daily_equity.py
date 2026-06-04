@@ -401,6 +401,12 @@ def main() -> None:
             "hold_days": getattr(p, "hold_days", 0),
             "pnl_pct": round(float(p.pnl_pct), 4) if hasattr(p, "pnl_pct") else None,
             "action": p.action,
+            # safety margin 字段（前端 dashboard 列：距止损 / 距 MA60）
+            "current_price": round(float(p.current_price), 2) if getattr(p, "current_price", None) is not None else None,
+            "stop_loss": round(float(p.new_stop), 2) if getattr(p, "new_stop", None) is not None else None,
+            "ma_long": round(float(p.ma_long), 2) if getattr(p, "ma_long", None) is not None else None,
+            "dist_to_stop_pct": round(float(p.dist_to_stop_pct), 4) if getattr(p, "dist_to_stop_pct", None) is not None else None,
+            "dist_to_ma_long_pct": round(float(p.dist_to_ma_long_pct), 4) if getattr(p, "dist_to_ma_long_pct", None) is not None else None,
         })
 
     report_payload = {

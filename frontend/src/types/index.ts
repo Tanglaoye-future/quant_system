@@ -20,6 +20,11 @@ export interface QuantPosition {
   pnl_pct: number | null;
   action: string;
   _source: string;
+  current_price?: number | null;
+  stop_loss?: number | null;
+  ma_long?: number | null;
+  dist_to_stop_pct?: number | null;
+  dist_to_ma_long_pct?: number | null;
 }
 
 export interface QuantData {
