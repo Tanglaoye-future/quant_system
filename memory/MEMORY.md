@@ -1,6 +1,7 @@
 # Memory Index
 
-- **[2026-06-05 dashboard one-click daily + 止盈视图](session_2026_06_05_dashboard_oneclick.md)** ⭐ — POST /api/daily/run 一键跑 + take_profit/dist_to_target 接入持仓表 + MA60 列去前端 + 顺手修 daily API zombie / verify_dualwrite 假阳；5 commit
+- **[2026-06-06 zhuang 持仓风控字段与 equity_factor 对齐](session_2026_06_06_zhuang_risk_parity.md)** ⭐ — 持仓表加 entry/current/stop/tp + 距止损 ⚠/距止盈 + portfolio_alerts banner (yaml 默认 OFF 零行为差异); verify_dualwrite 同步 pop alerts 防 06-05 回归; 3 commit
+- **[2026-06-05 dashboard one-click daily + 止盈视图](session_2026_06_05_dashboard_oneclick.md)** — POST /api/daily/run 一键跑 + take_profit/dist_to_target 接入持仓表 + MA60 列去前端 + 顺手修 daily API zombie / verify_dualwrite 假阳；5 commit
 - [视觉异常先要截图](feedback_screenshot_first.md) — 用户报告"弹了个东西/漂位/颜色异常"时先 AskUserQuestion 截图，不要瞎猜系统层根因；本次"黑框"misdiagnose 教训
 - **[2026-06-04 实盘风控 v1 收工](session_2026_06_04_realtime_risk_v1.md)** — 用户首次实盘 (4 只 A_mom) "大幅回撤" 焦虑触发的 audit；safety margin (Step 1) + 组合层 alerts (Step 2) 全链路接入；max DD + 盘中实时 Step 3 推迟；4 commit；default thresholds 已据当日实盘数据落 yaml
 - [前端 single-pane 2026-06](frontend_single_pane_2026-06.md) — Phase 3 消弭 HTML 报告孤岛，panic dashboard 全量接入前端；rebuild_html_report → no-op；后续所有新数据必须走 JSON+API+前端组件
