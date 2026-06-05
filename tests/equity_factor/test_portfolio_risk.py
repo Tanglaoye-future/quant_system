@@ -25,6 +25,7 @@ def _mk_pos(symbol: str, entry: float, size: int, current: float, action: str = 
         pnl_pct=pnl, pnl_amount=(current - entry) * size,
         hold_days=10, prev_stop=None, new_stop=entry * 0.95,
         action=action, reason="持有",
+        take_profit=entry * 1.10, dist_to_target_pct=(entry * 1.10 - current) / current if current else None,
     )
 
 

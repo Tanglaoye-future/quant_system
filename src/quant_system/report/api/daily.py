@@ -29,8 +29,11 @@ RUN_SCRIPT = REPO_ROOT / "deploy" / "run_daily.sh"
 LOG_DIR = REPO_ROOT / "logs"
 
 # 单进程状态机；同 uvicorn 进程内多 worker 不适用，但当前 reload=False / workers=1
+# 注：subprocess.Popen 句柄保留，用 .poll() 检测退出（os.kill(pid,0) 对 zombie process
+# 仍返回成功，无法判定终止；poll() 同时自动 reap）
 _state: dict = {
     "job_id": None,
+    "process": None,        # subprocess.Popen | None
     "pid": None,
     "started_at": None,
     "finished_at": None,
@@ -60,31 +63,27 @@ class StatusResponse(BaseModel):
     log_tail: list[str] = []
 
 
-def _process_alive(pid: Optional[int]) -> bool:
-    if pid is None:
-        return False
-    try:
-        os.kill(pid, 0)
-        return True
-    except (ProcessLookupError, PermissionError):
-        return False
-
-
 def _refresh_terminal_status() -> None:
-    """若 _state 仍标 running 但 pid 已死 → 改 success/failed 并 reap exit_code。"""
-    if _state["pid"] is None or _state["finished_at"] is not None:
+    """通过 Popen.poll() 检测子进程是否已退；已退则记 finished_at + exit_code。
+
+    poll() 在子进程仍跑时返回 None；退出后返回 exit code 并自动 reap zombie，
+    比 os.kill(pid, 0) 可靠（后者对未 reap 的 zombie 仍返回成功）。
+    """
+    proc = _state["process"]
+    if proc is None or _state["finished_at"] is not None:
         return
-    if _process_alive(_state["pid"]):
-        return
-    # 进程已退；尝试 waitpid 拿 exit code（非阻塞）
-    try:
-        _, exit_status = os.waitpid(_state["pid"], os.WNOHANG)
-        rc = os.WEXITSTATUS(exit_status) if os.WIFEXITED(exit_status) else -1
-    except ChildProcessError:
-        # 已被 reap，从 log 末尾推断（fallback）
-        rc = 0
-    _state["finished_at"] = datetime.now().isoformat(timespec="seconds")
-    _state["exit_code"] = rc
+    rc = proc.poll()
+    if rc is not None:
+        _state["finished_at"] = datetime.now().isoformat(timespec="seconds")
+        _state["exit_code"] = rc
+
+
+def _is_running() -> bool:
+    """是否还在跑（不修改状态）；用于 POST /run 的 409 检测。"""
+    proc = _state["process"]
+    if proc is None:
+        return False
+    return proc.poll() is None
 
 
 def _tail_log(path: Optional[str], n: int = 200) -> list[str]:
@@ -103,7 +102,7 @@ def _tail_log(path: Optional[str], n: int = 200) -> list[str]:
 @router.post("/run", response_model=RunResponse)
 def run_daily(req: RunRequest):
     _refresh_terminal_status()
-    if _state["pid"] is not None and _process_alive(_state["pid"]):
+    if _is_running():
         raise HTTPException(
             status_code=409,
             detail=f"Daily 已在跑 (job_id={_state['job_id']}, started_at={_state['started_at']})",
@@ -133,6 +132,7 @@ def run_daily(req: RunRequest):
 
     _state.update({
         "job_id": job_id,
+        "process": proc,
         "pid": proc.pid,
         "started_at": datetime.now().isoformat(timespec="seconds"),
         "finished_at": None,
@@ -152,8 +152,7 @@ def daily_status():
     _refresh_terminal_status()
     if _state["job_id"] is None:
         return StatusResponse(status="idle")
-    alive = _process_alive(_state["pid"])
-    if alive:
+    if _is_running():
         status = "running"
     else:
         status = "success" if (_state["exit_code"] == 0) else "failed"

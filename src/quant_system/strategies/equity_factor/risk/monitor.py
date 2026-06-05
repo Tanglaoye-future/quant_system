@@ -25,6 +25,7 @@ from quant_system.strategies.equity_factor.journal.journal import Journal
 from quant_system.strategies.equity_factor.timing.exit_taxonomy import exit_layer_from_reason
 from quant_system.strategies.equity_factor.timing.signals import (
     TimingConfig,
+    enrich,
     exit_signal,
     trailing_stop,
 )
@@ -52,6 +53,9 @@ class PositionRisk:
     ma_long: Optional[float] = None
     dist_to_stop_pct: Optional[float] = None       # (close - new_stop) / close；None=无止损
     dist_to_ma_long_pct: Optional[float] = None    # (close - MA60) / close；None=MA60 数据不足
+    # 止盈目标：entry + atr_target_mult × ATR (默认 4×ATR)，与 exit_signal 的 take_profit 路径同公式
+    take_profit: Optional[float] = None
+    dist_to_target_pct: Optional[float] = None     # (take_profit - close) / close；None=ATR 数据不足
 
 
 @dataclass
@@ -180,6 +184,26 @@ class RiskMonitor:
                 if current_price > 0 and ma_long_val is not None
                 else None
             )
+            # 止盈目标：与 exit_signal 公式同步（entry + atr_target_mult × ATR）
+            # 注：partial_exit / runner / regime filter 的状态当前不在 PG snapshots 里追踪，
+            # monitor 沿用 base TP 路径展示；策略层走 partial 后的实际剩余目标不在本视图内
+            atr_today: Optional[float] = None
+            try:
+                last_enriched = enrich(px, self.cfg).iloc[-1]
+                a = last_enriched["atr"]
+                if a == a:  # not NaN
+                    atr_today = float(a)
+            except Exception:
+                pass
+            take_profit_val: Optional[float] = (
+                trade["entry_price"] + self.cfg.atr_target_mult * atr_today
+                if atr_today is not None else None
+            )
+            dist_target = (
+                (take_profit_val - current_price) / current_price
+                if take_profit_val is not None and current_price > 0
+                else None
+            )
 
             positions.append(PositionRisk(
                 trade_id=trade["id"], symbol=trade["symbol"], market=trade["market"],
@@ -192,6 +216,8 @@ class RiskMonitor:
                 ma_long=ma_long_val,
                 dist_to_stop_pct=dist_stop,
                 dist_to_ma_long_pct=dist_ma,
+                take_profit=take_profit_val,
+                dist_to_target_pct=dist_target,
             ))
 
         port = self._aggregate(positions, self.portfolio_risk_cfg)

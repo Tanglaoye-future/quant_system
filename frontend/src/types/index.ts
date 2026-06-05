@@ -25,6 +25,8 @@ export interface QuantPosition {
   ma_long?: number | null;
   dist_to_stop_pct?: number | null;
   dist_to_ma_long_pct?: number | null;
+  take_profit?: number | null;
+  dist_to_target_pct?: number | null;
 }
 
 export interface QuantData {

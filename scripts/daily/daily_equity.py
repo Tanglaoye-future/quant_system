@@ -168,9 +168,14 @@ def main() -> None:
         warn = " ⚠ 临界" if is_critical else ""
         if is_critical:
             n_critical += 1
+        # 止盈视图：止盈价 + 距离百分比；不参与临界判定（接近止盈不是风险）
+        tp_seg = (
+            f"止盈 {p.take_profit:.2f} (距 {p.dist_to_target_pct*100:+.2f}%)"
+            if (p.take_profit is not None and p.dist_to_target_pct is not None) else "止盈 —"
+        )
         print(f"  #{p.trade_id} {p.symbol}  浮盈 {p.pnl_pct*100:+.2f}%  "
               f"止损 {prev}→{p.new_stop:.2f}{delta} ({stop_seg})  "
-              f"{ma_seg}  持有 {p.hold_days} 天{warn}")
+              f"{ma_seg}  {tp_seg}  持有 {p.hold_days} 天{warn}")
         if cat.to_label() != "-":
             flag = "⚠ 利空" if cat.is_negative() else ("✓ 利好" if cat.is_positive() else "")
             print(f"      催化剂: {cat.to_label()}  {flag}")
@@ -414,12 +419,14 @@ def main() -> None:
             "hold_days": getattr(p, "hold_days", 0),
             "pnl_pct": round(float(p.pnl_pct), 4) if hasattr(p, "pnl_pct") else None,
             "action": p.action,
-            # safety margin 字段（前端 dashboard 列：距止损 / 距 MA60）
+            # safety margin 字段（前端 dashboard 列：距止损 / 距 MA60 / 距止盈）
             "current_price": round(float(p.current_price), 2) if getattr(p, "current_price", None) is not None else None,
             "stop_loss": round(float(p.new_stop), 2) if getattr(p, "new_stop", None) is not None else None,
             "ma_long": round(float(p.ma_long), 2) if getattr(p, "ma_long", None) is not None else None,
             "dist_to_stop_pct": round(float(p.dist_to_stop_pct), 4) if getattr(p, "dist_to_stop_pct", None) is not None else None,
             "dist_to_ma_long_pct": round(float(p.dist_to_ma_long_pct), 4) if getattr(p, "dist_to_ma_long_pct", None) is not None else None,
+            "take_profit": round(float(p.take_profit), 2) if getattr(p, "take_profit", None) is not None else None,
+            "dist_to_target_pct": round(float(p.dist_to_target_pct), 4) if getattr(p, "dist_to_target_pct", None) is not None else None,
         })
 
     report_payload = {

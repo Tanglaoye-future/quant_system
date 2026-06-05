@@ -107,6 +107,9 @@ def _verify_file(session, fpath: Path, target_date: str) -> tuple[str, list[str]
         # 仅此处逐字段比对会显现），按同一规则归一后再比，避免 None vs 回填值的假阳。
         payload = dict(payload)
         payload["strategy_name"] = payload.get("strategy_name") or payload.get("strategy")
+        # portfolio_alerts 是 PortfolioRiskConfig 运行时评估结果（derived），不入 DB；
+        # 比对前剔除，避免 JSON=[] vs DB 缺字段的假阳。
+        payload.pop("portfolio_alerts", None)
 
     db_payload = repositories.run_to_payload(run)
     diffs = _differences(db_payload, payload)

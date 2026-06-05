@@ -55,6 +55,18 @@ export const positionColumns: ColumnDef<QuantPosition>[] = [
     },
   },
   {
+    key: 'dist_to_target_pct',
+    header: '距止盈',
+    // 止盈是上方空间，不参与临界判定；离目标越近反而是好事；用蓝色中性显示
+    render: (r) => {
+      if (r.dist_to_target_pct === null || r.dist_to_target_pct === undefined) {
+        return <span className="text-[#86868b]">—</span>;
+      }
+      const sign = r.dist_to_target_pct >= 0 ? '+' : '';
+      return <span className="text-[#0071e3]">{sign}{(r.dist_to_target_pct * 100).toFixed(2)}%</span>;
+    },
+  },
+  {
     key: 'action',
     header: '操作',
     render: (r) => {
