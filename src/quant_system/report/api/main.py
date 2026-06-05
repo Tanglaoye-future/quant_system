@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from quant_system.report.api.routes import router as report_router, DATA_DIR, _read_json
+from quant_system.report.api.daily import router as daily_router
 
 app = FastAPI(title="Quant Report API", version="1.0.0")
 
@@ -22,6 +23,7 @@ app.add_middleware(
 )
 
 app.include_router(report_router)
+app.include_router(daily_router)
 
 
 @app.get("/api/health")

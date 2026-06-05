@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import DailyRunButton from './DailyRunButton';
 
 export default function Layout({
   date,
@@ -30,6 +31,7 @@ export default function Layout({
             {updatedAt && (
               <span className="text-xs text-[#aeaeb2]">更新 {updatedAt}</span>
             )}
+            <DailyRunButton onComplete={onRefresh} />
             <button
               onClick={onRefresh}
               disabled={loading}
