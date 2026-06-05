@@ -124,7 +124,8 @@ backtest:
 # TODO: max_drawdown_pct 真历史 peak 待 zhuang_portfolio_history 表加上后接入；
 #       当前用 unrealized_pnl_floor_pct 作账户层 stop alarm 兜底。
 portfolio_risk:
-  enabled: false
+  # 2026-06-06 开启实盘风控:当前 3 仓位 (豫园/创维/长电力) 单只最大 33.8% > 0.30 应触发集中度告警
+  enabled: true
   # 单只市值占组合 > 阈值 → 集中度告警
   # 建议初值 0.30（tiered sizing 上限 6% × 6 仓 = 36%，留 headroom）
   max_single_weight_pct: 0.30
