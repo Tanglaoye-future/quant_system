@@ -76,6 +76,7 @@ function zhuangActionStyle(action: string): string {
 
 export const zhuangPositionColumns: ColumnDef<ZhuangPosition>[] = [
   { key: 'code', header: '代码', render: (r) => <span className="font-semibold">{r.code}</span> },
+  { key: 'name', header: '名称', render: (r) => r.name || '—' },
   { key: 'entry_date', header: '入场日', render: (r) => r.entry_date || '—' },
   { key: 'hold_days', header: '持有天', render: (r) => (r.hold_days != null ? `${r.hold_days} 天` : '—') },
   { key: 'pnl_pct', header: '浮盈', render: (r) => <span className={`font-semibold ${colorPnl(r.pnl_pct)}`}>{fmtPct(r.pnl_pct)}</span> },
@@ -109,6 +110,7 @@ export const zhuangPositionColumns: ColumnDef<ZhuangPosition>[] = [
 export const zhuangColumns: ColumnDef<ZhuangCandidate>[] = [
   { key: 'rank', header: '#', render: (_, i) => <span className="text-[#86868b]">{i + 1}</span> },
   { key: 'code', header: '代码', render: (r) => <span className="font-semibold">{r.code}</span> },
+  { key: 'name', header: '名称', render: (r) => r.name || '—' },
   { key: 'ma_convergence', header: 'MA 收敛', render: (r) => r.ma_convergence.toFixed(1) },
   { key: 'volume_asymmetry', header: '量价不对称', render: (r) => r.volume_asymmetry.toFixed(1) },
   { key: 'price_consolidation', header: '价格横盘', render: (r) => r.price_consolidation.toFixed(1) },

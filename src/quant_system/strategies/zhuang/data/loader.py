@@ -122,11 +122,50 @@ class ZhuangDataLoader:
         if cache_path.exists() and self._cache_fresh(cache_path):
             return pd.read_csv(cache_path, dtype={"code": str})["code"].tolist()
 
-        codes = self._fetch_universe(asof)
-        pd.DataFrame({"code": codes}).to_csv(cache_path, index=False)
+        codes, _names = self._fetch_universe(asof)
+        # 向后兼容: 旧调用方读 universe_<date>.csv 只取 code 列;
+        # 新调用方走 get_name_map() 读同文件的 name 列
+        out = pd.DataFrame({"code": codes})
+        if _names:
+            out["name"] = [_names.get(c, "") for c in codes]
+        out.to_csv(cache_path, index=False)
         return codes
 
-    def _fetch_universe(self, asof: str) -> list[str]:
+    def get_name_map(self, asof: str) -> dict[str, str]:
+        """code -> 股票名称 映射. 三级 fallback:
+        1. universe_<date>.csv 有 name 列直接读 (新格式 cache, ~ms)
+        2. names_<date>.csv 单文件缓存 (~ms)
+        3. baostock query_stock_basic 全量拉 (~5s, 不走慢的 totalShare 路径)
+
+        dashboard / daily 报告需要给持仓 + top_candidates 填中文名.
+        """
+        # ── L1: universe cache 新格式
+        uni_cache = self.cache_dir / f"universe_{asof}.csv"
+        if uni_cache.exists() and self._cache_fresh(uni_cache):
+            df = pd.read_csv(uni_cache, dtype={"code": str})
+            if "name" in df.columns:
+                return dict(zip(df["code"], df["name"].fillna("").astype(str)))
+
+        # ── L2: 专用 names cache
+        names_cache = self.cache_dir / f"names_{asof}.csv"
+        if names_cache.exists() and self._cache_fresh(names_cache):
+            df = pd.read_csv(names_cache, dtype={"code": str})
+            return dict(zip(df["code"], df["name"].fillna("").astype(str)))
+
+        # ── L3: 直接 query_stock_basic (5s 内, 不算 totalShare/价格那些慢字段)
+        self._login()
+        rs = bs.query_stock_basic()
+        rows = []
+        while rs.error_code == "0" and rs.next():
+            rows.append(rs.get_row_data())
+        df = pd.DataFrame(rows, columns=rs.fields)
+        df = df[(df["type"] == "1") & (df["status"] == "1")].copy()
+        df["plain_code"] = df["code"].apply(_to_plain_code)
+        out = pd.DataFrame({"code": df["plain_code"], "name": df["code_name"]})
+        out.to_csv(names_cache, index=False)
+        return dict(zip(out["code"], out["name"].fillna("").astype(str)))
+
+    def _fetch_universe(self, asof: str) -> tuple[list[str], dict[str, str]]:
         """
         用 BaoStock 拉全量 A 股基本信息，过滤市值/ST/上市天数/价格。
 
@@ -280,7 +319,9 @@ class ZhuangDataLoader:
         ]
 
         print(f"[loader] 市值{cap_min/1e8:.0f}-{cap_max/1e8:.0f}亿 + 价格≥{min_price}: {len(filtered)} 只", flush=True)
-        return sorted(filtered["plain_code"].tolist())
+        codes_sorted = sorted(filtered["plain_code"].tolist())
+        name_map = dict(zip(filtered["plain_code"], filtered["code_name"]))
+        return codes_sorted, name_map
 
     # ── 日线行情 ───────────────────────────────────────────────────────────────
 

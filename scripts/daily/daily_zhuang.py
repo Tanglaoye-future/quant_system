@@ -232,6 +232,9 @@ def main():
         print(f"  ⚠ {n_critical}/{len(holds)} 只贴近止损 (margin < {CRITICAL_MARGIN*100:.0f}%)，"
               "组合层均值可能掩盖单只风险")
 
+    # 加载 universe code → 名称 映射 (持仓 + 候选填中文名, dashboard 操盘人友好)
+    name_map = loader.get_name_map(args.date)
+
     # ── Step 2: 全 universe 扫候选（报表用，沿用旧逻辑）─────────────────────────
     universe = loader.get_universe(args.date)
     print()
@@ -406,7 +409,7 @@ def main():
     report_positions = []
     for r in exits + holds:
         report_positions.append({
-            "code": r["code"], "name": "",
+            "code": r["code"], "name": name_map.get(r["code"], ""),
             "entry_date": next((t["entry_date"] for t in open_trades if t["code"] == r["code"]), ""),
             "hold_days": r["hold_days"],
             "pnl_pct": _round_or_none(r["pnl_pct"], 4),
@@ -421,7 +424,7 @@ def main():
         })
     for t in new_trades:
         report_positions.append({
-            "code": t["code"], "name": "", "entry_date": args.date,
+            "code": t["code"], "name": name_map.get(t["code"], ""), "entry_date": args.date,
             "hold_days": 0, "pnl_pct": 0.0, "action": "建仓",
             "entry_price": _round_or_none(t["entry_px"], 2),
             "current_price": _round_or_none(t["entry_px"], 2),
@@ -432,16 +435,18 @@ def main():
         })
 
     top15 = df_out.head(15).to_dict(orient="records") if not df_out.empty else []
+    top15_with_name = []
+    for row in top15:
+        item = {k: (float(v) if hasattr(v, "item") else v) for k, v in row.items()}
+        item["name"] = name_map.get(item.get("code", ""), "")
+        top15_with_name.append(item)
     report_payload = {
         "date": args.date,
         "market": market,
         "universe_size": len(universe),
         "candidates_count": len(df_out),
         "market_trend": market_trend,
-        "top_candidates": [
-            {k: (float(v) if hasattr(v, "item") else v) for k, v in row.items()}
-            for row in top15
-        ],
+        "top_candidates": top15_with_name,
         "positions": report_positions,
         # 组合层风控 alerts（默认 enabled: false → 永远 []，零回归）
         "portfolio_alerts": portfolio_alerts,

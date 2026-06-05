@@ -69,6 +69,7 @@ export interface OptionsData {
 
 export interface ZhuangCandidate {
   code: string;
+  name?: string;
   ma_convergence: number;
   volume_asymmetry: number;
   price_consolidation: number;
