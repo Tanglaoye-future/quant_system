@@ -1,5 +1,6 @@
 # Memory Index
 
+- **[2026-06-04 实盘风控 v1 收工](session_2026_06_04_realtime_risk_v1.md)** ⭐ — 用户首次实盘 (4 只 A_mom) "大幅回撤" 焦虑触发的 audit；safety margin (Step 1) + 组合层 alerts (Step 2) 全链路接入；max DD + 盘中实时 Step 3 推迟；4 commit；default thresholds 已据当日实盘数据落 yaml
 - [前端 single-pane 2026-06](frontend_single_pane_2026-06.md) — Phase 3 消弭 HTML 报告孤岛，panic dashboard 全量接入前端；rebuild_html_report → no-op；后续所有新数据必须走 JSON+API+前端组件
 - **[2026-06-01 收工 + 下个 session backlog](session_2026_06_01_handoff.md)** ⭐ — 新 session cold-start 读此文件；15 条证伪累积 + 五层 efficient set 同构 (含 A 股因子 universe 维度); A2 CSI1000 paradox 软证伪 (06-01 续盘); 下个 alpha 通道仅剩 C ensemble precheck / 新数据源 / 真做空 / 实盘 KPI
 - [A2 CSI1000 L9-B paradox 软证伪 2026-06](a2_csi1000_l9b_paradox_falsified_2026-06.md) — HS300 ROIC×ROE Spearman 全 asof 0.92-0.95, AR YoY 是中国累计申报季节性 artifact; 切 universe 不解耦 → 第 15 条证伪 + 五层 efficient set 升级; paradox precheck 脚本可复用
