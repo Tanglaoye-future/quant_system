@@ -84,6 +84,12 @@ export interface ZhuangPosition {
   hold_days: number | null;
   pnl_pct: number | null;
   action: string;
+  entry_price?: number | null;
+  current_price?: number | null;
+  stop_loss?: number | null;
+  take_profit?: number | null;
+  dist_to_stop_pct?: number | null;
+  dist_to_target_pct?: number | null;
 }
 
 export interface ZhuangData {
@@ -94,6 +100,7 @@ export interface ZhuangData {
   market_trend: boolean | null;
   top_candidates: ZhuangCandidate[];
   positions?: ZhuangPosition[];
+  portfolio_alerts?: string[];
   _missing?: boolean;
 }
 

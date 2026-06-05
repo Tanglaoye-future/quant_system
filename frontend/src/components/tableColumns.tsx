@@ -80,6 +80,26 @@ export const zhuangPositionColumns: ColumnDef<ZhuangPosition>[] = [
   { key: 'hold_days', header: '持有天', render: (r) => (r.hold_days != null ? `${r.hold_days} 天` : '—') },
   { key: 'pnl_pct', header: '浮盈', render: (r) => <span className={`font-semibold ${colorPnl(r.pnl_pct)}`}>{fmtPct(r.pnl_pct)}</span> },
   {
+    key: 'dist_to_stop_pct',
+    header: '距止损',
+    render: (r) => {
+      const m = fmtMargin(r.dist_to_stop_pct);
+      const warn = (r.dist_to_stop_pct ?? 1) < CRITICAL_MARGIN ? ' ⚠' : '';
+      return <span className={m.cls}>{m.text}{warn}</span>;
+    },
+  },
+  {
+    key: 'dist_to_target_pct',
+    header: '距止盈',
+    render: (r) => {
+      if (r.dist_to_target_pct === null || r.dist_to_target_pct === undefined) {
+        return <span className="text-[#86868b]">—</span>;
+      }
+      const sign = r.dist_to_target_pct >= 0 ? '+' : '';
+      return <span className="text-[#0071e3]">{sign}{(r.dist_to_target_pct * 100).toFixed(2)}%</span>;
+    },
+  },
+  {
     key: 'action',
     header: '操作',
     render: (r) => <span className={`inline-flex px-2 py-0.5 text-[11px] font-semibold rounded-md ${zhuangActionStyle(r.action)}`}>{r.action || '持有'}</span>,

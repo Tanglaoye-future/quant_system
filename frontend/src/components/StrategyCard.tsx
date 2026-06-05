@@ -66,6 +66,23 @@ export default function StrategyCard({ cell, showPlaceholder = true, quantData, 
       {/* ── active: metrics + data tables ── */}
       {isActive && strategy_kind === 'zhuang' && (
         <>
+          {(zhuangData?.portfolio_alerts ?? []).length > 0 && (
+            <div style={{
+              marginBottom: 12,
+              padding: '10px 14px',
+              borderRadius: 8,
+              background: '#ffe8e6',
+              border: '1px solid #ff453a',
+              fontSize: 13,
+              color: '#c0392b',
+              lineHeight: 1.6,
+            }}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>⚠ 组合层告警</div>
+              {(zhuangData?.portfolio_alerts ?? []).map((a, i) => (
+                <div key={i}>· {a}</div>
+              ))}
+            </div>
+          )}
           <MetricGrid>
             <MetricCard label="当前持仓" value={zhuangPositions.length} sub="最大 6 仓" />
             <MetricCard label="候选数" value={zhuangCandidates.length} sub="score≥45" />
