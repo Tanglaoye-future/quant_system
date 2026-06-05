@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { runDaily, getDailyStatus, type DailyStatus } from '../api/client';
 
 interface Props {
@@ -87,7 +88,8 @@ export default function DailyRunButton({ onComplete }: Props) {
           {showLog ? '隐藏日志' : '查看日志'}
         </button>
       )}
-      {showLog && status?.log_tail && status.log_tail.length > 0 && (
+      {/* Portal 到 document.body 逃出 header 父元素的 transform/filter（否则 position:fixed 会绑到父元素，面板漂到右上挡住按钮）*/}
+      {showLog && status?.log_tail && status.log_tail.length > 0 && createPortal(
         <div
           className="overflow-auto rounded-xl shadow-2xl bg-[#1d1d1f] text-[#f5f5f7] text-[11px] font-mono"
           style={{
@@ -102,15 +104,34 @@ export default function DailyRunButton({ onComplete }: Props) {
             zIndex: 9999,
           }}
         >
-          <div className="flex items-center justify-between mb-2 sticky top-0 bg-[#1d1d1f] py-1">
+          <div
+            className="flex items-center justify-between mb-2 sticky top-0 bg-[#1d1d1f]"
+            style={{ paddingTop: 4, paddingBottom: 8 }}
+          >
             <div className="text-[#86868b]">
               {status.job_id} · {status.status}
               {status.exit_code !== null && status.exit_code !== undefined && ` · exit ${status.exit_code}`}
             </div>
-            <button onClick={() => setShowLog(false)} className="text-[#86868b] hover:text-white">×</button>
+            {/* 大号关闭按钮：文字 + ×；touch target 28px 以上 */}
+            <button
+              onClick={() => setShowLog(false)}
+              style={{
+                padding: '4px 12px',
+                borderRadius: 6,
+                backgroundColor: '#3a3a3c',
+                color: '#f5f5f7',
+                fontSize: 12,
+                fontWeight: 500,
+                border: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              关闭 ×
+            </button>
           </div>
           <pre className="whitespace-pre-wrap break-words">{status.log_tail.join('\n')}</pre>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
