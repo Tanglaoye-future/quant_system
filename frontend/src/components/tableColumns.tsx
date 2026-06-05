@@ -45,15 +45,7 @@ export const positionColumns: ColumnDef<QuantPosition>[] = [
       return <span className={m.cls}>{m.text}{warn}</span>;
     },
   },
-  {
-    key: 'dist_to_ma_long_pct',
-    header: '距 MA60',
-    render: (r) => {
-      const m = fmtMargin(r.dist_to_ma_long_pct);
-      const warn = (r.dist_to_ma_long_pct ?? 1) < CRITICAL_MARGIN ? ' ⚠' : '';
-      return <span className={m.cls}>{m.text}{warn}</span>;
-    },
-  },
+  // 距 MA60 后端 ⚠ 临界检测仍用，前端不显示（避免噪音；用户判断止损/止盈即可）
   {
     key: 'dist_to_target_pct',
     header: '距止盈',
