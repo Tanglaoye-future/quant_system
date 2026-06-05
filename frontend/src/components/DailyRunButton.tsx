@@ -45,7 +45,8 @@ export default function DailyRunButton({ onComplete }: Props) {
       const s = await getDailyStatus();
       setStatus(s);
       lastStatusRef.current = s.status;
-      setShowLog(true);   // 启动后展开日志
+      // 不自动展开日志面板 —— 用户后台跑 daily 不希望屏幕被弹窗打扰
+      // 想看进度按下面的「查看日志」按钮
     } catch (e: any) {
       alert(`无法启动 daily：${e?.message ?? e}`);
     } finally {
@@ -88,8 +89,18 @@ export default function DailyRunButton({ onComplete }: Props) {
       )}
       {showLog && status?.log_tail && status.log_tail.length > 0 && (
         <div
-          className="fixed right-4 bottom-4 w-[640px] max-h-[60vh] overflow-auto rounded-xl shadow-2xl bg-[#1d1d1f] text-[#f5f5f7] text-[11px] font-mono z-50"
-          style={{ padding: 14 }}
+          className="overflow-auto rounded-xl shadow-2xl bg-[#1d1d1f] text-[#f5f5f7] text-[11px] font-mono"
+          style={{
+            position: 'fixed',
+            right: 16,
+            bottom: 16,
+            top: 'auto',
+            left: 'auto',
+            width: 640,
+            maxHeight: '60vh',
+            padding: 14,
+            zIndex: 9999,
+          }}
         >
           <div className="flex items-center justify-between mb-2 sticky top-0 bg-[#1d1d1f] py-1">
             <div className="text-[#86868b]">

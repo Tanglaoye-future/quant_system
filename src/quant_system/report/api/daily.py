@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -115,11 +116,18 @@ def run_daily(req: RunRequest):
     job_id = f"daily_{ts}"
     log_path = LOG_DIR / f"daily_api_{ts}.log"
 
-    cmd = ["bash", str(RUN_SCRIPT)]
+    # detach 三道保险（API 进程重启 / 用户关闭浏览器 / SIGHUP 都不杀子进程）：
+    #   1. nohup 前缀屏蔽 SIGHUP（stdout/stderr 已显式 redirect，nohup 不再触发 nohup.out）
+    #   2. preexec_fn 走 fork+exec 路径 + 子进程内 os.setsid() 脱离父 session
+    #   3. SIGHUP 再 IGN 一次（nohup 兜底）
+    cmd = ["nohup", "bash", str(RUN_SCRIPT)]
     if req.skip_options:
         cmd.append("--no-options")
 
-    # detach: 不继承 stdin / stdout / stderr → API 关闭也不杀子进程
+    def _detach_preexec():
+        os.setsid()
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
+
     log_fh = open(log_path, "wb")
     proc = subprocess.Popen(
         cmd,
@@ -127,7 +135,8 @@ def run_daily(req: RunRequest):
         stdin=subprocess.DEVNULL,
         stdout=log_fh,
         stderr=subprocess.STDOUT,
-        start_new_session=True,
+        preexec_fn=_detach_preexec,
+        close_fds=True,
     )
 
     _state.update({
