@@ -130,6 +130,12 @@ def main():
     print("=" * 78)
 
     # ── Step 1: 风控（open 持仓出场评估 + 盯市快照，advisory 不自动平）─────────
+    # safety margin 阈值：距离 < 1% 算"贴线"，与 equity_factor 同款
+    CRITICAL_MARGIN = 0.01
+    atr_mult_cfg = float(strat.get("stop_loss_atr_mult", 1.5))
+    max_stop_cfg = float(strat.get("max_stop_loss_pct", 0.06))
+    tp_pct_cfg = float(strat.get("take_profit_pct", 0.10))
+
     open_trades = journal.list_open()
     open_codes = {t["code"] for t in open_trades}
     exits, holds = [], []
@@ -138,7 +144,11 @@ def main():
         df_since = loader.get_daily(code, tr["entry_date"], args.date)
         if df_since is None or df_since.empty:
             holds.append({"code": code, "pnl_pct": None, "hold_days": None,
-                          "action": "持有", "reason": "无行情(停牌?)"})
+                          "action": "持有", "reason": "无行情(停牌?)",
+                          "entry_price": tr["entry_price"], "entry_size": tr.get("entry_size"),
+                          "current_price": None, "stop_loss": tr.get("stop_loss_price"),
+                          "take_profit": tr.get("take_profit_price"),
+                          "dist_to_stop_pct": None, "dist_to_target_pct": None})
             continue
         atr_entry = tr.get("atr_at_entry") or (tr["entry_price"] * 0.03)
         sig = check_exit_signal(
@@ -147,10 +157,10 @@ def main():
             entry_price=tr["entry_price"],
             entry_date=tr["entry_date"],
             atr_at_entry=atr_entry,
-            stop_loss_atr_mult=float(strat.get("stop_loss_atr_mult", 1.5)),
-            max_stop_loss_pct=float(strat.get("max_stop_loss_pct", 0.06)),
+            stop_loss_atr_mult=atr_mult_cfg,
+            max_stop_loss_pct=max_stop_cfg,
             momentum_stop_pct=float(strat.get("momentum_stop_pct", 0.03)),
-            take_profit_pct=float(strat.get("take_profit_pct", 0.10)),
+            take_profit_pct=tp_pct_cfg,
             max_hold_days=int(strat.get("max_hold_days", 10)),
             extend_hold_days=int(strat.get("extend_hold_days", 25)),
             extend_profit_pct=float(strat.get("extend_profit_pct", 0.05)),
@@ -160,12 +170,30 @@ def main():
         pnl_pct = today_close / tr["entry_price"] - 1.0
         hold_days = len(df_since) - 1
         is_exit = sig.action == "EXIT"
+
+        # safety margin：止损 = ATR 止损 vs 固定比例止损取较高者（与 check_exit_signal 同公式），
+        # 与 ledger 里 stop_loss_price 一致；止盈 = entry × (1 + tp_pct)。
+        # zhuang 止损当前不 trail（静态），所以 ledger.stop_loss_price 即为今日有效止损价。
+        stop_px = tr.get("stop_loss_price")
+        if stop_px is None or stop_px <= 0:
+            stop_px = max(tr["entry_price"] - atr_mult_cfg * atr_entry,
+                          tr["entry_price"] * (1.0 - max_stop_cfg))
+        tp_px = tr.get("take_profit_price") or tr["entry_price"] * (1.0 + tp_pct_cfg)
+        dist_to_stop = (today_close - stop_px) / today_close if today_close > 0 and stop_px > 0 else None
+        dist_to_target = (tp_px - today_close) / today_close if today_close > 0 and tp_px > 0 else None
+
         if not args.no_write:
             journal.add_snapshot(tr["id"], args.date, today_close,
                                  risk_flag="exit" if is_exit else "normal",
                                  note=sig.reason)
-        rec = {"code": code, "pnl_pct": pnl_pct, "hold_days": hold_days,
-               "action": "卖出" if is_exit else "持有", "reason": sig.reason}
+        rec = {
+            "code": code, "pnl_pct": pnl_pct, "hold_days": hold_days,
+            "action": "卖出" if is_exit else "持有", "reason": sig.reason,
+            "entry_price": tr["entry_price"], "entry_size": tr.get("entry_size"),
+            "current_price": today_close,
+            "stop_loss": float(stop_px), "take_profit": float(tp_px),
+            "dist_to_stop_pct": dist_to_stop, "dist_to_target_pct": dist_to_target,
+        }
         (exits if is_exit else holds).append(rec)
 
     print()
@@ -178,10 +206,31 @@ def main():
     print(f"【持有维持】 ({len(holds)} 笔)")
     if not holds:
         print("  无")
+    n_critical = 0
     for r in holds:
         pp = f"{r['pnl_pct']*100:+.2f}%" if r["pnl_pct"] is not None else "—"
         hd = r["hold_days"] if r["hold_days"] is not None else "—"
-        print(f"  {r['code']}  浮盈 {pp}  持有 {hd} 天")
+        # safety margin 段：与 equity_factor 同款，止损贴线 ⚠，止盈中性
+        stop_seg = (
+            f"距 {r['dist_to_stop_pct']*100:+.2f}%"
+            if r.get("dist_to_stop_pct") is not None else "距 —"
+        )
+        tp_seg = (
+            f"止盈 {r['take_profit']:.2f} (距 {r['dist_to_target_pct']*100:+.2f}%)"
+            if r.get("take_profit") is not None and r.get("dist_to_target_pct") is not None
+            else "止盈 —"
+        )
+        is_critical = (
+            r.get("dist_to_stop_pct") is not None and r["dist_to_stop_pct"] < CRITICAL_MARGIN
+        )
+        warn = " ⚠ 临界" if is_critical else ""
+        if is_critical:
+            n_critical += 1
+        stop_str = f"止损 {r['stop_loss']:.2f}" if r.get("stop_loss") is not None else "止损 —"
+        print(f"  {r['code']}  浮盈 {pp}  {stop_str} ({stop_seg})  {tp_seg}  持有 {hd} 天{warn}")
+    if n_critical > 0 and holds:
+        print(f"  ⚠ {n_critical}/{len(holds)} 只贴近止损 (margin < {CRITICAL_MARGIN*100:.0f}%)，"
+              "组合层均值可能掩盖单只风险")
 
     # ── Step 2: 全 universe 扫候选（报表用，沿用旧逻辑）─────────────────────────
     universe = loader.get_universe(args.date)
@@ -283,28 +332,103 @@ def main():
         else:
             print(f"【自动建仓】 无符合 Phase-A 入场条件的新仓 (可用槽位 {available_slots})")
 
-    # ── 组合摘要 ───────────────────────────────────────────────────────────────
+    # ── 组合摘要 + portfolio_alerts（与 equity_factor 06-04 同款 3 阈值，仅告警）──
+    # 复用已持仓的 size + current_price 算市值；新建仓按 entry_px × size 入账。
+    cost_basis = 0.0
+    market_value = 0.0
+    weights: list[tuple[str, float]] = []
+    worst_pnl: float | None = None
+    for r in exits + holds:
+        sz = r.get("entry_size") or 0
+        ep = r.get("entry_price") or 0.0
+        cp = r.get("current_price") if r.get("current_price") is not None else ep
+        if sz and ep:
+            cost_basis += sz * ep
+            mv = sz * cp
+            market_value += mv
+            weights.append((r["code"], mv))
+        if r.get("pnl_pct") is not None:
+            worst_pnl = r["pnl_pct"] if worst_pnl is None else min(worst_pnl, r["pnl_pct"])
+    for t in new_trades:
+        sz = t["size"]
+        ep = t["entry_px"]
+        cost_basis += sz * ep
+        mv = sz * ep
+        market_value += mv
+        weights.append((t["code"], mv))
+    unrealized_pnl = market_value - cost_basis
+    unrealized_pnl_pct = (unrealized_pnl / cost_basis) if cost_basis > 0 else 0.0
+    max_single_weight = (max(w for _, w in weights) / market_value) if (weights and market_value > 0) else 0.0
+    n_at_risk = len(exits)
+    n_positions_total = len(exits) + len(holds) + len(new_trades)
+
+    portfolio_alerts: list[str] = []
+    pr_node = config.get("portfolio_risk") or {}
+    if bool(pr_node.get("enabled", False)) and n_positions_total > 0:
+        max_w_thr = pr_node.get("max_single_weight_pct")
+        pnl_floor_thr = pr_node.get("unrealized_pnl_floor_pct")
+        exit_ratio_thr = pr_node.get("exit_signal_ratio_max")
+        if max_w_thr is not None and max_single_weight > float(max_w_thr):
+            portfolio_alerts.append(
+                f"单只权重 {max_single_weight*100:.1f}% > 阈值 {float(max_w_thr)*100:.0f}%（集中度）"
+            )
+        if pnl_floor_thr is not None and unrealized_pnl_pct < float(pnl_floor_thr):
+            portfolio_alerts.append(
+                f"组合浮盈 {unrealized_pnl_pct*100:+.2f}% < 阈值 {float(pnl_floor_thr)*100:+.0f}%（账户层 stop alarm）"
+            )
+        if exit_ratio_thr is not None and n_positions_total > 0:
+            ratio = n_at_risk / n_positions_total
+            if ratio > float(exit_ratio_thr):
+                portfolio_alerts.append(
+                    f"EXIT 信号占比 {ratio*100:.0f}% > 阈值 {float(exit_ratio_thr)*100:.0f}%（panic 信号）"
+                )
+
     total_open = len(open_trades) + len(new_trades)
     print()
     print("【组合摘要】")
-    print(f"  持仓 {total_open}/{pos_max} 只  (原有 {len(open_trades)} + 新建 {len(new_trades)})  "
-          f"卖出建议 {len(exits)} 笔")
+    if n_positions_total == 0:
+        print(f"  持仓 {total_open}/{pos_max} 只  当前空仓")
+    else:
+        print(f"  持仓 {total_open}/{pos_max} 只  (原有 {len(open_trades)} + 新建 {len(new_trades)})  "
+              f"卖出建议 {len(exits)} 笔")
+        if cost_basis > 0:
+            print(f"  总成本 {cost_basis:.0f} / 总市值 {market_value:.0f} / "
+                  f"浮盈 {unrealized_pnl_pct*100:+.2f}%  单只最大占比 {max_single_weight*100:.1f}%  "
+                  f"最差单只浮亏 {(worst_pnl or 0)*100:+.2f}%")
+    for alert in portfolio_alerts:
+        print(f"  ⚠ 组合层告警: {alert}")
     print()
 
-    # ── 报表 JSON（候选 + 持仓）─────────────────────────────────────────────────
+    # ── 报表 JSON（候选 + 持仓 + safety margin 字段）───────────────────────────
+    def _round_or_none(v, n=4):
+        return round(float(v), n) if v is not None else None
+
     report_positions = []
     for r in exits + holds:
         report_positions.append({
             "code": r["code"], "name": "",
             "entry_date": next((t["entry_date"] for t in open_trades if t["code"] == r["code"]), ""),
             "hold_days": r["hold_days"],
-            "pnl_pct": round(r["pnl_pct"], 4) if r["pnl_pct"] is not None else None,
+            "pnl_pct": _round_or_none(r["pnl_pct"], 4),
             "action": r["action"],
+            # safety margin 字段（与 equity_factor 同结构）
+            "entry_price": _round_or_none(r.get("entry_price"), 2),
+            "current_price": _round_or_none(r.get("current_price"), 2),
+            "stop_loss": _round_or_none(r.get("stop_loss"), 2),
+            "take_profit": _round_or_none(r.get("take_profit"), 2),
+            "dist_to_stop_pct": _round_or_none(r.get("dist_to_stop_pct"), 4),
+            "dist_to_target_pct": _round_or_none(r.get("dist_to_target_pct"), 4),
         })
     for t in new_trades:
         report_positions.append({
             "code": t["code"], "name": "", "entry_date": args.date,
             "hold_days": 0, "pnl_pct": 0.0, "action": "建仓",
+            "entry_price": _round_or_none(t["entry_px"], 2),
+            "current_price": _round_or_none(t["entry_px"], 2),
+            "stop_loss": _round_or_none(t["stop"], 2),
+            "take_profit": _round_or_none(t["tp"], 2),
+            "dist_to_stop_pct": _round_or_none((t["entry_px"] - t["stop"]) / t["entry_px"], 4),
+            "dist_to_target_pct": _round_or_none((t["tp"] - t["entry_px"]) / t["entry_px"], 4),
         })
 
     top15 = df_out.head(15).to_dict(orient="records") if not df_out.empty else []
@@ -319,6 +443,8 @@ def main():
             for row in top15
         ],
         "positions": report_positions,
+        # 组合层风控 alerts（默认 enabled: false → 永远 []，零回归）
+        "portfolio_alerts": portfolio_alerts,
     }
     _REPORT_DATA.mkdir(parents=True, exist_ok=True)
     (_REPORT_DATA / "zhuang.json").write_text(
