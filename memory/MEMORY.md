@@ -4,6 +4,7 @@
 - **[2026-06-07 PR1 portfolio_history 基建](session_2026_06_07_pr1_portfolio_history.md)** — 新方法论第一个 PR; portfolio_history 表 + UPSERT + 7 case 契约测试; 不算 peak DD (PR2 做); 227/227 pytest; merged
 - **[2026-06-07 PR2 max_drawdown peak DD 全链路](session_2026_06_07_pr2_max_drawdown.md)** — peak DD 计算接入 PortfolioRisk + portfolio_drawdown_pct 阈值 + nested portfolio_summary JSON + 前端展示; 236/236 pytest; 并行 agent worktree 隔离失败 lesson 沉淀
 - **[2026-06-07 PR3 options BCS 持仓字段对齐](session_2026_06_07_pr3_options_positions.md)** — options_positions 独立表 + IBKR leg→BCS spread 聚合 + breach_alerts (DTE<7/loss>50%) + 前端 OptionsPositionTable; 16 case; 252/252 pytest; 复用 PR2 agent 备份手术式 cherry-pick
+- **[2026-06-07 PR4 HK_mom+A_mr 副腿持仓回归](session_2026_06_07_pr4_hk_amr_regression.md)** — 8 case 测试锁定 v1 字段集 (safety margin / take_profit / portfolio_alerts) 在副腿生效 + 三腿 JSON shape 一致；纯测试 PR 零 prod patch；260/260 pytest；agent 备份直接采纳
 - **[2026-06-06 zhuang 持仓风控字段与 equity_factor 对齐](session_2026_06_06_zhuang_risk_parity.md)** ⭐ — 持仓表加 entry/current/stop/tp + 距止损 ⚠/距止盈 + portfolio_alerts banner (yaml 默认 OFF 零行为差异); verify_dualwrite 同步 pop alerts 防 06-05 回归; 3 commit
 - **[2026-06-05 dashboard one-click daily + 止盈视图](session_2026_06_05_dashboard_oneclick.md)** — POST /api/daily/run 一键跑 + take_profit/dist_to_target 接入持仓表 + MA60 列去前端 + 顺手修 daily API zombie / verify_dualwrite 假阳；5 commit
 - [视觉异常先要截图](feedback_screenshot_first.md) — 用户报告"弹了个东西/漂位/颜色异常"时先 AskUserQuestion 截图，不要瞎猜系统层根因；本次"黑框"misdiagnose 教训
