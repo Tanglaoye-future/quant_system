@@ -226,3 +226,33 @@ class ZhuangSnapshot(Base):
     note: Mapped[Optional[str]] = mapped_column(Text)
 
     trade: Mapped["ZhuangTrade"] = relationship(back_populates="snapshots")
+
+
+class PortfolioHistory(Base):
+    """组合层每日 equity / 持仓汇总历史 —— max_drawdown peak DD 计算的数据源。
+
+    每个 (asof, strategy_name, market) 一行，daily 收尾 UPSERT。
+    [[docs/specs/position_v2_harness.md]] §2 (PR1) — PR2 在此基础上算 peak DD。
+    """
+
+    __tablename__ = "portfolio_history"
+    __table_args__ = (
+        UniqueConstraint(
+            "asof", "strategy_name", "market", name="uq_portfolio_history_asof_strategy_market"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    asof: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    strategy_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    market: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    n_positions: Mapped[int] = mapped_column(Integer, nullable=False)
+    cost_basis: Mapped[float] = mapped_column(Float, nullable=False)
+    market_value: Mapped[float] = mapped_column(Float, nullable=False)
+    unrealized_pnl: Mapped[float] = mapped_column(Float, nullable=False)
+    unrealized_pnl_pct: Mapped[float] = mapped_column(Float, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

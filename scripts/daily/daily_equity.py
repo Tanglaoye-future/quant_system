@@ -454,8 +454,22 @@ def main() -> None:
     print(f"[report] {json_filename} → {_REPORT_DATA / json_filename}")
 
     # 双写 Postgres（Phase 2，env QUANT_PG_DUALWRITE 控制，失败不影响 JSON 跑批）
-    from quant_system.db.ingest import maybe_ingest_quant
+    from quant_system.db.ingest import maybe_ingest_quant, maybe_upsert_portfolio_history
     maybe_ingest_quant(report_payload)
+
+    # PR1：portfolio_history 收尾 UPSERT —— PR2 在此基础上算 peak DD
+    from datetime import date as _date
+    _ph_strategy_name = args.strategy_name or args.strategy or args.kind
+    maybe_upsert_portfolio_history(
+        asof=_date.fromisoformat(str(args.asof)[:10]),
+        strategy_name=_ph_strategy_name,
+        market=args.market,
+        n_positions=port.n_positions,
+        cost_basis=float(port.cost_basis),
+        market_value=float(port.market_value),
+        unrealized_pnl=float(port.unrealized_pnl),
+        unrealized_pnl_pct=float(port.unrealized_pnl_pct),
+    )
 
     # 自动重建 HTML 报告
     from quant_system.report.builder import rebuild_html_report

@@ -458,8 +458,21 @@ def main():
     print(f"[report] zhuang.json → {_REPORT_DATA / 'zhuang.json'}")
 
     # 双写 Postgres（失败不影响 JSON 跑批）
-    from quant_system.db.ingest import maybe_ingest_zhuang
+    from quant_system.db.ingest import maybe_ingest_zhuang, maybe_upsert_portfolio_history
     maybe_ingest_zhuang(report_payload)
+
+    # PR1：portfolio_history 收尾 UPSERT —— PR2 在此基础上算 peak DD
+    from datetime import date as _date
+    maybe_upsert_portfolio_history(
+        asof=_date.fromisoformat(str(args.date)[:10]),
+        strategy_name="zhuang",
+        market=market,
+        n_positions=n_positions_total,
+        cost_basis=float(cost_basis),
+        market_value=float(market_value),
+        unrealized_pnl=float(unrealized_pnl),
+        unrealized_pnl_pct=float(unrealized_pnl_pct),
+    )
 
     # 自动重建 HTML 报告
     from quant_system.report.builder import rebuild_html_report
