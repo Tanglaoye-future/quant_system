@@ -4,6 +4,7 @@ import GlassCard from './GlassCard';
 import MetricCard from './MetricCard';
 import MetricGrid from './MetricGrid';
 import DataTable from './DataTable';
+import OptionsPositionTable from './OptionsPositionTable';
 import { signalColumns, positionColumns, zhuangColumns, zhuangPositionColumns } from './tableColumns';
 
 /** _source label → strategy_name 映射, 用于从 quant 合并数据中提取对应策略的信号/持仓 */
@@ -195,6 +196,15 @@ export default function StrategyCard({ cell, showPlaceholder = true, quantData, 
                 <span>最大盈利: {optionsData.signal.max_profit}</span>
                 <span>最大亏损: {optionsData.signal.max_loss}</span>
               </div>
+            </div>
+          )}
+          {/* PR3: BCS 持仓表（spreads 字段从 daily_options.py IBKR fill 来；空时显「无 BCS 持仓」）*/}
+          {optionsData?.spreads !== undefined && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: 'var(--color-text)' }}>
+                当前 BCS 持仓
+              </div>
+              <OptionsPositionTable spreads={optionsData.spreads ?? []} />
             </div>
           )}
         </>

@@ -119,6 +119,13 @@ def _verify_file(session, fpath: Path, target_date: str) -> tuple[str, list[str]
         payload.pop("portfolio_alerts", None)
         # PR2: portfolio_summary 同 quant，pop 防假阳。
         payload.pop("portfolio_summary", None)
+    if kind == "options":
+        # PR3: spreads 入独立表 options_positions（不是 strategy_runs.metrics），与 quant
+        # strategy_runs 镜像路径解耦。此处先 pop 避免 JSON=[...] vs DB metrics 缺该字段的假阳；
+        # spreads 与 DB 的一致性由 tests/options/test_options_positions.py 契约覆盖。
+        # TODO(PR3+): 进一步加 JSON.spreads vs options_positions 表行的直接 join 校验。
+        payload = dict(payload)
+        payload.pop("spreads", None)
 
     db_payload = repositories.run_to_payload(run)
     diffs = _differences(db_payload, payload)
