@@ -32,11 +32,15 @@ _REPORT_DATA = Path(__file__).resolve().parents[2] / "report" / "data"
 def _write_report_json(
     iv, momentum, signal_detail: dict | None, reason: str,
     market_name: str, underlying_label: str,
+    spreads: list[dict] | None = None,
 ) -> None:
     """将期权系统今日结果写入 report/data/options[_<market>].json.
 
     单 market（us_qqq）保留写 options.json 维持前端报告 builder 兼容；
     多 market 时按 market 名分文件。
+
+    `spreads` 是 PR3 BCS 持仓字段对齐输出（IBKR 拉到 spread 时填入；HK / no-ibkr
+    场景为 [] 默认）；同步走 options_positions 表 UPSERT。
     """
     payload = {
         "date": date.today().strftime("%Y-%m-%d"),
@@ -51,6 +55,7 @@ def _write_report_json(
         "qqq_bullish": bool(momentum.bullish),
         "signal": signal_detail,
         "reason": reason,
+        "spreads": spreads or [],
     }
     _REPORT_DATA.mkdir(parents=True, exist_ok=True)
     fname = "options.json" if market_name == "us_qqq" else f"options_{market_name}.json"
@@ -60,8 +65,34 @@ def _write_report_json(
     print(f"[report] {fname} → {_REPORT_DATA / fname}")
 
     # 双写 Postgres（Phase 2，env QUANT_PG_DUALWRITE 控制，失败不影响 JSON 跑批）
-    from quant_system.db.ingest import maybe_ingest_options
+    from quant_system.db.ingest import maybe_ingest_options, maybe_upsert_options_position
     maybe_ingest_options(payload)
+
+    # PR3: spreads 入 options_positions 表（每个 spread 独立 UPSERT；空 list 无副作用）
+    if spreads:
+        from datetime import date as _date
+        asof = _date.today()
+        for sp in spreads:
+            try:
+                expiry = _date.fromisoformat(sp["expiry"])
+            except Exception:
+                continue
+            maybe_upsert_options_position(
+                asof=asof,
+                underlying=underlying_label,
+                spread_type="BCS",
+                long_strike=float(sp["long_strike"]),
+                short_strike=float(sp["short_strike"]),
+                expiry=expiry,
+                contracts=int(sp["contracts"]),
+                debit_paid=float(sp["debit_paid"]),
+                max_profit=float(sp["max_profit"]),
+                max_loss=float(sp["max_loss"]),
+                days_to_exp=int(sp["days_to_exp"]),
+                current_value=sp.get("current_value"),
+                pnl_pct=sp.get("pnl_pct"),
+                breach_alerts=sp.get("breach_alerts") or [],
+            )
 
 
 def parse_args():
@@ -240,10 +271,31 @@ def _run_one_market(
                     "contracts": sizing["contracts"],
                     "net_debit": round(float(spread.net_debit), 2),
                 }
-                _write_report_json(iv, momentum, signal_detail, "有效信号，已连接 IBKR",
-                                   market_name, underlying_label)
+                # PR3: 聚合 IBKR 单 leg → BCS spread JSON 行
+                from quant_system.strategies.options.engine.monitor import (
+                    aggregate_bull_call_spreads, check_positions,
+                )
+                spreads: list[dict] = []
+                try:
+                    raw_positions = client.get_option_positions(underlying)
+                    def _quote_lookup(ls, ss, exp_str):
+                        try:
+                            lq = client.get_option_quote(underlying, exp_str, ls, "C")
+                            sq = client.get_option_quote(underlying, exp_str, ss, "C")
+                            if lq is None or sq is None:
+                                return None
+                            return float(lq.mid) - float(sq.mid)
+                        except Exception:
+                            return None
+                    spreads = aggregate_bull_call_spreads(
+                        raw_positions, spread_quote_lookup=_quote_lookup
+                    )
+                except Exception as agg_exc:
+                    print(f"[PR3] BCS spread 聚合失败 (不阻塞主路径): {agg_exc}")
 
-                from quant_system.strategies.options.engine.monitor import check_positions
+                _write_report_json(iv, momentum, signal_detail, "有效信号，已连接 IBKR",
+                                   market_name, underlying_label, spreads=spreads)
+
                 print(f"[监控] 检查 {underlying_label} 期权持仓...", flush=True)
                 alerts = check_positions(
                     client=client,

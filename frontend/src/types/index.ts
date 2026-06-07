@@ -67,6 +67,21 @@ export interface OptionsSignal {
   net_debit: number;
 }
 
+/** BCS spread 持仓行 — docs/specs/position_v2_harness.md §4.4 (PR3). */
+export interface OptionsSpread {
+  long_strike: number;
+  short_strike: number;
+  expiry: string;
+  contracts: number;
+  debit_paid: number;
+  max_profit: number;
+  max_loss: number;
+  current_value: number | null;
+  days_to_exp: number;
+  pnl_pct: number | null;
+  breach_alerts: string[];
+}
+
 export interface OptionsData {
   date: string;
   ivr: number;
@@ -78,6 +93,7 @@ export interface OptionsData {
   qqq_bullish: boolean;
   signal: OptionsSignal | null;
   reason: string;
+  spreads?: OptionsSpread[];
   _missing?: boolean;
 }
 

@@ -23,7 +23,13 @@ from typing import Any, Callable, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from quant_system.db.models import PortfolioHistory, Position, Signal, StrategyRun
+from quant_system.db.models import (
+    OptionsPosition,
+    PortfolioHistory,
+    Position,
+    Signal,
+    StrategyRun,
+)
 from quant_system.db.session import session_scope
 
 logger = logging.getLogger(__name__)
@@ -244,6 +250,121 @@ def maybe_ingest_options(payload: dict[str, Any]) -> bool:
 
 def maybe_ingest_zhuang(payload: dict[str, Any]) -> bool:
     return _maybe(ingest_zhuang, payload, "zhuang")
+
+
+# ── options_positions UPSERT（PR3：BCS spread 持仓字段对齐）─────────────
+
+def upsert_options_position(
+    session: Session,
+    asof: date,
+    underlying: str,
+    spread_type: str,
+    long_strike: float,
+    short_strike: float,
+    expiry: date,
+    contracts: int,
+    debit_paid: float,
+    max_profit: float,
+    max_loss: float,
+    days_to_exp: int,
+    current_value: Optional[float] = None,
+    pnl_pct: Optional[float] = None,
+    breach_alerts: Optional[list[str]] = None,
+) -> OptionsPosition:
+    """UPSERT 一行 options_positions。
+
+    同 (asof, underlying, long_strike, short_strike, expiry) 5-tuple 重跑覆盖
+    （用户日内多次跑 daily_options 不堆历史）。breach_alerts 整列覆盖。
+    """
+    existing = session.scalars(
+        select(OptionsPosition).where(
+            OptionsPosition.asof == asof,
+            OptionsPosition.underlying == underlying,
+            OptionsPosition.long_strike == long_strike,
+            OptionsPosition.short_strike == short_strike,
+            OptionsPosition.expiry == expiry,
+        )
+    ).first()
+    if existing is not None:
+        existing.spread_type = spread_type
+        existing.contracts = contracts
+        existing.debit_paid = debit_paid
+        existing.max_profit = max_profit
+        existing.max_loss = max_loss
+        existing.current_value = current_value
+        existing.days_to_exp = days_to_exp
+        existing.pnl_pct = pnl_pct
+        existing.breach_alerts = breach_alerts
+        return existing
+    row = OptionsPosition(
+        asof=asof,
+        underlying=underlying,
+        spread_type=spread_type,
+        long_strike=long_strike,
+        short_strike=short_strike,
+        expiry=expiry,
+        contracts=contracts,
+        debit_paid=debit_paid,
+        max_profit=max_profit,
+        max_loss=max_loss,
+        current_value=current_value,
+        days_to_exp=days_to_exp,
+        pnl_pct=pnl_pct,
+        breach_alerts=breach_alerts,
+    )
+    session.add(row)
+    return row
+
+
+def maybe_upsert_options_position(
+    asof: date,
+    underlying: str,
+    spread_type: str,
+    long_strike: float,
+    short_strike: float,
+    expiry: date,
+    contracts: int,
+    debit_paid: float,
+    max_profit: float,
+    max_loss: float,
+    days_to_exp: int,
+    current_value: Optional[float] = None,
+    pnl_pct: Optional[float] = None,
+    breach_alerts: Optional[list[str]] = None,
+) -> bool:
+    """daily_options 收尾调用；env 关 / DB 不可达均静默 noop（JSON 仍为准）。"""
+    if not _dualwrite_enabled():
+        return False
+    try:
+        with session_scope() as session:
+            upsert_options_position(
+                session,
+                asof=asof,
+                underlying=underlying,
+                spread_type=spread_type,
+                long_strike=long_strike,
+                short_strike=short_strike,
+                expiry=expiry,
+                contracts=contracts,
+                debit_paid=debit_paid,
+                max_profit=max_profit,
+                max_loss=max_loss,
+                days_to_exp=days_to_exp,
+                current_value=current_value,
+                pnl_pct=pnl_pct,
+                breach_alerts=breach_alerts,
+            )
+        logger.info(
+            "options_position upsert (%s/%s/%s-%s/%s) → Postgres ok",
+            asof, underlying, long_strike, short_strike, expiry,
+        )
+        return True
+    except Exception as exc:
+        logger.warning(
+            "options_position upsert (%s/%s/%s-%s/%s) → Postgres failed (%s); JSON 仍为准",
+            asof, underlying, long_strike, short_strike, expiry, exc,
+        )
+        return False
 
 
 def list_recent_portfolio_history_mvs(

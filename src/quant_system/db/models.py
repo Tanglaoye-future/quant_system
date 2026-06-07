@@ -256,3 +256,44 @@ class PortfolioHistory(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class OptionsPosition(Base):
+    """options BCS spread 持仓快照 —— stock 持仓 schema 对不上，独立表。
+
+    每个 (asof, underlying, long_strike, short_strike, expiry) 一行；
+    daily_options.py 收尾从 IBKR 拉到 spread 后 UPSERT；breach_alerts JSONB
+    放 ["DTE<7", "loss>50%", ...]。[[docs/specs/position_v2_harness.md]] §4 (PR3)。
+    """
+
+    __tablename__ = "options_positions"
+    __table_args__ = (
+        UniqueConstraint(
+            "asof", "underlying", "long_strike", "short_strike", "expiry",
+            name="uq_options_positions_asof_underlying_strikes_expiry",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    asof: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    underlying: Mapped[str] = mapped_column(String(16), nullable=False)
+    spread_type: Mapped[str] = mapped_column(String(16), nullable=False)
+
+    long_strike: Mapped[float] = mapped_column(Float, nullable=False)
+    short_strike: Mapped[float] = mapped_column(Float, nullable=False)
+    expiry: Mapped[date] = mapped_column(Date, nullable=False)
+    contracts: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    debit_paid: Mapped[float] = mapped_column(Float, nullable=False)
+    max_profit: Mapped[float] = mapped_column(Float, nullable=False)
+    max_loss: Mapped[float] = mapped_column(Float, nullable=False)
+    current_value: Mapped[Optional[float]] = mapped_column(Float)
+    days_to_exp: Mapped[int] = mapped_column(Integer, nullable=False)
+    pnl_pct: Mapped[Optional[float]] = mapped_column(Float)
+
+    # 触发的告警列表（DTE<7 / loss>50% / ...）；空 list 与 None 都允许
+    breach_alerts: Mapped[Optional[list[str]]] = mapped_column(JSONColumn)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
