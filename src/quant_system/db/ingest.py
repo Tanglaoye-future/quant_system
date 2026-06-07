@@ -23,7 +23,7 @@ from typing import Any, Callable, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from quant_system.db.models import Position, Signal, StrategyRun
+from quant_system.db.models import PortfolioHistory, Position, Signal, StrategyRun
 from quant_system.db.session import session_scope
 
 logger = logging.getLogger(__name__)
@@ -168,6 +168,52 @@ def ingest_zhuang(session: Session, payload: dict[str, Any]) -> StrategyRun:
     return run
 
 
+# ── portfolio_history UPSERT（PR1：max_drawdown 基建）────────────────────
+
+def upsert_portfolio_history(
+    session: Session,
+    asof: date,
+    strategy_name: str,
+    market: str,
+    n_positions: int,
+    cost_basis: float,
+    market_value: float,
+    unrealized_pnl: float,
+    unrealized_pnl_pct: float,
+) -> PortfolioHistory:
+    """UPSERT 一行 portfolio_history。
+
+    同 (asof, strategy_name, market) 重跑覆盖（用户日内多次跑 daily 不堆历史）。
+    PR2 在此基础上 query 历史窗口算 peak DD。
+    """
+    existing = session.scalars(
+        select(PortfolioHistory).where(
+            PortfolioHistory.asof == asof,
+            PortfolioHistory.strategy_name == strategy_name,
+            PortfolioHistory.market == market,
+        )
+    ).first()
+    if existing is not None:
+        existing.n_positions = n_positions
+        existing.cost_basis = cost_basis
+        existing.market_value = market_value
+        existing.unrealized_pnl = unrealized_pnl
+        existing.unrealized_pnl_pct = unrealized_pnl_pct
+        return existing
+    row = PortfolioHistory(
+        asof=asof,
+        strategy_name=strategy_name,
+        market=market,
+        n_positions=n_positions,
+        cost_basis=cost_basis,
+        market_value=market_value,
+        unrealized_pnl=unrealized_pnl,
+        unrealized_pnl_pct=unrealized_pnl_pct,
+    )
+    session.add(row)
+    return row
+
+
 # ── dual-write 入口（daily 脚本调用）─────────────────────────────────────
 
 def _dualwrite_enabled() -> bool:
@@ -198,3 +244,42 @@ def maybe_ingest_options(payload: dict[str, Any]) -> bool:
 
 def maybe_ingest_zhuang(payload: dict[str, Any]) -> bool:
     return _maybe(ingest_zhuang, payload, "zhuang")
+
+
+def maybe_upsert_portfolio_history(
+    asof: date,
+    strategy_name: str,
+    market: str,
+    n_positions: int,
+    cost_basis: float,
+    market_value: float,
+    unrealized_pnl: float,
+    unrealized_pnl_pct: float,
+) -> bool:
+    """daily 收尾调用；env 关 / DB 不可达均静默 noop（JSON 仍为准）。"""
+    if not _dualwrite_enabled():
+        return False
+    try:
+        with session_scope() as session:
+            upsert_portfolio_history(
+                session,
+                asof=asof,
+                strategy_name=strategy_name,
+                market=market,
+                n_positions=n_positions,
+                cost_basis=cost_basis,
+                market_value=market_value,
+                unrealized_pnl=unrealized_pnl,
+                unrealized_pnl_pct=unrealized_pnl_pct,
+            )
+        logger.info(
+            "portfolio_history upsert (%s/%s/%s) → Postgres ok",
+            asof, strategy_name, market,
+        )
+        return True
+    except Exception as exc:
+        logger.warning(
+            "portfolio_history upsert (%s/%s/%s) → Postgres failed (%s); JSON 仍为准",
+            asof, strategy_name, market, exc,
+        )
+        return False
