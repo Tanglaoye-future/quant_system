@@ -38,13 +38,15 @@ strategy:
 # 默认 enabled: false → 完全 noop；个股层 EXIT/HOLD 决策不受影响。
 # 上线时改 enabled: true 并按账户规模/风险偏好调阈值。任一阈值留 null = 该项禁用。
 # 触发后日报「组合摘要」段 ⚠ 红字 + dashboard 顶部 banner，由用户决定是否手动减仓。
-# TODO: max_drawdown_pct (相对历史峰值) 需要先建 portfolio_history 表（下个 phase）；
-#       当前用 unrealized_pnl_floor_pct (相对成本) 兜底。
+# PR2 (2026-06-07): portfolio_drawdown_pct + drawdown_lookback_days 接入真历史 peak DD
+# (数据源 portfolio_history 表)。默认 None / 60 d 即可。
 portfolio_risk:
   enabled: false
   max_single_weight_pct: 0.30      # 单只市值占比上限（当前 601066 ≈ 26.3%）
   unrealized_pnl_floor_pct: -0.05  # 组合层未实现浮盈下限（账户层 stop alarm）
   exit_signal_ratio_max: 0.50      # 同时 EXIT 信号笔数 / 持仓笔数 上限
+  portfolio_drawdown_pct: -0.08    # 真历史 peak DD 阈值（v5 历史 -7.94% 留 headroom）
+  drawdown_lookback_days: 60       # peak 计算窗口
 
 # 全局 factors — weights 留空（让 merge 走市场），m4 保留跨策略共享
 factors:

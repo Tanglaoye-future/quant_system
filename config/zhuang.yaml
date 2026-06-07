@@ -120,9 +120,7 @@ backtest:
 # 组合层风控（与 equity_factor 06-04 同款；仅 alert，不自动平仓）
 # 默认 enabled: false → daily_zhuang 永远输出 portfolio_alerts=[]，零回测/实盘行为差异；
 # 实盘上线时改 enabled: true 即可生效。
-#
-# TODO: max_drawdown_pct 真历史 peak 待 zhuang_portfolio_history 表加上后接入；
-#       当前用 unrealized_pnl_floor_pct 作账户层 stop alarm 兜底。
+# PR2 (2026-06-07): portfolio_drawdown_pct 接入真历史 peak DD (portfolio_history 表)。
 portfolio_risk:
   # 2026-06-06 开启实盘风控:当前 3 仓位 (豫园/创维/长电力) 单只最大 33.8% > 0.30 应触发集中度告警
   enabled: true
@@ -134,3 +132,6 @@ portfolio_risk:
   unrealized_pnl_floor_pct: -0.07
   # EXIT 信号占比 > 阈值 → 一半持仓同时退出, market panic 信号
   exit_signal_ratio_max: 0.50
+  # 真历史 peak DD 阈值 (zhuang 6y sleeve 历史 ~-7%); 数据源 portfolio_history 表 (PR1 起累积)
+  portfolio_drawdown_pct: -0.10
+  drawdown_lookback_days: 60

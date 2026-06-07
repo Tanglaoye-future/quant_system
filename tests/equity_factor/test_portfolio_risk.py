@@ -8,11 +8,14 @@
 """
 from __future__ import annotations
 
+import pytest
+
 from quant_system.strategies.equity_factor.risk.monitor import (
     PortfolioRisk,
     PortfolioRiskConfig,
     PositionRisk,
     RiskMonitor,
+    compute_peak_drawdown,
 )
 
 
@@ -114,3 +117,96 @@ def test_empty_positions_no_crash():
     port = RiskMonitor._aggregate([], cfg)
     assert isinstance(port, PortfolioRisk)
     assert port.alerts == []
+
+
+# ── PR2: peak DD compute + threshold ─────────────────────────────────
+
+def test_compute_drawdown_empty_history_returns_none():
+    peak, dd = compute_peak_drawdown([], 10000.0)
+    assert peak is None and dd is None
+    peak, dd = compute_peak_drawdown(None, 10000.0)
+    assert peak is None and dd is None
+
+
+def test_compute_drawdown_60_day_series():
+    """100 → 120 → 90 序列，peak=120，current=90 → dd=-0.25"""
+    history = [100.0] * 30 + [110.0] * 15 + [120.0] * 10 + [100.0] * 5
+    peak, dd = compute_peak_drawdown(history, 90.0)
+    assert peak == 120.0
+    assert dd == pytest.approx(-0.25, abs=1e-9)
+
+
+def test_compute_drawdown_current_above_peak():
+    """当前 = 新峰 → peak=current, dd=0"""
+    history = [100.0, 110.0, 105.0]
+    peak, dd = compute_peak_drawdown(history, 120.0)
+    assert peak == 120.0
+    assert dd == 0.0
+
+
+def test_compute_drawdown_zero_peak_safe():
+    """空仓历史 + 当前 0 → 不崩，dd=None（peak<=0）"""
+    peak, dd = compute_peak_drawdown([0.0, 0.0], 0.0)
+    assert peak is None and dd is None
+
+
+def test_portfolio_drawdown_alert_below_threshold():
+    """dd=-0.09 < 阈值-0.08 → alerts 增加 1 条"""
+    positions = [_mk_pos("601939", 10.0, 100, 10.0)]   # current mv 1000
+    cfg = PortfolioRiskConfig(
+        enabled=True,
+        portfolio_drawdown_pct=-0.08,
+    )
+    # history peak = 1100 (1000 / 1100 - 1 ≈ -0.0909)
+    history_mvs = [1100.0] * 30
+    port = RiskMonitor._aggregate(positions, cfg, history_market_values=history_mvs)
+    assert port.peak_market_value == 1100.0
+    assert port.drawdown_from_peak_pct == pytest.approx(-0.0909, abs=1e-3)
+    assert any("组合层回撤" in a for a in port.alerts)
+
+
+def test_portfolio_drawdown_no_alert_above_threshold():
+    """dd=-0.05 > 阈值-0.08 → 无 DD alert"""
+    positions = [_mk_pos("601939", 10.0, 100, 10.0)]
+    cfg = PortfolioRiskConfig(
+        enabled=True,
+        portfolio_drawdown_pct=-0.08,
+    )
+    # history peak ~ 1053, current 1000 → dd ≈ -0.05
+    history_mvs = [1053.0] * 30
+    port = RiskMonitor._aggregate(positions, cfg, history_market_values=history_mvs)
+    assert not any("组合层回撤" in a for a in port.alerts)
+
+
+def test_portfolio_drawdown_alert_threshold_none_disabled():
+    """阈值 None → 即使 dd 很差也不 alert"""
+    positions = [_mk_pos("601939", 10.0, 100, 10.0)]
+    cfg = PortfolioRiskConfig(
+        enabled=True,
+        portfolio_drawdown_pct=None,   # disabled
+    )
+    history_mvs = [2000.0] * 30   # dd=-0.5
+    port = RiskMonitor._aggregate(positions, cfg, history_market_values=history_mvs)
+    # peak/dd 字段仍算出来（observability），但无 alert
+    assert port.peak_market_value == 2000.0
+    assert port.drawdown_from_peak_pct == -0.5
+    assert not any("组合层回撤" in a for a in port.alerts)
+
+
+def test_portfolio_drawdown_no_history_fields_none():
+    """history_market_values=None → peak/dd 保持 None，不参与告警"""
+    positions = [_mk_pos("601939", 10.0, 100, 10.0)]
+    cfg = PortfolioRiskConfig(enabled=True, portfolio_drawdown_pct=-0.08)
+    port = RiskMonitor._aggregate(positions, cfg, history_market_values=None)
+    assert port.peak_market_value is None
+    assert port.drawdown_from_peak_pct is None
+    assert not any("组合层回撤" in a for a in port.alerts)
+
+
+def test_portfolio_drawdown_backcompat_aggregate_no_history_kwarg():
+    """老调用方式（不传 history_market_values）字段保持 None，零回归"""
+    positions = [_mk_pos("601939", 10.0, 100, 10.0)]
+    cfg = PortfolioRiskConfig(enabled=True, max_single_weight_pct=0.30)
+    port = RiskMonitor._aggregate(positions, cfg)  # no history kwarg
+    assert port.peak_market_value is None
+    assert port.drawdown_from_peak_pct is None

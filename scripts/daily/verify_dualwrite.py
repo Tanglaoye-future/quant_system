@@ -110,10 +110,15 @@ def _verify_file(session, fpath: Path, target_date: str) -> tuple[str, list[str]
         # portfolio_alerts 是 PortfolioRiskConfig 运行时评估结果（derived），不入 DB；
         # 比对前剔除，避免 JSON=[] vs DB 缺字段的假阳。
         payload.pop("portfolio_alerts", None)
+        # PR2: portfolio_summary 是运行时聚合（n_positions/cost_basis/.../peak DD），不入
+        # strategy_runs；peak_market_value & drawdown_from_peak_pct 由 portfolio_history 衍生。
+        payload.pop("portfolio_summary", None)
     if kind == "zhuang":
         # 与 quant 同理：zhuang portfolio_alerts 也是 daily_zhuang 运行时 derived，不入 DB。
         payload = dict(payload)
         payload.pop("portfolio_alerts", None)
+        # PR2: portfolio_summary 同 quant，pop 防假阳。
+        payload.pop("portfolio_summary", None)
 
     db_payload = repositories.run_to_payload(run)
     diffs = _differences(db_payload, payload)
