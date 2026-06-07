@@ -429,6 +429,26 @@ def main() -> None:
             "dist_to_target_pct": round(float(p.dist_to_target_pct), 4) if getattr(p, "dist_to_target_pct", None) is not None else None,
         })
 
+    # PR2: 组合层汇总 nested object（含 PR2 新增 peak_market_value / drawdown_from_peak_pct）
+    portfolio_summary = {
+        "n_positions": port.n_positions,
+        "cost_basis": round(float(port.cost_basis), 2),
+        "market_value": round(float(port.market_value), 2),
+        "unrealized_pnl": round(float(port.unrealized_pnl), 2),
+        "unrealized_pnl_pct": round(float(port.unrealized_pnl_pct), 4),
+        "max_single_weight": round(float(port.max_single_weight), 4),
+        "n_at_risk": port.n_at_risk,
+        "worst_drawdown_pct": round(float(port.worst_drawdown_pct), 4),
+        "peak_market_value": (
+            round(float(port.peak_market_value), 2)
+            if port.peak_market_value is not None else None
+        ),
+        "drawdown_from_peak_pct": (
+            round(float(port.drawdown_from_peak_pct), 4)
+            if port.drawdown_from_peak_pct is not None else None
+        ),
+    }
+
     report_payload = {
         "date": args.asof,
         "market": args.market,
@@ -443,6 +463,8 @@ def main() -> None:
         "positions": report_positions,
         # 组合层风控 alerts —— 前端 banner 红字显示；空 list = 无告警
         "portfolio_alerts": list(port.alerts),
+        # PR2: 组合层汇总 + peak DD（包含 peak_market_value / drawdown_from_peak_pct）
+        "portfolio_summary": portfolio_summary,
     }
     _REPORT_DATA.mkdir(parents=True, exist_ok=True)
     # 按 market + kind 命名 JSON 文件，与 report builder / API 的硬编码引用兼容

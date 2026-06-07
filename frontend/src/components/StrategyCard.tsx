@@ -83,6 +83,14 @@ export default function StrategyCard({ cell, showPlaceholder = true, quantData, 
               ))}
             </div>
           )}
+          {zhuangData?.portfolio_summary?.drawdown_from_peak_pct != null && (
+            <div style={{
+              marginBottom: 12, fontSize: 12, color: 'var(--color-text-secondary)',
+            }}>
+              组合层回撤 {(zhuangData.portfolio_summary.drawdown_from_peak_pct * 100).toFixed(2)}%
+              （peak ¥{Math.round(zhuangData.portfolio_summary.peak_market_value ?? 0).toLocaleString()}）
+            </div>
+          )}
           <MetricGrid>
             <MetricCard label="当前持仓" value={zhuangPositions.length} sub="最大 6 仓" />
             <MetricCard label="候选数" value={zhuangCandidates.length} sub="score≥45" />
@@ -125,6 +133,14 @@ export default function StrategyCard({ cell, showPlaceholder = true, quantData, 
               {portfolioAlerts.map((a, i) => (
                 <div key={i}>· {a}</div>
               ))}
+            </div>
+          )}
+          {quantData?.portfolio_summary?.drawdown_from_peak_pct != null && (
+            <div style={{
+              marginBottom: 12, fontSize: 12, color: 'var(--color-text-secondary)',
+            }}>
+              组合层回撤 {(quantData.portfolio_summary.drawdown_from_peak_pct * 100).toFixed(2)}%
+              （peak ¥{Math.round(quantData.portfolio_summary.peak_market_value ?? 0).toLocaleString()}）
             </div>
           )}
           <MetricGrid>

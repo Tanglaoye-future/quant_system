@@ -365,12 +365,17 @@ def main():
     n_at_risk = len(exits)
     n_positions_total = len(exits) + len(holds) + len(new_trades)
 
+    # PR2: 真历史 peak DD —— 仅 cfg.enabled 时查 portfolio_history（避免无谓 DB 访问）
+    peak_market_value: float | None = None
+    drawdown_from_peak_pct: float | None = None
     portfolio_alerts: list[str] = []
     pr_node = config.get("portfolio_risk") or {}
     if bool(pr_node.get("enabled", False)) and n_positions_total > 0:
         max_w_thr = pr_node.get("max_single_weight_pct")
         pnl_floor_thr = pr_node.get("unrealized_pnl_floor_pct")
         exit_ratio_thr = pr_node.get("exit_signal_ratio_max")
+        dd_thr = pr_node.get("portfolio_drawdown_pct")
+        lookback = int(pr_node.get("drawdown_lookback_days", 60))
         if max_w_thr is not None and max_single_weight > float(max_w_thr):
             portfolio_alerts.append(
                 f"单只权重 {max_single_weight*100:.1f}% > 阈值 {float(max_w_thr)*100:.0f}%（集中度）"
@@ -385,6 +390,30 @@ def main():
                 portfolio_alerts.append(
                     f"EXIT 信号占比 {ratio*100:.0f}% > 阈值 {float(exit_ratio_thr)*100:.0f}%（panic 信号）"
                 )
+        # peak DD via portfolio_history（DB 不可达 / 无数据 → 跳过，不抛错）
+        try:
+            from quant_system.db.ingest import list_recent_portfolio_history_mvs
+            from quant_system.strategies.equity_factor.risk.monitor import compute_peak_drawdown
+            history_mvs = list_recent_portfolio_history_mvs(
+                strategy_name="zhuang",
+                market=market,
+                asof=args.date,
+                lookback_days=lookback,
+            )
+            peak_market_value, drawdown_from_peak_pct = compute_peak_drawdown(
+                history_mvs, market_value
+            )
+            if (
+                dd_thr is not None
+                and drawdown_from_peak_pct is not None
+                and drawdown_from_peak_pct < float(dd_thr)
+            ):
+                portfolio_alerts.append(
+                    f"组合层回撤 {drawdown_from_peak_pct*100:+.2f}% < 阈值 "
+                    f"{float(dd_thr)*100:+.2f}% (peak {peak_market_value:,.0f})"
+                )
+        except Exception:
+            pass  # DB 不可达兜底，不影响 daily 主路径
 
     total_open = len(open_trades) + len(new_trades)
     print()
@@ -440,6 +469,29 @@ def main():
         item = {k: (float(v) if hasattr(v, "item") else v) for k, v in row.items()}
         item["name"] = name_map.get(item.get("code", ""), "")
         top15_with_name.append(item)
+    # PR2: nested portfolio_summary —— equity_factor 同结构
+    worst_single = (
+        round(float(worst_pnl), 4) if worst_pnl is not None else 0.0
+    )
+    portfolio_summary = {
+        "n_positions": n_positions_total,
+        "cost_basis": round(float(cost_basis), 2),
+        "market_value": round(float(market_value), 2),
+        "unrealized_pnl": round(float(unrealized_pnl), 2),
+        "unrealized_pnl_pct": round(float(unrealized_pnl_pct), 4),
+        "max_single_weight": round(float(max_single_weight), 4),
+        "n_at_risk": n_at_risk,
+        "worst_drawdown_pct": worst_single,
+        "peak_market_value": (
+            round(float(peak_market_value), 2)
+            if peak_market_value is not None else None
+        ),
+        "drawdown_from_peak_pct": (
+            round(float(drawdown_from_peak_pct), 4)
+            if drawdown_from_peak_pct is not None else None
+        ),
+    }
+
     report_payload = {
         "date": args.date,
         "market": market,
@@ -450,6 +502,8 @@ def main():
         "positions": report_positions,
         # 组合层风控 alerts（默认 enabled: false → 永远 []，零回归）
         "portfolio_alerts": portfolio_alerts,
+        # PR2: 组合层汇总 + peak DD
+        "portfolio_summary": portfolio_summary,
     }
     _REPORT_DATA.mkdir(parents=True, exist_ok=True)
     (_REPORT_DATA / "zhuang.json").write_text(

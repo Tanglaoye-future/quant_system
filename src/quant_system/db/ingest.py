@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Callable, Optional
 
 from sqlalchemy import select
@@ -244,6 +244,43 @@ def maybe_ingest_options(payload: dict[str, Any]) -> bool:
 
 def maybe_ingest_zhuang(payload: dict[str, Any]) -> bool:
     return _maybe(ingest_zhuang, payload, "zhuang")
+
+
+def list_recent_portfolio_history_mvs(
+    strategy_name: str,
+    market: str,
+    asof: str,
+    lookback_days: int = 60,
+) -> Optional[list[float]]:
+    """读 portfolio_history 近 lookback_days 天的 market_value 序列。
+
+    PR2 of docs/specs/position_v2_harness.md §3.4 —— 给 compute_peak_drawdown 用。
+    asof 是 inclusive 上限（含当日）；返 list 升序排列。
+    DB 不可达 / dualwrite 关 / 无数据 → None（compute_peak_drawdown 会跳过 DD 算）。
+    """
+    if not _dualwrite_enabled():
+        return None
+    try:
+        asof_date = date.fromisoformat(str(asof)[:10])
+        start_date = asof_date - timedelta(days=lookback_days)
+        with session_scope() as session:
+            rows = session.scalars(
+                select(PortfolioHistory)
+                .where(
+                    PortfolioHistory.strategy_name == strategy_name,
+                    PortfolioHistory.market == market,
+                    PortfolioHistory.asof >= start_date,
+                    PortfolioHistory.asof <= asof_date,
+                )
+                .order_by(PortfolioHistory.asof)
+            ).all()
+            return [float(r.market_value) for r in rows]
+    except Exception as exc:
+        logger.warning(
+            "list_recent_portfolio_history_mvs (%s/%s/%s) failed (%s); skip DD",
+            strategy_name, market, asof, exc,
+        )
+        return None
 
 
 def maybe_upsert_portfolio_history(

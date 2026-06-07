@@ -29,6 +29,19 @@ export interface QuantPosition {
   dist_to_target_pct?: number | null;
 }
 
+export interface PortfolioSummary {
+  n_positions: number;
+  cost_basis: number;
+  market_value: number;
+  unrealized_pnl: number;
+  unrealized_pnl_pct: number;
+  max_single_weight: number;
+  n_at_risk: number;
+  worst_drawdown_pct: number;
+  peak_market_value?: number | null;
+  drawdown_from_peak_pct?: number | null;
+}
+
 export interface QuantData {
   date: string;
   market: string;
@@ -39,6 +52,7 @@ export interface QuantData {
   signals: QuantSignal[];
   positions: QuantPosition[];
   portfolio_alerts?: string[];
+  portfolio_summary?: PortfolioSummary | null;
   _missing?: boolean;
 }
 
@@ -102,6 +116,7 @@ export interface ZhuangData {
   top_candidates: ZhuangCandidate[];
   positions?: ZhuangPosition[];
   portfolio_alerts?: string[];
+  portfolio_summary?: PortfolioSummary | null;
   _missing?: boolean;
 }
 

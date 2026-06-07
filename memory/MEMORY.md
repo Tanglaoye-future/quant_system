@@ -1,7 +1,8 @@
 # Memory Index
 
 - **[Harness-first + PR 拆分 (2026-06-07 起强制)](feedback_harness_first_pr_split.md)** ⭐ — 改动开始前先写 docs/specs/<topic>.md (schema/测试名/验收 step) 才动代码; 每步独立 PR; 禁止流式 commit 长串直推 main; 06-04/05/06 三连 12 commit 是反面教材
-- **[2026-06-07 PR1 portfolio_history 基建](session_2026_06_07_pr1_portfolio_history.md)** — 新方法论第一个 PR; portfolio_history 表 + UPSERT + 7 case 契约测试; 不算 peak DD (PR2 做); 227/227 pytest; branch pr1/portfolio-history-schema 待 push
+- **[2026-06-07 PR1 portfolio_history 基建](session_2026_06_07_pr1_portfolio_history.md)** — 新方法论第一个 PR; portfolio_history 表 + UPSERT + 7 case 契约测试; 不算 peak DD (PR2 做); 227/227 pytest; merged
+- **[2026-06-07 PR2 max_drawdown peak DD 全链路](session_2026_06_07_pr2_max_drawdown.md)** — peak DD 计算接入 PortfolioRisk + portfolio_drawdown_pct 阈值 + nested portfolio_summary JSON + 前端展示; 236/236 pytest; 并行 agent worktree 隔离失败 lesson 沉淀
 - **[2026-06-06 zhuang 持仓风控字段与 equity_factor 对齐](session_2026_06_06_zhuang_risk_parity.md)** ⭐ — 持仓表加 entry/current/stop/tp + 距止损 ⚠/距止盈 + portfolio_alerts banner (yaml 默认 OFF 零行为差异); verify_dualwrite 同步 pop alerts 防 06-05 回归; 3 commit
 - **[2026-06-05 dashboard one-click daily + 止盈视图](session_2026_06_05_dashboard_oneclick.md)** — POST /api/daily/run 一键跑 + take_profit/dist_to_target 接入持仓表 + MA60 列去前端 + 顺手修 daily API zombie / verify_dualwrite 假阳；5 commit
 - [视觉异常先要截图](feedback_screenshot_first.md) — 用户报告"弹了个东西/漂位/颜色异常"时先 AskUserQuestion 截图，不要瞎猜系统层根因；本次"黑框"misdiagnose 教训

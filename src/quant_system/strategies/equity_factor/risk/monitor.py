@@ -69,6 +69,9 @@ class PortfolioRiskConfig:
     max_single_weight_pct: Optional[float] = None      # max_single_weight > X
     unrealized_pnl_floor_pct: Optional[float] = None   # unrealized_pnl_pct < X (X 为负值)
     exit_signal_ratio_max: Optional[float] = None      # n_at_risk / n_positions > X
+    # PR2: 真历史 peak drawdown（数据源 portfolio_history 表，PR1 落地）
+    portfolio_drawdown_pct: Optional[float] = None     # drawdown_from_peak_pct < X (X 为负值)
+    drawdown_lookback_days: int = 60                   # peak 计算窗口（默认 60 个交易日）
 
 
 @dataclass
@@ -80,12 +83,37 @@ class PortfolioRisk:
     unrealized_pnl_pct: float
     max_single_weight: float       # 单只最大市值权重
     n_at_risk: int                 # 触发 EXIT 的笔数
-    worst_drawdown_pct: float      # 单只最差浮亏
+    worst_drawdown_pct: float      # 单只最差浮亏（保留 v1 字段语义不变）
     alerts: list[str] = None       # PortfolioRiskConfig 触发的告警文案列表（未配置时为空）
+    # PR2 新增：组合层真历史 peak DD（持仓市值 proxy，账户层 cash 未跟踪）
+    peak_market_value: Optional[float] = None        # 历史窗口内峰值 market_value
+    drawdown_from_peak_pct: Optional[float] = None   # (current_mv - peak_mv) / peak_mv ≤ 0
 
     def __post_init__(self):
         if self.alerts is None:
             self.alerts = []
+
+
+def compute_peak_drawdown(
+    history_market_values: Optional[list[float]],
+    current_market_value: float,
+) -> tuple[Optional[float], Optional[float]]:
+    """返回 (peak_mv, drawdown_from_peak_pct)。
+
+    Equity proxy: 系统不跟踪 cash 余额（manual execution），peak DD 用 market_value
+    作为持仓 equity proxy。已知失真：开/平仓阶跃会污染 series；纯价格波动数学正确。
+    Spec: docs/specs/position_v2_harness.md §3.4.
+
+    空 history 返 (None, None)。当前值若 > 历史峰则成为新峰，dd = 0。
+    """
+    if not history_market_values:
+        return None, None
+    peak = max(history_market_values)
+    peak = max(peak, current_market_value)
+    if peak <= 0:
+        return None, None
+    dd = (current_market_value - peak) / peak     # ≤ 0
+    return peak, dd
 
 
 class RiskMonitor:
@@ -220,14 +248,43 @@ class RiskMonitor:
                 dist_to_target_pct=dist_target,
             ))
 
-        port = self._aggregate(positions, self.portfolio_risk_cfg)
+        # PR2: 查 portfolio_history 近 N 天 market_value 序列；cfg.enabled=false 时跳过
+        history_mvs = self._fetch_history_market_values(asof)
+        port = self._aggregate(positions, self.portfolio_risk_cfg, history_market_values=history_mvs)
         return positions, port
+
+    def _fetch_history_market_values(self, asof: str) -> Optional[list[float]]:
+        """读 portfolio_history 近 drawdown_lookback_days 天的 market_value。
+
+        失败/未启用 → 返 None（_aggregate 会跳过 peak DD 计算）。
+        DB 不可达不抛错（与 maybe_upsert_portfolio_history 容错对称）。
+        """
+        cfg = self.portfolio_risk_cfg
+        if cfg is None or not cfg.enabled:
+            return None
+        try:
+            from quant_system.db.ingest import list_recent_portfolio_history_mvs
+            return list_recent_portfolio_history_mvs(
+                strategy_name=self.strategy or "",
+                market=self.market or "",
+                asof=asof,
+                lookback_days=cfg.drawdown_lookback_days,
+            )
+        except Exception:
+            return None
 
     @staticmethod
     def _aggregate(
         positions: list[PositionRisk],
         portfolio_risk_cfg: Optional[PortfolioRiskConfig] = None,
+        history_market_values: Optional[list[float]] = None,
     ) -> PortfolioRisk:
+        """聚合个股层 PositionRisk → PortfolioRisk。
+
+        history_market_values: PR2 新增。如非 None，调用 compute_peak_drawdown 算
+        peak / drawdown_from_peak_pct 并按 cfg.portfolio_drawdown_pct 判 alert。
+        为 None 时（如未启 enabled 或 DB 不可达）peak/dd 字段保持 None。
+        """
         if not positions:
             return PortfolioRisk(0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0.0)
         cost = sum(p.entry_price * p.entry_size for p in positions)
@@ -243,6 +300,11 @@ class RiskMonitor:
             n_at_risk=sum(1 for p in positions if p.action == "EXIT"),
             worst_drawdown_pct=min(p.pnl_pct for p in positions),
         )
+        # PR2: peak DD 计算（cfg.enabled 才查 history；否则 history_market_values 调用方传 None）
+        if history_market_values is not None:
+            peak, dd = compute_peak_drawdown(history_market_values, mv)
+            port.peak_market_value = peak
+            port.drawdown_from_peak_pct = dd
         # 组合层 alerts —— 仅 alert，不自动平仓（个股层 EXIT 决策已在 daily_check 中独立完成）
         if portfolio_risk_cfg and portfolio_risk_cfg.enabled:
             thr = portfolio_risk_cfg
@@ -271,5 +333,16 @@ class RiskMonitor:
                 port.alerts.append(
                     f"EXIT 信号占比 {ratio*100:.0f}% ({port.n_at_risk}/{port.n_positions}) "
                     f"> 上限 {thr.exit_signal_ratio_max*100:.0f}%"
+                )
+            # PR2: 真历史 peak DD 阈值告警
+            if (
+                thr.portfolio_drawdown_pct is not None
+                and port.drawdown_from_peak_pct is not None
+                and port.drawdown_from_peak_pct < thr.portfolio_drawdown_pct
+            ):
+                port.alerts.append(
+                    f"组合层回撤 {port.drawdown_from_peak_pct*100:+.2f}% < 阈值 "
+                    f"{thr.portfolio_drawdown_pct*100:+.2f}% "
+                    f"(peak {port.peak_market_value:,.0f})"
                 )
         return port
