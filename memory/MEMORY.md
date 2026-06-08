@@ -1,5 +1,6 @@
 # Memory Index
 
+- **[2026-06-08 实盘反馈 → 7 PR + self-learning pipeline 收尾](session_2026_06_08_self_learning_pipeline.md)** ⭐ — 用户报"实盘亏损"诊断: -0.59% 量级正常, 真问题是 Bug A (VARCHAR 32) + Bug B (alembic dormant) + Bug C (DuckDB stale-flock); 用户 RL framing 校准为"程序产出报告不自动改 alpha"; 5 PR pipeline (L1 JSONB schema / L2 A_mom+HK_mom entry / L3 zhuang entry / L4 exit 内部自动 / L5 retrospective 报表 + 17 falsified manifest); 5 条硬性 backstop 永不撞; 313/313 pytest
 - **[Harness-first + PR 拆分 (2026-06-07 起强制)](feedback_harness_first_pr_split.md)** ⭐ — 改动开始前先写 docs/specs/<topic>.md (schema/测试名/验收 step) 才动代码; 每步独立 PR; 禁止流式 commit 长串直推 main; 06-04/05/06 三连 12 commit 是反面教材
 - **[2026-06-07 PR1 portfolio_history 基建](session_2026_06_07_pr1_portfolio_history.md)** — 新方法论第一个 PR; portfolio_history 表 + UPSERT + 7 case 契约测试; 不算 peak DD (PR2 做); 227/227 pytest; merged
 - **[2026-06-07 PR2 max_drawdown peak DD 全链路](session_2026_06_07_pr2_max_drawdown.md)** — peak DD 计算接入 PortfolioRisk + portfolio_drawdown_pct 阈值 + nested portfolio_summary JSON + 前端展示; 236/236 pytest; 并行 agent worktree 隔离失败 lesson 沉淀
