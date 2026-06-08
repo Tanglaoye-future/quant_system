@@ -409,11 +409,15 @@ def main() -> None:
                 loader, args.market, code, args.asof,
                 eff_strategy or args.strategy, tcfg, c.get("score", 0.0),
             )
+            # M3 of fix_hold_days_entry_bar_date: entry_date 用实际 K 线日 (周一跑
+            # daily 时 baostock 当日 K 线未入库, args.asof 是未来日 → hold_days 负数 +
+            # α benchmark 错位). 兜底回 args.asof.
+            entry_date_actual = c.get("entry_bar_date") or args.asof
             t = TradeOpen(
                 symbol=code,
                 market=args.market,
                 strategy=eff_strategy,
-                entry_date=args.asof,
+                entry_date=entry_date_actual,
                 entry_price=c["entry_price"],
                 entry_size=entry_size,
                 entry_score=c.get("score", 0.0),

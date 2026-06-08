@@ -997,7 +997,11 @@ def scan_today_entries(
             continue
         sig = entry_signal(px, cfg, regime_ctx=regime_ctx)
         if sig["signal"]:
-            hits.append({"code": code, **sig})
+            # entry_bar_date = 触发 signal 的实际 K 线日 (cache 最新一根); 周一跑 daily
+            # 时 baostock 当日 K 线未入库, args.asof 是未来日 → 此字段防 entry_date
+            # 错位导致 hold_days 负数 + α 报表 benchmark 错位 (M3 of fix_hold_days)
+            entry_bar_date = str(px["date"].iloc[-1])
+            hits.append({"code": code, "entry_bar_date": entry_bar_date, **sig})
     return hits
 
 
