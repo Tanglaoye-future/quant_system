@@ -258,6 +258,43 @@ class PortfolioHistory(Base):
     )
 
 
+class AlertsSent(Base):
+    """盘中实时告警去重表 —— PR5 of [[docs/specs/position_v2_harness.md]] §6。
+
+    一个 (asof_date, strategy_name, symbol, alert_type) 一行；同 N 分钟 cron 跑
+    多次只发一次（按 dedup unique index）；跨日重置（同事件第二天再发一次）。
+
+    用户授权 2026-06-07：Telegram 通道 / 15 min 频率 / 4 阈值。
+    """
+
+    __tablename__ = "alerts_sent"
+    __table_args__ = (
+        # 按当日去重：同 strategy/symbol/alert_type 在 asof_date 只发一次
+        UniqueConstraint(
+            "asof_date", "strategy_name", "symbol", "alert_type",
+            name="uq_alerts_sent_dedup",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # asof_ts: 实际触发时间（精确秒）；asof_date: 用于去重的 date 投影（避免 PG 函数索引）
+    asof_ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    asof_date: Mapped[date] = mapped_column(Date, nullable=False)
+    strategy_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    symbol: Mapped[Optional[str]] = mapped_column(String(32))  # 个股 alert 有，组合层 None
+    alert_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    # 推送内容（含价 / dist_to_stop_pct / message body 全 JSONB）；便于事后回放
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONColumn, nullable=False, default=dict)
+    channel: Mapped[str] = mapped_column(String(16), nullable=False)  # "telegram" / "macos" / ...
+    delivered: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    error: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class OptionsPosition(Base):
     """options BCS spread 持仓快照 —— stock 持仓 schema 对不上，独立表。
 

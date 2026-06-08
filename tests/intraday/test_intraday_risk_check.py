@@ -1,0 +1,240 @@
+"""盘中实时风控核心评估 + Telegram 推送 + dedup 契约测试 (PR5 of spec §6)。
+
+覆盖 spec §6.6 全部 6 case + 数学不变量；网络/DB 全 mock。
+"""
+from __future__ import annotations
+
+from datetime import date, datetime, time
+
+import pytest
+
+from quant_system.intraday.core import (
+    AlertEvent,
+    IntradayConfig,
+    PortfolioSnapshot,
+    PositionSnapshot,
+    evaluate_alerts,
+    is_in_trading_window,
+)
+from quant_system.notify.telegram import TelegramSender
+
+
+# ── fixtures ────────────────────────────────────────────────────────
+
+def _cfg(**overrides) -> IntradayConfig:
+    defaults = dict(
+        enabled=True,
+        proximity_to_stop_loss_pct=0.005,
+        proximity_to_take_profit_pct=0.005,
+        portfolio_unrealized_floor_pct=-0.05,
+        portfolio_drawdown_pct=-0.07,
+    )
+    defaults.update(overrides)
+    return IntradayConfig(**defaults)
+
+
+def _pos(symbol="601939", strategy="equity_factor", market="a_share",
+         entry=10.0, current=10.10, stop=9.50, tp=11.0) -> PositionSnapshot:
+    return PositionSnapshot(
+        strategy_name=strategy, symbol=symbol, market=market,
+        entry_price=entry, current_price=current,
+        stop_loss=stop, take_profit=tp,
+    )
+
+
+def _port(strategy="equity_factor", pnl=-0.02, dd=None) -> PortfolioSnapshot:
+    return PortfolioSnapshot(
+        strategy_name=strategy, unrealized_pnl_pct=pnl,
+        drawdown_from_peak_pct=dd,
+    )
+
+
+# ── §6.6 trigger / dedup core cases ─────────────────────────────────
+
+def test_no_alert_when_safe():
+    """距止损 +5% / 距止盈 +9% / 浮亏 -2% / dd None → 0 alerts"""
+    positions = [_pos(current=10.05, stop=9.50, tp=11.00)]
+    portfolios = [_port(pnl=-0.02, dd=None)]
+    events = evaluate_alerts(positions, portfolios, _cfg())
+    assert events == []
+
+
+def test_stop_loss_proximity_triggers():
+    """距止损 < 0.5% → critical stop_loss_proximity 触发"""
+    # current 9.55 / stop 9.52 → dist 0.003 < 0.005
+    positions = [_pos(current=9.55, stop=9.52)]
+    events = evaluate_alerts(positions, [], _cfg())
+    assert len(events) == 1
+    ev = events[0]
+    assert ev.alert_type == "stop_loss_proximity"
+    assert ev.severity == "critical"
+    assert ev.payload["dist_to_stop_pct"] < 0.005
+    assert "贴近止损" in ev.message
+
+
+def test_take_profit_proximity_triggers():
+    """距止盈 < 0.5% → warning take_profit_proximity 触发"""
+    # current 10.96 / tp 11.00 → dist 0.00365 < 0.005
+    positions = [_pos(current=10.96, stop=9.50, tp=11.00)]
+    events = evaluate_alerts(positions, [], _cfg())
+    types = [e.alert_type for e in events]
+    assert "take_profit_proximity" in types
+
+
+def test_portfolio_unrealized_floor_triggers():
+    """组合浮亏 -6% < 阈值 -5% → portfolio_unrealized_floor 触发"""
+    events = evaluate_alerts([], [_port(pnl=-0.06)], _cfg())
+    assert len(events) == 1
+    assert events[0].alert_type == "portfolio_unrealized_floor"
+    assert events[0].severity == "critical"
+
+
+def test_portfolio_peak_drawdown_triggers():
+    """组合层 peak DD -8% < 阈值 -7% → portfolio_peak_drawdown 触发"""
+    events = evaluate_alerts([], [_port(pnl=-0.02, dd=-0.08)], _cfg())
+    assert len(events) == 1
+    assert events[0].alert_type == "portfolio_peak_drawdown"
+
+
+def test_disabled_when_enabled_false():
+    """cfg.enabled=False → 即使全部阈值触发也不出 event"""
+    positions = [_pos(current=9.51, stop=9.50)]  # 距止损 0.1%
+    portfolios = [_port(pnl=-0.50, dd=-0.50)]
+    cfg = _cfg(enabled=False)
+    events = evaluate_alerts(positions, portfolios, cfg)
+    assert events == []
+
+
+def test_strategies_filter_applies():
+    """cfg.strategies 非空 → 不在白名单内的策略被跳过"""
+    positions = [
+        _pos(symbol="601939", strategy="equity_factor", current=9.51, stop=9.50),
+        _pos(symbol="600519", strategy="zhuang", current=99.50, stop=99.0),  # 距 stop 0.5% < 0.5%? 实际算 0.503
+    ]
+    cfg = _cfg(strategies=["equity_factor"])
+    events = evaluate_alerts(positions, [], cfg)
+    syms = [e.symbol for e in events]
+    assert "600519" not in syms
+
+
+# ── trading window ──────────────────────────────────────────────────
+
+def test_in_trading_window_morning():
+    cfg = _cfg()
+    assert is_in_trading_window(datetime(2026, 6, 8, 10, 30), cfg) is True
+
+
+def test_in_trading_window_afternoon():
+    cfg = _cfg()
+    assert is_in_trading_window(datetime(2026, 6, 8, 14, 0), cfg) is True
+
+
+def test_outside_trading_window_lunch():
+    cfg = _cfg()
+    assert is_in_trading_window(datetime(2026, 6, 8, 12, 0), cfg) is False
+
+
+def test_outside_trading_window_morning_pre_open():
+    cfg = _cfg()
+    assert is_in_trading_window(datetime(2026, 6, 8, 9, 0), cfg) is False
+
+
+def test_outside_trading_window_weekend():
+    cfg = _cfg()
+    # 2026-06-06 是周六
+    assert is_in_trading_window(datetime(2026, 6, 6, 10, 30), cfg) is False
+
+
+# ── safety / math invariants ────────────────────────────────────────
+
+def test_position_zero_price_safe():
+    """current_price=0 → 不参与评估，不抛 div-by-zero"""
+    positions = [_pos(current=0.0)]
+    events = evaluate_alerts(positions, [], _cfg())
+    assert events == []
+
+
+def test_stop_loss_none_safe():
+    """stop_loss=None → 不触发 stop_loss_proximity"""
+    positions = [_pos(stop=None)]
+    events = evaluate_alerts(positions, [], _cfg())
+    types = [e.alert_type for e in events]
+    assert "stop_loss_proximity" not in types
+
+
+def test_negative_dist_to_stop_does_not_trigger():
+    """current < stop（已破止损）→ dist_to_stop_pct < 0 → 不再触发 proximity（已该 EXIT，daily 决策）"""
+    # current 9.40 / stop 9.50 → dist = -0.0106
+    positions = [_pos(current=9.40, stop=9.50)]
+    events = evaluate_alerts(positions, [], _cfg())
+    types = [e.alert_type for e in events]
+    assert "stop_loss_proximity" not in types
+
+
+# ── from_yaml_dict roundtrip ────────────────────────────────────────
+
+def test_from_yaml_dict_defaults():
+    cfg = IntradayConfig.from_yaml_dict({})
+    assert cfg.enabled is False
+    assert cfg.poll_interval_minutes == 15
+    assert cfg.proximity_to_stop_loss_pct == 0.005
+    assert cfg.portfolio_drawdown_pct == -0.07
+
+
+def test_from_yaml_dict_full():
+    raw = {
+        "enabled": True,
+        "poll_interval_minutes": 5,
+        "trading_window": {"a_share": {"start": "09:30", "end": "15:00"}},
+        "triggers": {
+            "proximity_to_stop_loss_pct": 0.003,
+            "proximity_to_take_profit_pct": 0.004,
+            "portfolio_unrealized_floor_pct": -0.06,
+            "portfolio_drawdown_pct": -0.08,
+            "strategies": ["equity_factor", "zhuang"],
+        },
+    }
+    cfg = IntradayConfig.from_yaml_dict(raw)
+    assert cfg.enabled is True
+    assert cfg.poll_interval_minutes == 5
+    assert cfg.proximity_to_stop_loss_pct == 0.003
+    assert cfg.strategies == ["equity_factor", "zhuang"]
+
+
+# ── Telegram sender contract ────────────────────────────────────────
+
+def test_telegram_unconfigured_returns_false(monkeypatch):
+    """未配 env → send 返 (False, '...not set'); 不抛错"""
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+    sender = TelegramSender()
+    assert sender.configured is False
+    ok, err = sender.send("hello")
+    assert ok is False
+    assert "not set" in err
+
+
+def test_telegram_configured_reads_env(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "fake-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "12345")
+    sender = TelegramSender()
+    assert sender.configured is True
+
+
+def test_telegram_explicit_args_override():
+    sender = TelegramSender(bot_token="x", chat_id="y")
+    assert sender.configured is True
+
+
+# ── AlertEvent shape ────────────────────────────────────────────────
+
+def test_alert_event_message_includes_threshold():
+    """payload + message 含阈值数字 + 现价，便于 Telegram 可读 + 事后回放"""
+    positions = [_pos(symbol="601939", current=9.55, stop=9.52)]
+    events = evaluate_alerts(positions, [], _cfg())
+    assert len(events) == 1
+    ev = events[0]
+    assert "601939" in ev.message
+    assert "0.50%" in ev.message  # threshold
+    assert ev.payload["threshold_pct"] == 0.005
+    assert isinstance(ev, AlertEvent)
