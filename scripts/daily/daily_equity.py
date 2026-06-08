@@ -20,6 +20,10 @@ import json
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
+
+import numpy as np
+import pandas as pd
 
 _REPORT_DATA = Path(__file__).resolve().parents[2] / "report" / "data"
 
@@ -35,7 +39,75 @@ from quant_system.strategies.equity_factor.data.loader import DataLoader
 from quant_system.strategies.equity_factor.journal.journal import Journal
 from quant_system.strategies.equity_factor.risk.monitor import RiskMonitor
 from quant_system.strategies.equity_factor.timing.regime import MarketRegimeGate, build_timing_regime_context
-from quant_system.strategies.equity_factor.timing.signals import scan_today_entries, timing_config_from_yaml_node
+from quant_system.strategies.equity_factor.timing.signals import enrich, scan_today_entries, timing_config_from_yaml_node
+
+
+def _safe_float(value) -> Optional[float]:
+    """NaN / None / Inf → None (JSONB 友好); 数值 → float."""
+    try:
+        f = float(value)
+        if not np.isfinite(f):
+            return None
+        return f
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_entry_features_for_code(
+    loader, market: str, code: str, asof: str, strategy: str,
+    tcfg, entry_score: Optional[float], history_start: str = "2024-01-01",
+) -> Optional[dict]:
+    """L2 of self_learning_pipeline — 重 enrich + snapshot today numeric features.
+
+    Backstop #5 严守：零新计算，全部从 timing.enrich 已计算的列 + 20d high/low
+    band 抽出（band 是 pandas .iloc 操作，不是新指标）。
+    任何失败返回 None（fail-soft，不阻断 open_trade）。
+    """
+    try:
+        px = loader.get_daily(market, code, history_start, asof)
+        if px is None or len(px) < (tcfg.ma_long + 5):
+            return None
+        e = enrich(px, tcfg)
+        today = e.iloc[-1]
+        close = _safe_float(today.get("close"))
+        vol_ma = _safe_float(today.get("vol_ma"))
+        volume = _safe_float(today.get("volume"))
+        ma_short = _safe_float(today.get("ma_short"))
+        ma_long = _safe_float(today.get("ma_long"))
+        vol_ratio = (volume / vol_ma) if (vol_ma and vol_ma > 0 and volume is not None) else None
+        # 20d 区间位置 — 与 signals.py breakout 模式一致, 用前 20 日 close max
+        # (不含今天) 算 dist; 价格位置用前 20 日 high/low band (不含今天).
+        lb = 20
+        dist_to_20d_high_pct = None
+        price_position_20d = None
+        if len(e) >= lb + 1:
+            prev = e.iloc[-(lb + 1):-1]  # 前 20 日, 不含今天
+            prev_close_high = _safe_float(pd.to_numeric(prev["close"], errors="coerce").max())
+            prev_high_20 = _safe_float(pd.to_numeric(prev["high"], errors="coerce").max())
+            prev_low_20 = _safe_float(pd.to_numeric(prev["low"], errors="coerce").min())
+            if close is not None and prev_close_high and prev_close_high > 0:
+                dist_to_20d_high_pct = (close - prev_close_high) / prev_close_high
+            if close is not None and prev_high_20 is not None and prev_low_20 is not None and prev_high_20 > prev_low_20:
+                price_position_20d = (close - prev_low_20) / (prev_high_20 - prev_low_20)
+        return {
+            "rsi": _safe_float(today.get("rsi")),
+            "vol_ratio": _safe_float(vol_ratio),
+            "ma_short": ma_short,
+            "ma_long": ma_long,
+            "ma_short_above_long": (ma_short is not None and ma_long is not None and ma_short > ma_long),
+            "atr": _safe_float(today.get("atr")),
+            "close": close,
+            "dist_to_20d_high_pct": dist_to_20d_high_pct,
+            "price_position_20d": price_position_20d,
+            "strategy": strategy,
+            "market": market,
+            "asof": asof,
+            "sector_sw1": None,  # L2 暂留 None；申万行业数据需 akshare 接入，留未来 PR
+            "zscore_within_universe": _safe_float(entry_score),
+        }
+    except Exception:
+        # fail-soft: 采集失败不阻断 open_trade (Backstop #5)
+        return None
 
 
 def main() -> None:
@@ -330,6 +402,11 @@ def main() -> None:
                 continue
             entry_size = entry_size_lots * 100
             reasons_str = " · ".join(c.get("reasons", []))
+            # L2 of self_learning_pipeline: 采集结构化 entry features (fail-soft)
+            entry_feats = _build_entry_features_for_code(
+                loader, args.market, code, args.asof,
+                eff_strategy or args.strategy, tcfg, c.get("score", 0.0),
+            )
             t = TradeOpen(
                 symbol=code,
                 market=args.market,
@@ -341,6 +418,7 @@ def main() -> None:
                 reason_timing=reasons_str,
                 stop_loss_price=c["stop_loss"],
                 take_profit_price=c["take_profit"],
+                entry_features=entry_feats,
             )
             trade_id = j.open_trade(t)
             new_trades.append((code, trade_id, entry_size, c["entry_price"]))
