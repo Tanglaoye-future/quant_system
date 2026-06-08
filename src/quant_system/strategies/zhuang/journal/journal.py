@@ -47,6 +47,29 @@ def _to_date(value: Any) -> Optional[date]:
     return date.fromisoformat(str(value)[:10])
 
 
+def _zhuang_exit_layer(reason: str) -> str:
+    """L4 of self_learning_pipeline: zhuang exit reason → 子类枚举。
+
+    zhuang signals/exit.py 现有 reason 前缀: trailing_stop / momentum_stop /
+    time_stop / take_profit / distribution. 与 equity exit_layer_from_reason
+    同款 prefix-match 思路 — 不引入新分类逻辑 (Backstop #5)。
+    """
+    r = (reason or "").strip().lower()
+    if r.startswith("trailing_stop"):
+        return "STOP_TRAIL"
+    if r.startswith("momentum_stop"):
+        return "MOMENTUM_STOP"
+    if r.startswith("time_stop"):
+        return "TIME_STOP"
+    if r.startswith("take_profit"):
+        return "TAKE_PROFIT"
+    if r.startswith("distribution"):
+        return "DISTRIBUTION"
+    if r in ("持有", "hold", ""):
+        return ""
+    return "OTHER"
+
+
 def _trade_row(t: ZhuangTrade) -> dict[str, Any]:
     return {
         "id": t.id,
@@ -140,6 +163,25 @@ class ZhuangJournal:
             trade.pnl = (exit_price - trade.entry_price) * trade.entry_size
             trade.pnl_pct = exit_price / trade.entry_price - 1.0
             trade.hold_days = (exit_d - trade.entry_date).days
+            # L4 of self_learning_pipeline: 内部采集 exit_features (fail-soft)
+            try:
+                snaps = s.scalars(
+                    select(ZhuangSnapshot).where(ZhuangSnapshot.trade_id == trade_id)
+                ).all()
+                pnls = [sn.unrealized_pnl_pct for sn in snaps if sn.unrealized_pnl_pct is not None]
+                max_dd = min(pnls) if pnls else None
+                max_profit = max(pnls) if pnls else None
+                hd = trade.hold_days or 0
+                bucket = "0-5" if hd <= 5 else "6-20" if hd <= 20 else "21-60" if hd <= 60 else "60+"
+                trade.exit_features = {
+                    "exit_type": _zhuang_exit_layer(exit_reason),
+                    "hold_days_bucket": bucket,
+                    "max_drawdown_during_hold_pct": max_dd,
+                    "max_profit_during_hold_pct": max_profit,
+                    "asof": str(exit_d) if exit_d else None,
+                }
+            except Exception:
+                pass  # fail-soft: close_trade 主行为不受影响
 
     def update_stop_loss(self, trade_id: int, new_stop: float) -> None:
         with self._scope() as s:

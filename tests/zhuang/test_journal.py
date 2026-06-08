@@ -128,3 +128,39 @@ def test_open_trade_default_entry_features_none(journal: ZhuangJournal):
     assert row["id"] == tid
     assert row["entry_features"] is None
     assert row["exit_features"] is None
+
+
+def test_close_trade_writes_exit_features_distribution(journal: ZhuangJournal):
+    """L4 of self_learning_pipeline: zhuang close_trade 同款采集 exit_features.
+
+    实盘 06-08 600584 长电科技 触发 distribution: turnover=12.7>6.0; 同款 prefix.
+    """
+    tid = _open(journal, price=20.0, size=500)  # entry_date 2026-05-26
+    # 持有期间 3 snapshot
+    journal.add_snapshot(tid, "2026-05-27", price=20.4)  # +2%
+    journal.add_snapshot(tid, "2026-05-28", price=18.0)  # -10% (min DD)
+    journal.add_snapshot(tid, "2026-06-01", price=22.0)  # +10% (max profit)
+    journal.close_trade(tid, exit_date="2026-06-02", exit_price=19.5,
+                        exit_reason="distribution: turnover=12.7>6.0 close=19.5<high=22.0")
+    r = journal.list_closed()[0]
+    ef = r["exit_features"]
+    assert ef is not None
+    assert ef["exit_type"] == "DISTRIBUTION"
+    # hold_days = 2026-06-02 - 2026-05-26 = 7 → bucket "6-20"
+    assert ef["hold_days_bucket"] == "6-20"
+    assert ef["max_drawdown_during_hold_pct"] == pytest.approx(-0.10)
+    assert ef["max_profit_during_hold_pct"] == pytest.approx(0.10)
+    assert ef["asof"] == "2026-06-02"
+
+
+def test_close_trade_exit_features_momentum_stop(journal: ZhuangJournal):
+    """zhuang exit reasons 其它 prefix 也对 — momentum_stop 子类."""
+    tid = _open(journal, price=20.0)
+    journal.add_snapshot(tid, "2026-05-27", price=19.0)
+    journal.close_trade(tid, exit_date="2026-05-30", exit_price=18.8,
+                        exit_reason="momentum_stop: drop=-6.0% <= -5% from entry")
+    r = journal.list_closed()[0]
+    ef = r["exit_features"]
+    assert ef is not None
+    assert ef["exit_type"] == "MOMENTUM_STOP"
+    assert ef["max_drawdown_during_hold_pct"] == pytest.approx(-0.05)

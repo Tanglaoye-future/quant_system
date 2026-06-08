@@ -147,6 +147,27 @@ class Journal:
             trade.pnl = (exit_price - trade.entry_price) * trade.entry_size
             trade.pnl_pct = exit_price / trade.entry_price - 1.0
             trade.hold_days = (exit_d - trade.entry_date).days
+            # L4 of self_learning_pipeline: 内部采集 exit_features (fail-soft)
+            # 调用方零改动 — Journal own snapshots 表, 自家算 max DD/profit 最自然
+            try:
+                from quant_system.strategies.equity_factor.timing.exit_taxonomy import exit_layer_from_reason
+                snaps = s.scalars(
+                    select(JournalSnapshot).where(JournalSnapshot.trade_id == trade_id)
+                ).all()
+                pnls = [sn.unrealized_pnl_pct for sn in snaps if sn.unrealized_pnl_pct is not None]
+                max_dd = min(pnls) if pnls else None
+                max_profit = max(pnls) if pnls else None
+                hd = trade.hold_days or 0
+                bucket = "0-5" if hd <= 5 else "6-20" if hd <= 20 else "21-60" if hd <= 60 else "60+"
+                trade.exit_features = {
+                    "exit_type": exit_layer_from_reason(exit_reason),
+                    "hold_days_bucket": bucket,
+                    "max_drawdown_during_hold_pct": max_dd,
+                    "max_profit_during_hold_pct": max_profit,
+                    "asof": str(exit_d) if exit_d else None,
+                }
+            except Exception:
+                pass  # fail-soft: close_trade 主行为不受影响
 
     def update_stop_loss(self, trade_id: int, new_stop: float) -> None:
         with self._scope() as s:
