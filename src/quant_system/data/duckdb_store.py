@@ -244,6 +244,21 @@ class DuckDBStore:
             df["date"] = pd.to_datetime(df["date"])
         return df
 
+    def latest_date(self, market: str, code: str):
+        """返 cache 里 (market, code) 最新日期 (date 对象); 无数据返 None.
+
+        M5 of duckdb_cache_freshness: loader 用此判断 cache 是否够新, 不够则
+        fall through baostock refresh.
+        """
+        code = str(code).zfill(6) if market == "a_share" else str(code)
+        with self._lock:
+            con = self._connect()
+            row = con.execute(
+                "SELECT MAX(date) FROM daily_bars WHERE market=? AND code=?",
+                [market, code],
+            ).fetchone()
+        return row[0] if row and row[0] is not None else None
+
     def has_code(self, market: str, code: str) -> bool:
         """检查该 (market, code) 在 db 中是否有数据."""
         code = str(code).zfill(6) if market == "a_share" else str(code)

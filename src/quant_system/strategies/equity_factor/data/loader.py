@@ -148,15 +148,24 @@ class DataLoader:
         adjust_key = "qfq" if self.price_adjust == "qfq" else self.price_adjust
 
         # 1. DuckDB hot path（仅 qfq；非 qfq 走原 parquet 缓存以避免 adjust 混淆）
+        # M5 of duckdb_cache_freshness: cache 落后 end - skew_days 天时强 fall through
+        # 防 06-08 实盘 case (cache 截止 06-04, 算 pnl/距 stop/α 全用过时价).
         if self.price_adjust == "qfq":
             store = self._get_store()
             if store is not None and store.has_code(market, code):
-                df = store.get_daily(market, code, start, end)
-                if not df.empty:
-                    # equity_factor 下游期望 date 为字符串
-                    df = df.copy()
-                    df["date"] = df["date"].dt.strftime("%Y-%m-%d")
-                    return df[["date", "open", "high", "low", "close", "volume"]]
+                cache_latest = store.latest_date(market, code)
+                try:
+                    end_dt = pd.to_datetime(end).date()
+                    skew_days = 3  # 落后 >=3 个交易日强 refresh
+                    fresh = cache_latest is not None and (end_dt - cache_latest).days <= skew_days
+                except Exception:
+                    fresh = True  # 保守 fallback
+                if fresh:
+                    df = store.get_daily(market, code, start, end)
+                    if not df.empty:
+                        df = df.copy()
+                        df["date"] = df["date"].dt.strftime("%Y-%m-%d")
+                        return df[["date", "open", "high", "low", "close", "volume"]]
 
         # 2. parquet 缓存
         if cache.exists() and self._is_fresh(cache):

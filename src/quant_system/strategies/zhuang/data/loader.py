@@ -337,11 +337,22 @@ class ZhuangDataLoader:
         code = str(code).zfill(6)
 
         # 1. DuckDB hot path - Phase 1-C: 用 self.market 而非硬码 "a_share"
+        # M5 of duckdb_cache_freshness: cache 落后 end - skew_days 天时强 fall through
+        # baostock refresh, 防 06-08 实盘 600584 case (cache 截止 06-04, daily 用 4 天
+        # 前 close 算 pnl/距 stop 严重偏小, 真实 -14.32% 显示成 -2.40%).
         store = self._get_store()
         if store is not None and store.has_code(self.market, code):
-            df = store.get_daily(self.market, code, start, end)
-            if not df.empty:
-                return df.reset_index(drop=True)
+            cache_latest = store.latest_date(self.market, code)
+            try:
+                end_dt = pd.to_datetime(end).date()
+                skew_days = 3  # A 股周末/节假日 cushion; 落后 >=3 个交易日强刷新
+                fresh = cache_latest is not None and (end_dt - cache_latest).days <= skew_days
+            except Exception:
+                fresh = True  # 日期解析失败时保守用 cache (与旧行为一致)
+            if fresh:
+                df = store.get_daily(self.market, code, start, end)
+                if not df.empty:
+                    return df.reset_index(drop=True)
 
         # 2. CSV fallback
         csv_path = self.daily_dir / f"{code}_daily.csv"
