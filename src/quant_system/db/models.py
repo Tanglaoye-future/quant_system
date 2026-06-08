@@ -136,7 +136,7 @@ class JournalTrade(Base):
 
     exit_date: Mapped[Optional[date]] = mapped_column(Date, index=True)
     exit_price: Mapped[Optional[float]] = mapped_column(Float)
-    exit_reason: Mapped[Optional[str]] = mapped_column(String(32))
+    exit_reason: Mapped[Optional[str]] = mapped_column(String(255))
     pnl: Mapped[Optional[float]] = mapped_column(Float)
     pnl_pct: Mapped[Optional[float]] = mapped_column(Float)
     hold_days: Mapped[Optional[int]] = mapped_column(Integer)

@@ -92,6 +92,18 @@ def test_add_snapshot_idempotent_per_day(journal: Journal):
     assert journal.list_open()[0]["id"] == tid
 
 
+def test_close_trade_accepts_long_exit_reason(journal: Journal):
+    """schema_fix_exit_reason: 06-05 实盘 trailing_stop reason 42 char 撞 VARCHAR(32) 上限挂掉。
+    现 exit_reason 列 VARCHAR(255), 至少容 50 char 完整 reason。
+    """
+    tid = _open(journal, price=24.0, size=100)
+    long_reason = "trailing_stop: close=24.54 <= stop=24.55"  # 实盘 42 char 原文
+    journal.close_trade(tid, exit_date="2026-06-05", exit_price=24.54, exit_reason=long_reason)
+    closed = journal.list_closed()
+    assert len(closed) == 1
+    assert closed[0]["exit_reason"] == long_reason
+
+
 def test_attribution_summary(journal: Journal):
     assert journal.attribution() == {"trade_count": 0}
     a = _open(journal, symbol="A", price=10.0, size=100)
