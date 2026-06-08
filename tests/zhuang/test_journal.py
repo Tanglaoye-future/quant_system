@@ -84,3 +84,47 @@ def test_update_stop_loss(journal: ZhuangJournal):
     tid = _open(journal, price=20.0)
     journal.update_stop_loss(tid, 19.5)
     assert journal.list_open()[0]["stop_loss_price"] == pytest.approx(19.5)
+
+
+def test_open_trade_persists_entry_features(journal: ZhuangJournal):
+    """L3 of self_learning_pipeline: entry_features dict round-trip via TradeOpen."""
+    entry_feats = {
+        "accumulation_ma_convergence": 100.0,
+        "accumulation_volume_asymmetry": 11.8,
+        "accumulation_price_consolidation": 0.0,
+        "accumulation_turnover_decline": 97.2,
+        "accumulation_vp_divergence": 94.9,
+        "accumulation_total": 60.8,
+        "phase": "A",
+        "atr_at_entry": 0.18,
+        "entry_price": 4.58,
+        "position_pct": 0.05,
+        "market": "a_share",
+        "market_trend_on": True,
+        "asof": "2026-05-28",
+        "market_cap_band": None,
+        "industry_sw1": None,
+    }
+    tid = journal.open_trade(TradeOpen(
+        code="600103", market="a_share", entry_date="2026-05-28",
+        entry_price=4.58, entry_size=28400, accumulation_score=60.8, phase="A",
+        atr_at_entry=0.18, entry_reason="accumulation_score=60.8 >= 45",
+        stop_loss_price=4.42, take_profit_price=5.04,
+        entry_features=entry_feats,
+    ))
+    rows = journal.list_open()
+    assert len(rows) == 1
+    r = rows[0]
+    assert r["id"] == tid
+    assert r["entry_features"] == entry_feats
+    assert r["entry_features"]["accumulation_ma_convergence"] == pytest.approx(100.0)
+    assert r["entry_features"]["market_trend_on"] is True
+
+
+def test_open_trade_default_entry_features_none(journal: ZhuangJournal):
+    """既有调用方不传 entry_features → DB NULL，行为零变化 (Backstop #5)。"""
+    tid = _open(journal)
+    row = journal.list_open()[0]
+    assert row["id"] == tid
+    assert row["entry_features"] is None
+    assert row["exit_features"] is None
