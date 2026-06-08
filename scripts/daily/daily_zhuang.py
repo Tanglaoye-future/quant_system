@@ -48,6 +48,24 @@ def _safe_float(value):
         return None
 
 
+def stop_state(dist_to_stop_pct, critical_margin: float = 0.01) -> str:
+    """M4 of zhuang_stop_breach_alert: 三级状态 normal / critical / breached.
+
+    Returns:
+      "breached" — dist < 0 已跌穿 (🔴 立即手工决策)
+      "critical" — 0 <= dist < critical_margin 贴近 (⚠)
+      "normal"   — dist >= critical_margin 健康
+      "unknown"  — dist is None
+    """
+    if dist_to_stop_pct is None:
+        return "unknown"
+    if dist_to_stop_pct < 0:
+        return "breached"
+    if dist_to_stop_pct < critical_margin:
+        return "critical"
+    return "normal"
+
+
 def _build_zhuang_entry_features(df, sig, atr_val, position_pct, market, asof, market_trend, acc_weights):
     """L3 of self_learning_pipeline — snapshot zhuang 入场 5 维 accumulation + 附属 context.
 
@@ -242,17 +260,35 @@ def main():
     print(f"【今日卖出建议】 ({len(exits)} 笔，advisory — 不自动平仓)")
     if not exits:
         print("  无")
+    # M4: advisory exit 也加 breach 标记 — 600584 case: distribution 触发后
+    # 用户没手工平, 仓位继续探底 8 天 → 跌穿 stop 8.86%. 必须在 exits 段就显
+    # 现严重程度, 防 "advisory + breached" 双重信号被忽视
+    exits_breached = 0
     for r in exits:
-        print(f"  {r['code']}  浮盈 {r['pnl_pct']*100:+.2f}%  持有 {r['hold_days']} 天  >> {r['reason']}")
+        dist = r.get("dist_to_stop_pct")
+        state = stop_state(dist)
+        if state == "breached":
+            breach_seg = f"  🔴 已跌穿 stop {abs(dist)*100:.2f}%"
+            exits_breached += 1
+            r["stop_breach"] = True
+        else:
+            breach_seg = ""
+            r["stop_breach"] = False
+        print(f"  {r['code']}  浮盈 {r['pnl_pct']*100:+.2f}%  持有 {r['hold_days']} 天{breach_seg}  >> {r['reason']}")
+    if exits_breached > 0:
+        print(f"  🔴 {exits_breached}/{len(exits)} 只卖出建议同时跌穿 stop loss "
+              f"— advisory 不自动平, 立即手工决策")
     print()
     print(f"【持有维持】 ({len(holds)} 笔)")
     if not holds:
         print("  无")
+    # M4 zhuang_stop_breach_alert: 三级状态 normal / critical / breached
+    # 区别 dist < 0 (已跌穿, 🔴) vs dist < 1% (临界, ⚠), 防 600584 类 8 天没注意到事件
+    n_breached = 0
     n_critical = 0
     for r in holds:
         pp = f"{r['pnl_pct']*100:+.2f}%" if r["pnl_pct"] is not None else "—"
         hd = r["hold_days"] if r["hold_days"] is not None else "—"
-        # safety margin 段：与 equity_factor 同款，止损贴线 ⚠，止盈中性
         stop_seg = (
             f"距 {r['dist_to_stop_pct']*100:+.2f}%"
             if r.get("dist_to_stop_pct") is not None else "距 —"
@@ -262,15 +298,23 @@ def main():
             if r.get("take_profit") is not None and r.get("dist_to_target_pct") is not None
             else "止盈 —"
         )
-        is_critical = (
-            r.get("dist_to_stop_pct") is not None and r["dist_to_stop_pct"] < CRITICAL_MARGIN
-        )
-        warn = " ⚠ 临界" if is_critical else ""
-        if is_critical:
+        dist = r.get("dist_to_stop_pct")
+        state = stop_state(dist, critical_margin=CRITICAL_MARGIN)
+        if state == "breached":
+            warn = f" 🔴 跌穿 {abs(dist)*100:.2f}%"
+            n_breached += 1
+        elif state == "critical":
+            warn = " ⚠ 临界"
             n_critical += 1
+        else:
+            warn = ""
+        r["stop_breach"] = (state == "breached")  # JSON 字段, 前端可消费
         stop_str = f"止损 {r['stop_loss']:.2f}" if r.get("stop_loss") is not None else "止损 —"
         print(f"  {r['code']}  浮盈 {pp}  {stop_str} ({stop_seg})  {tp_seg}  持有 {hd} 天{warn}")
-    if n_critical > 0 and holds:
+    if n_breached > 0:
+        print(f"  🔴 {n_breached}/{len(holds)} 只已跌穿 stop loss "
+              f"(advisory 不自动平 — 立即手工决策)")
+    if n_critical > 0:
         print(f"  ⚠ {n_critical}/{len(holds)} 只贴近止损 (margin < {CRITICAL_MARGIN*100:.0f}%)，"
               "组合层均值可能掩盖单只风险")
 
