@@ -104,6 +104,48 @@ def test_close_trade_accepts_long_exit_reason(journal: Journal):
     assert closed[0]["exit_reason"] == long_reason
 
 
+def test_open_trade_persists_entry_features(journal: Journal):
+    """L2 of self_learning_pipeline: entry_features dict round-trip via TradeOpen."""
+    entry_feats = {
+        "rsi": 65.3,
+        "vol_ratio": 1.37,
+        "ma_short": 5.84,
+        "ma_long": 5.73,
+        "ma_short_above_long": True,
+        "atr": 0.18,
+        "close": 6.05,
+        "dist_to_20d_high_pct": -0.012,
+        "price_position_20d": 0.78,
+        "strategy": "equity_momentum",
+        "market": "a_share",
+        "asof": "2026-06-08",
+        "sector_sw1": None,
+        "zscore_within_universe": 0.318,
+    }
+    tid = journal.open_trade(TradeOpen(
+        symbol="601988", market="a_share", strategy="equity_momentum",
+        entry_date="2026-06-08", entry_price=6.05, entry_size=33000,
+        entry_score=0.318, stop_loss_price=5.87, take_profit_price=6.42,
+        reason_timing="趋势 OK", entry_features=entry_feats,
+    ))
+    rows = journal.list_open()
+    assert len(rows) == 1
+    r = rows[0]
+    assert r["id"] == tid
+    assert r["entry_features"] == entry_feats
+    assert r["entry_features"]["rsi"] == pytest.approx(65.3)
+    assert r["entry_features"]["ma_short_above_long"] is True
+
+
+def test_open_trade_default_entry_features_none(journal: Journal):
+    """既有调用方不传 entry_features → DB NULL，行为零变化 (Backstop #5)。"""
+    tid = _open(journal)
+    row = journal.list_open()[0]
+    assert row["id"] == tid
+    assert row["entry_features"] is None
+    assert row["exit_features"] is None
+
+
 def test_attribution_summary(journal: Journal):
     assert journal.attribution() == {"trade_count": 0}
     a = _open(journal, symbol="A", price=10.0, size=100)

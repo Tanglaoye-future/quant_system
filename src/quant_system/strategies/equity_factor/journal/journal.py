@@ -36,6 +36,9 @@ class TradeOpen:
     stop_loss_price: Optional[float] = None
     take_profit_price: Optional[float] = None
     notes: Optional[str] = None
+    # L2 of self_learning_pipeline: snapshot 入场时已算好的结构化特征
+    # 默认 None — 既有 daily 路径不传时 DB NULL, 行为零变化 (Backstop #5)
+    entry_features: Optional[dict] = None
 
 
 def _to_date(value: Any) -> Optional[date]:
@@ -71,6 +74,8 @@ def _trade_row(t: JournalTrade) -> dict[str, Any]:
         "pnl_pct": t.pnl_pct,
         "hold_days": t.hold_days,
         "notes": t.notes,
+        "entry_features": t.entry_features,
+        "exit_features": t.exit_features,
     }
 
 
@@ -122,6 +127,7 @@ class Journal:
                 stop_loss_price=t.stop_loss_price,
                 take_profit_price=t.take_profit_price,
                 notes=t.notes,
+                entry_features=t.entry_features,
             )
             s.add(trade)
             s.flush()
