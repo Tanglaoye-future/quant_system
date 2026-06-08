@@ -14,8 +14,10 @@ Schema:
 """
 from __future__ import annotations
 
+import atexit
 import os
 import threading
+import weakref
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -28,6 +30,31 @@ except ImportError:
 
 
 DEFAULT_DB_PATH = Path("data/quant.duckdb")
+
+# 进程退出时 close 所有活 store, 释放 DuckDB flock。
+# 06-08 实盘 stale lock 教训：daily_zhuang 异常退出后 fd 残留，
+# 下一次 daily 启动撞自己留下的 lock 抛 IOException。
+# WeakSet：instance 没其他引用时自动剔除，atexit 只 close 真活的；
+# 不阻止 GC，避免长跑进程内存泄漏。
+_active_stores: "weakref.WeakSet[DuckDBStore]" = weakref.WeakSet()
+_atexit_registered = False
+_atexit_lock = threading.Lock()
+
+
+def _close_all_stores_atexit() -> None:
+    for store in list(_active_stores):
+        try:
+            store.close()
+        except Exception:
+            pass  # atexit 不应抛, 否则会污染其他 atexit hook
+
+
+def _ensure_atexit_registered() -> None:
+    global _atexit_registered
+    with _atexit_lock:
+        if not _atexit_registered:
+            atexit.register(_close_all_stores_atexit)
+            _atexit_registered = True
 
 
 class DuckDBStore:
@@ -43,6 +70,9 @@ class DuckDBStore:
         # 多进程并行场景 (parallel_audit) 用 env 切 read-only 模式避免 lock 冲突
         # DuckDB default 单 writer; read_only=True 允许多 reader 并发
         self._read_only = os.environ.get("QUANT_DUCKDB_READ_ONLY", "").lower() in ("1", "true", "yes")
+        # 注册到全局 atexit close (释放 flock 防 stale lock cascade)
+        _active_stores.add(self)
+        _ensure_atexit_registered()
 
     # ── 连接 ────────────────────────────────────────────────────────────
 
