@@ -5,6 +5,7 @@
 """
 
 from quant_system.db.models import (
+    AlertsSent,
     Base,
     JournalSnapshot,
     JournalTrade,
@@ -25,6 +26,7 @@ __all__ = [
     "JournalSnapshot",
     "PortfolioHistory",
     "OptionsPosition",
+    "AlertsSent",
     "get_engine",
     "get_sessionmaker",
     "session_scope",

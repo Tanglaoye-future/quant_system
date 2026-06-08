@@ -1,0 +1,39 @@
+# 盘中实时风控配置 — PR5 of docs/specs/position_v2_harness.md §6
+# 用户授权 2026-06-07: Telegram bot + 15 min + 4 阈值
+#
+# 默认 enabled: false → 不跑任何东西。要启用：
+#   1. 设 TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID 环境变量
+#   2. 改下面 enabled: true + channels.telegram.enabled: true
+#   3. launchd 因 macOS TCC 阻塞 (见 session_2026_05_27.md), 用 nohup 后台守护:
+#      nohup venv/bin/python scripts/intraday/intraday_risk_check.py --loop &
+#
+# 触发条件 (任一即推):
+# - 个股层: 现价距 stop_loss 阈值 < proximity_to_stop_loss_pct → "stop_loss_proximity"
+# - 个股层: 现价距 take_profit 阈值 < proximity_to_take_profit_pct → "take_profit_proximity"
+# - 组合层: unrealized_pnl_pct < portfolio_unrealized_floor_pct → "portfolio_unrealized_floor"
+# - 组合层: drawdown_from_peak_pct < portfolio_drawdown_pct → "portfolio_peak_drawdown"
+
+intraday_alerts:
+  enabled: false                     # 用户手动改 true 才生效
+  poll_interval_minutes: 15          # cron / loop 频率
+  trading_window:
+    a_share:                         # A 股交易时段（local time, 9:30-15:00；中午 11:30-13:00 休市）
+      start: "09:30"
+      lunch_start: "11:30"
+      lunch_end: "13:00"
+      end: "15:00"
+
+  channels:
+    telegram:
+      enabled: true                  # 凭证从 env 读 (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)
+      timeout_sec: 10
+
+  triggers:
+    # 个股层阈值（绝对值，0.005 = 0.5%）
+    proximity_to_stop_loss_pct: 0.005
+    proximity_to_take_profit_pct: 0.005
+    # 组合层阈值（X 为负值；浮亏低于阈值即触发）
+    portfolio_unrealized_floor_pct: -0.05
+    portfolio_drawdown_pct: -0.07
+    # 评估哪些策略（默认全部 enabled 的 open_trade 走一遍）；空 list = 全部
+    strategies: []

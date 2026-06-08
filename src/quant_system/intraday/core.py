@@ -1,0 +1,220 @@
+"""盘中实时风控核心 —— 纯函数，便于单测 mock 网络/DB。
+
+数据流：
+  scripts/intraday/intraday_risk_check.py:
+    1. journal.list_open() → open_trades
+    2. fetch_realtime_prices(codes) → {code: current_price}
+    3. 拼 PositionSnapshot + PortfolioSnapshot 喂 evaluate_alerts
+    4. AlertEvent list → 按 (asof_date, strategy_name, symbol, alert_type)
+       去重（DB alerts_sent unique index 兜底）→ Telegram.send
+    5. 写 alerts_sent 表（delivered + error）
+
+4 阈值（spec §6 + 用户 2026-06-07 授权）：
+- stop_loss_proximity: dist_to_stop_pct < proximity_to_stop_loss_pct
+- take_profit_proximity: dist_to_target_pct < proximity_to_take_profit_pct
+- portfolio_unrealized_floor: unrealized_pnl_pct < portfolio_unrealized_floor_pct
+- portfolio_peak_drawdown: drawdown_from_peak_pct < portfolio_drawdown_pct
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime, time
+from typing import Optional
+
+
+@dataclass
+class PositionSnapshot:
+    """喂给 evaluate_alerts 的最小持仓形态。
+
+    与 RiskMonitor.PositionRisk 字段子集重合，但不依赖 RiskMonitor 模块（intraday
+    不走 daily_check）；从 journal_trades + realtime price 直接构造。
+    """
+    strategy_name: str
+    symbol: str
+    market: str
+    entry_price: float
+    current_price: float
+    stop_loss: Optional[float]
+    take_profit: Optional[float]
+
+
+@dataclass
+class PortfolioSnapshot:
+    """组合层快照 —— 直接从最近 portfolio_history 行 + 当前 mv 计算。
+
+    drawdown_from_peak_pct 由调用方算好（intraday_risk_check.py 调
+    compute_peak_drawdown），core 不再 query DB（保持纯函数）。
+    """
+    strategy_name: str
+    unrealized_pnl_pct: float
+    drawdown_from_peak_pct: Optional[float] = None
+
+
+@dataclass
+class IntradayConfig:
+    enabled: bool = False
+    poll_interval_minutes: int = 15
+    proximity_to_stop_loss_pct: float = 0.005
+    proximity_to_take_profit_pct: float = 0.005
+    portfolio_unrealized_floor_pct: float = -0.05
+    portfolio_drawdown_pct: float = -0.07
+    strategies: list[str] = field(default_factory=list)  # 空 list = 全部
+    # 交易时段（A 股缺省；HK / US 后续可扩 per-market）
+    trading_start: time = time(9, 30)
+    trading_lunch_start: time = time(11, 30)
+    trading_lunch_end: time = time(13, 0)
+    trading_end: time = time(15, 0)
+
+    @classmethod
+    def from_yaml_dict(cls, raw: dict) -> "IntradayConfig":
+        """从 config/intraday.yaml 的 intraday_alerts 节构造。"""
+        triggers = (raw.get("triggers") or {})
+        tw = (raw.get("trading_window") or {}).get("a_share") or {}
+
+        def _parse_time(s: str, fallback: time) -> time:
+            try:
+                hh, mm = s.split(":")
+                return time(int(hh), int(mm))
+            except Exception:
+                return fallback
+
+        return cls(
+            enabled=bool(raw.get("enabled", False)),
+            poll_interval_minutes=int(raw.get("poll_interval_minutes", 15)),
+            proximity_to_stop_loss_pct=float(triggers.get("proximity_to_stop_loss_pct", 0.005)),
+            proximity_to_take_profit_pct=float(triggers.get("proximity_to_take_profit_pct", 0.005)),
+            portfolio_unrealized_floor_pct=float(triggers.get("portfolio_unrealized_floor_pct", -0.05)),
+            portfolio_drawdown_pct=float(triggers.get("portfolio_drawdown_pct", -0.07)),
+            strategies=list(triggers.get("strategies") or []),
+            trading_start=_parse_time(tw.get("start", "09:30"), time(9, 30)),
+            trading_lunch_start=_parse_time(tw.get("lunch_start", "11:30"), time(11, 30)),
+            trading_lunch_end=_parse_time(tw.get("lunch_end", "13:00"), time(13, 0)),
+            trading_end=_parse_time(tw.get("end", "15:00"), time(15, 0)),
+        )
+
+
+@dataclass
+class AlertEvent:
+    """评估出的告警事件 —— 主脚本据此拼 Telegram 消息 + 写 alerts_sent。"""
+    strategy_name: str
+    symbol: Optional[str]   # 组合层 = None
+    alert_type: str         # spec §6 4 种之一
+    severity: str           # "warning" / "critical"
+    payload: dict           # 数字 + 消息正文等
+    message: str            # 推送正文（Telegram HTML safe）
+
+
+def is_in_trading_window(now: datetime, cfg: IntradayConfig) -> bool:
+    """是否在 A 股交易时段（9:30-11:30 / 13:00-15:00）。
+    周六周日永远 False；节假日由 akshare 调用层（拉不到数据自然 noop）兜底。
+    """
+    if now.weekday() >= 5:
+        return False
+    t = now.time()
+    if cfg.trading_start <= t < cfg.trading_lunch_start:
+        return True
+    if cfg.trading_lunch_end <= t < cfg.trading_end:
+        return True
+    return False
+
+
+def evaluate_alerts(
+    positions: list[PositionSnapshot],
+    portfolios: list[PortfolioSnapshot],
+    cfg: IntradayConfig,
+) -> list[AlertEvent]:
+    """纯评估 → AlertEvent list。不做去重 / DB / 推送（主脚本职责）。"""
+    events: list[AlertEvent] = []
+    if not cfg.enabled:
+        return events
+
+    # 个股层
+    for p in positions:
+        if cfg.strategies and p.strategy_name not in cfg.strategies:
+            continue
+        if p.current_price <= 0:
+            continue
+        if p.stop_loss and p.stop_loss > 0:
+            dist_to_stop_pct = (p.current_price - p.stop_loss) / p.current_price
+            if 0 <= dist_to_stop_pct < cfg.proximity_to_stop_loss_pct:
+                events.append(AlertEvent(
+                    strategy_name=p.strategy_name,
+                    symbol=p.symbol,
+                    alert_type="stop_loss_proximity",
+                    severity="critical",
+                    payload={
+                        "current_price": p.current_price,
+                        "stop_loss": p.stop_loss,
+                        "dist_to_stop_pct": dist_to_stop_pct,
+                        "threshold_pct": cfg.proximity_to_stop_loss_pct,
+                    },
+                    message=(
+                        f"⚠ <b>{p.symbol}</b> 贴近止损 "
+                        f"{dist_to_stop_pct*100:.2f}% &lt; {cfg.proximity_to_stop_loss_pct*100:.2f}%\n"
+                        f"现价 {p.current_price:.2f} / 止损 {p.stop_loss:.2f} "
+                        f"({p.strategy_name}/{p.market})"
+                    ),
+                ))
+        if p.take_profit and p.take_profit > 0:
+            dist_to_target_pct = (p.take_profit - p.current_price) / p.current_price
+            if 0 <= dist_to_target_pct < cfg.proximity_to_take_profit_pct:
+                events.append(AlertEvent(
+                    strategy_name=p.strategy_name,
+                    symbol=p.symbol,
+                    alert_type="take_profit_proximity",
+                    severity="warning",
+                    payload={
+                        "current_price": p.current_price,
+                        "take_profit": p.take_profit,
+                        "dist_to_target_pct": dist_to_target_pct,
+                        "threshold_pct": cfg.proximity_to_take_profit_pct,
+                    },
+                    message=(
+                        f"🎯 <b>{p.symbol}</b> 接近止盈 "
+                        f"距 {dist_to_target_pct*100:.2f}% &lt; {cfg.proximity_to_take_profit_pct*100:.2f}%\n"
+                        f"现价 {p.current_price:.2f} / 止盈 {p.take_profit:.2f} "
+                        f"({p.strategy_name}/{p.market})"
+                    ),
+                ))
+
+    # 组合层
+    for port in portfolios:
+        if cfg.strategies and port.strategy_name not in cfg.strategies:
+            continue
+        if port.unrealized_pnl_pct < cfg.portfolio_unrealized_floor_pct:
+            events.append(AlertEvent(
+                strategy_name=port.strategy_name,
+                symbol=None,
+                alert_type="portfolio_unrealized_floor",
+                severity="critical",
+                payload={
+                    "unrealized_pnl_pct": port.unrealized_pnl_pct,
+                    "threshold_pct": cfg.portfolio_unrealized_floor_pct,
+                },
+                message=(
+                    f"🔻 <b>{port.strategy_name}</b> 组合浮亏 "
+                    f"{port.unrealized_pnl_pct*100:+.2f}% &lt; "
+                    f"{cfg.portfolio_unrealized_floor_pct*100:+.2f}%"
+                ),
+            ))
+        if (
+            port.drawdown_from_peak_pct is not None
+            and port.drawdown_from_peak_pct < cfg.portfolio_drawdown_pct
+        ):
+            events.append(AlertEvent(
+                strategy_name=port.strategy_name,
+                symbol=None,
+                alert_type="portfolio_peak_drawdown",
+                severity="critical",
+                payload={
+                    "drawdown_from_peak_pct": port.drawdown_from_peak_pct,
+                    "threshold_pct": cfg.portfolio_drawdown_pct,
+                },
+                message=(
+                    f"📉 <b>{port.strategy_name}</b> 组合 peak DD "
+                    f"{port.drawdown_from_peak_pct*100:+.2f}% &lt; "
+                    f"{cfg.portfolio_drawdown_pct*100:+.2f}%"
+                ),
+            ))
+
+    return events
