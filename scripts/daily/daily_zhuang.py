@@ -37,6 +37,48 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 
+def _safe_float(value):
+    """NaN / None / Inf → None (JSONB 友好); 数值 → float。"""
+    try:
+        f = float(value)
+        if not np.isfinite(f):
+            return None
+        return f
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_zhuang_entry_features(df, sig, atr_val, position_pct, market, asof, market_trend, acc_weights):
+    """L3 of self_learning_pipeline — snapshot zhuang 入场 5 维 accumulation + 附属 context.
+
+    Backstop #5 严守: 零新计算, 复用 accumulation_score_detail (signals/accumulation.py:194)
+    返回的 5 分量; ATR / phase / position_pct 来自 main() 已算的标量。
+    fail-soft: 任何异常返回 None, 不阻断 open_trade。
+    """
+    try:
+        detail = accumulation_score_detail(df, weights=acc_weights)
+        return {
+            "accumulation_ma_convergence": _safe_float(detail.get("ma_convergence")),
+            "accumulation_volume_asymmetry": _safe_float(detail.get("volume_asymmetry")),
+            "accumulation_price_consolidation": _safe_float(detail.get("price_consolidation")),
+            "accumulation_turnover_decline": _safe_float(detail.get("turnover_decline")),
+            "accumulation_vp_divergence": _safe_float(detail.get("vp_divergence")),
+            "accumulation_total": _safe_float(sig.accumulation_score),
+            "phase": getattr(sig, "phase", None),
+            "atr_at_entry": _safe_float(atr_val),
+            "entry_price": _safe_float(getattr(sig, "price", None)),
+            "position_pct": _safe_float(position_pct),
+            "market": market,
+            "market_trend_on": bool(market_trend) if market_trend is not None else None,
+            "asof": asof,
+            "market_cap_band": None,  # L3 不接入; loader filtered_universe 不带 cap
+            "industry_sw1": None,     # 申万行业需 akshare 新接入, 留 L3.1
+        }
+    except Exception:
+        # fail-soft: 采集失败不阻断 open_trade (Backstop #5)
+        return None
+
+
 def parse_args():
     p = argparse.ArgumentParser(description="庄股策略 daily 建仓闭环")
     p.add_argument("--config", default="config/zhuang.yaml")
@@ -313,12 +355,17 @@ def main():
             # 有效止损 = ATR止损 与 固定比例止损 取较高者（与 check_exit_signal 一致）
             stop_px = max(entry_px - atr_mult * atr_val, entry_px * (1.0 - max_stop))
             tp_px = entry_px * (1.0 + tp_pct)
+            # L3 of self_learning_pipeline: 采集结构化 entry features (fail-soft)
+            entry_feats = _build_zhuang_entry_features(
+                df, sig, atr_val, pos_pct, market, args.date, market_trend, acc_w,
+            )
             tid = journal.open_trade(TradeOpen(
                 code=code, market=market, entry_date=args.date,
                 entry_price=entry_px, entry_size=size,
                 accumulation_score=sig.accumulation_score, phase=sig.phase,
                 atr_at_entry=atr_val, entry_reason=sig.reason,
                 stop_loss_price=stop_px, take_profit_price=tp_px,
+                entry_features=entry_feats,
             ))
             new_trades.append({"id": tid, "code": code, "size": size, "entry_px": entry_px,
                                "score": sig.accumulation_score, "pos_pct": pos_pct,
