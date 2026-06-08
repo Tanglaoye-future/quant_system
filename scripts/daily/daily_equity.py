@@ -372,7 +372,12 @@ def main() -> None:
                 print(f"      催化剂: {cat.to_label()}  {flag}")
 
     # ---------------- Step 3: 自动开仓 ----------------
-    open_codes_set = {t["symbol"] for t in j.list_open()}
+    # sleeve 内隔离: A_mom / A_mr / HK_mom 各自独立 slot 池, 不互挤
+    # 详 docs/specs/a_mr_auto_entry.md "list_open 隔离决策"
+    open_codes_set = {
+        t["symbol"]
+        for t in j.list_open(market=args.market, strategy=eff_strategy)
+    }
     max_positions = int(cfg.get("strategy", "position_max_count", default=6))
     max_single_pct = float(cfg.get("strategy", "single_position_pct_max", default=0.20))
     available_slots = max_positions - len(open_codes_set)
@@ -381,9 +386,6 @@ def main() -> None:
     if args.dry_run:
         print()
         print(f"【自动开仓】 (干跑模式，不实际录入)")
-    elif args.kind == "mean_reversion":
-        print()
-        print(f"【自动开仓】 mean_reversion 策略暂不支持自动开仓，请手动处理")
     elif available_slots <= 0:
         print()
         print(f"【自动开仓】 仓位已满 ({len(open_codes_set)}/{max_positions})，跳过")
