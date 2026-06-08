@@ -141,6 +141,12 @@ class JournalTrade(Base):
     pnl_pct: Mapped[Optional[float]] = mapped_column(Float)
     hold_days: Mapped[Optional[int]] = mapped_column(Integer)
     notes: Mapped[Optional[str]] = mapped_column(Text)
+    # self-learning pipeline L1 (docs/specs/self_learning_pipeline.md):
+    # entry 时 snapshot 结构化特征 (RSI/量比/MA cross/sector/zscore...) 由 L2 写入；
+    # exit 时 snapshot (exit_type 子类 / max DD during hold / max profit during hold) 由 L4 写入。
+    # nullable + L1 daily 不写, 既有行为零变化 (Backstop #5)。
+    entry_features: Mapped[Optional[dict]] = mapped_column(JSONColumn)
+    exit_features: Mapped[Optional[dict]] = mapped_column(JSONColumn)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -201,6 +207,11 @@ class ZhuangTrade(Base):
     pnl_pct: Mapped[Optional[float]] = mapped_column(Float)
     hold_days: Mapped[Optional[int]] = mapped_column(Integer)
     notes: Mapped[Optional[str]] = mapped_column(Text)
+    # self-learning pipeline L1 (docs/specs/self_learning_pipeline.md):
+    # entry 5 维 accumulation 分量 + phase + ATR + 市值带; exit 类型 + max DD/profit during hold。
+    # nullable + L1 daily 不写, 既有行为零变化 (Backstop #5)。
+    entry_features: Mapped[Optional[dict]] = mapped_column(JSONColumn)
+    exit_features: Mapped[Optional[dict]] = mapped_column(JSONColumn)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
