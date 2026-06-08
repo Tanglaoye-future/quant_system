@@ -146,6 +146,48 @@ def test_open_trade_default_entry_features_none(journal: Journal):
     assert row["exit_features"] is None
 
 
+def test_close_trade_writes_exit_features(journal: Journal):
+    """L4 of self_learning_pipeline: close_trade 内部采集 exit_features.
+
+    调用方 (RiskMonitor) 零改动 — close_trade 自己查 snapshots 算 max DD/profit
+    + 用 exit_layer_from_reason 解析 exit_type + 桶化 hold_days.
+    """
+    tid = _open(journal, price=10.0, size=100)  # entry_date=2026-05-22
+    # 模拟持仓期间 4 个 snapshot
+    journal.add_snapshot(tid, "2026-05-23", price=10.5)  # +5%
+    journal.add_snapshot(tid, "2026-05-24", price=9.6)   # -4% (min)
+    journal.add_snapshot(tid, "2026-05-25", price=11.2)  # +12% (max)
+    journal.add_snapshot(tid, "2026-05-29", price=10.0)  # 0
+    journal.close_trade(tid, exit_date="2026-05-30", exit_price=9.8,
+                        exit_reason="trailing_stop: close=9.8 <= stop=9.9")
+    closed = journal.list_closed()
+    assert len(closed) == 1
+    r = closed[0]
+    assert r["hold_days"] == 8  # 2026-05-30 - 2026-05-22
+    ef = r["exit_features"]
+    assert ef is not None
+    assert ef["exit_type"] == "STOP_TRAIL"
+    assert ef["hold_days_bucket"] == "6-20"
+    # max DD = min(+0.05, -0.04, +0.12, 0) = -0.04
+    assert ef["max_drawdown_during_hold_pct"] == pytest.approx(-0.04)
+    # max profit = max(...) = +0.12
+    assert ef["max_profit_during_hold_pct"] == pytest.approx(0.12)
+    assert ef["asof"] == "2026-05-30"
+
+
+def test_close_trade_exit_features_no_snapshots(journal: Journal):
+    """无 snapshots 时 exit_features 仍写入 (max DD/profit = None, fail-soft)."""
+    tid = _open(journal, price=10.0)
+    journal.close_trade(tid, exit_date="2026-05-30", exit_price=11.0,
+                        exit_reason="take_profit: close=11.0 >= target=11.0")
+    r = journal.list_closed()[0]
+    ef = r["exit_features"]
+    assert ef is not None
+    assert ef["exit_type"] == "TAKE_PROFIT"
+    assert ef["max_drawdown_during_hold_pct"] is None
+    assert ef["max_profit_during_hold_pct"] is None
+
+
 def test_attribution_summary(journal: Journal):
     assert journal.attribution() == {"trade_count": 0}
     a = _open(journal, symbol="A", price=10.0, size=100)
