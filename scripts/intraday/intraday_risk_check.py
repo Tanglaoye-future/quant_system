@@ -46,7 +46,7 @@ from quant_system.intraday import (  # noqa: E402
     is_in_trading_window,
 )
 from quant_system.notify import TelegramSender  # noqa: E402
-from quant_system.strategies.equity_factor.journal import Journal  # noqa: E402
+from quant_system.strategies.equity_factor.journal.journal import Journal  # noqa: E402
 from quant_system.strategies.equity_factor.risk.monitor import compute_peak_drawdown  # noqa: E402
 
 logger = logging.getLogger("intraday")

@@ -14,7 +14,7 @@
 # - 组合层: drawdown_from_peak_pct < portfolio_drawdown_pct → "portfolio_peak_drawdown"
 
 intraday_alerts:
-  enabled: false                     # 用户手动改 true 才生效
+  enabled: true                      # 2026-06-08 用户启动全套服务时翻开
   poll_interval_minutes: 15          # cron / loop 频率
   trading_window:
     a_share:                         # A 股交易时段（local time, 9:30-15:00；中午 11:30-13:00 休市）
