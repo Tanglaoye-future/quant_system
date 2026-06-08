@@ -46,13 +46,19 @@ metadata:
 
 ## 用户决策 (2026-06-09)
 
-"先拿住当教训用来强化训练" — 用户授权不平仓, 让 600584 当作 self-learning pipeline 训练样本。
+"先拿住当教训用来强化训练" — 用户授权不平仓, 让 600584 当作 self-learning
+pipeline 训练样本。
+
+**M5 修复后真相校准** (2026-06-09 实证): cache stale 之前显示 -7.80%, M5
+fall through baostock 后实际 **-14.32%** (close 70.30 <= stop 77.13). 用户
+看到真实数据后**仍维持"拿住"决策**, 二次确认.
 
 诚实成本提示:
-- 持仓继续探底的金融成本是真实的, 与"学习价值"不挂钩
+- 持仓继续探底的金融成本是真实的 (现 -1.76 万元, 12.31 万 cost)
 - max_drawdown_during_hold 已落 zhuang_snapshots (-11.46% → -14.32%)
 - exit_features 要等最终平仓才落 (L4 PR #13)
 - L5 retrospective 报表只看 closed trades → 持有期间不进报表
+- 庄股跌 -15%+ 后 30 天反弹概率 ~25% (历史经验值, 非严格统计)
 
 ## 沉淀 (PM 未来决策)
 
