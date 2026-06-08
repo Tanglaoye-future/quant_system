@@ -541,6 +541,8 @@ def main():
             "take_profit": _round_or_none(r.get("take_profit"), 2),
             "dist_to_stop_pct": _round_or_none(r.get("dist_to_stop_pct"), 4),
             "dist_to_target_pct": _round_or_none(r.get("dist_to_target_pct"), 4),
+            # M4 of zhuang_stop_breach_alert: 跌穿 stop 字段 (前端可消费)
+            "stop_breach": bool(r.get("stop_breach", False)),
         })
     for t in new_trades:
         report_positions.append({
