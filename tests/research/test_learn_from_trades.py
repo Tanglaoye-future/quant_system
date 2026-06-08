@@ -148,6 +148,104 @@ def test_render_markdown_empty_data(learn_mod):
     assert "Backstop #2" in md or "双窗口" in md
 
 
+def test_alpha_for_trade_basic(learn_mod):
+    """α = pnl - 同期 benchmark return; entry/exit close 用相应日期 close."""
+    bench = {"2026-05-26": 100.0, "2026-06-05": 99.0}  # benchmark -1%
+    trade = {
+        "entry_date": "2026-05-26", "exit_date": "2026-06-05",
+        "pnl_pct": 0.0346,  # +3.46%
+    }
+    bp, alpha = learn_mod._alpha_for_trade(trade, bench)
+    assert bp == pytest.approx(-0.01)   # benchmark -1%
+    assert alpha == pytest.approx(0.0446)  # +3.46% - (-1%) = +4.46%
+
+
+def test_alpha_for_trade_no_bench_returns_none(learn_mod):
+    bp, a = learn_mod._alpha_for_trade(
+        {"entry_date": "2026-05-26", "exit_date": "2026-06-05", "pnl_pct": 0.05},
+        None,
+    )
+    assert bp is None and a is None
+    bp, a = learn_mod._alpha_for_trade(
+        {"entry_date": "2026-05-26", "exit_date": "2026-06-05", "pnl_pct": 0.05},
+        {},  # 空 close dict
+    )
+    assert bp is None and a is None
+
+
+def test_alpha_for_trade_nonexact_date_uses_prev_close(learn_mod):
+    """entry/exit 非交易日 → 取最近一个早于该日的 close."""
+    bench = {"2026-05-22": 100.0, "2026-05-26": 102.0, "2026-06-05": 101.0}
+    # entry_date 5-24 (weekend, 不在 bench dict), 应取 5-22 100.0
+    trade = {"entry_date": "2026-05-24", "exit_date": "2026-06-05", "pnl_pct": 0.02}
+    bp, a = learn_mod._alpha_for_trade(trade, bench)
+    assert bp == pytest.approx(101.0 / 100.0 - 1.0)  # +1%
+    assert a == pytest.approx(0.01)
+
+
+def test_build_report_with_benchmark_fetcher_injection(learn_mod):
+    """alpha_summary 段填入 — 用 mock benchmark_fetcher 避免网络."""
+    closed = {
+        "A_mom": [_trade("601066", 0.0346, entry_features={}, hold_days=10)],
+        "HK_mom": [], "zhuang": [],
+    }
+    # 601066 entry 5-26 → exit (默认 _trade 设的 5-29; 同期 benchmark -0.5%)
+    fake_bench = {"2026-05-22": 100.0, "2026-05-29": 99.5}
+    def mock_fetcher(code, start, end):
+        assert code == "sh.000300"
+        return fake_bench
+    rep = learn_mod.build_report(closed, min_sample=10, benchmark_fetcher=mock_fetcher)
+    a = rep["sleeves"]["A_mom"]
+    assert a["alpha_summary"]["benchmark_code"] == "sh.000300"
+    assert a["alpha_summary"]["benchmark_name"] == "HS300"
+    # avg_alpha_pct = +3.46% - (-0.5%) = +3.96%
+    assert a["alpha_summary"]["avg_alpha_pct"] == pytest.approx(0.0346 - (99.5/100.0 - 1.0))
+    assert a["alpha_summary"]["n_alpha_positive"] == 1
+    assert a["alpha_summary"]["n_with_alpha"] == 1
+
+
+def test_build_report_benchmark_fetcher_returns_none_graceful(learn_mod):
+    """benchmark fetcher 返 None (网络 down) → alpha_summary 记 reason, 不抛."""
+    closed = {
+        "A_mom": [_trade("X", 0.05)],
+        "HK_mom": [], "zhuang": [],
+    }
+    def fail_fetcher(code, start, end):
+        return None
+    rep = learn_mod.build_report(closed, min_sample=10, benchmark_fetcher=fail_fetcher)
+    a = rep["sleeves"]["A_mom"]
+    # benchmark 拉取失败 → alpha_summary 只有 benchmark_code + benchmark_name + reason, 无 avg_alpha_pct
+    assert a["alpha_summary"]["benchmark_code"] == "sh.000300"
+    assert "失败" in a["alpha_summary"]["reason"]
+    assert "avg_alpha_pct" not in a["alpha_summary"]
+
+
+def test_render_markdown_includes_alpha_line(learn_mod):
+    """markdown 含 α (vs HS300) 行 (N=1 也要出, 不被 sample_sufficient gating)."""
+    closed = {
+        "A_mom": [_trade("X", 0.05)],
+        "HK_mom": [], "zhuang": [],
+    }
+    fake_bench = {"2026-05-22": 100.0, "2026-05-29": 99.5}
+    def mock_fetcher(code, start, end): return fake_bench
+    rep = learn_mod.build_report(closed, min_sample=10, benchmark_fetcher=mock_fetcher)
+    md = learn_mod.render_markdown(rep)
+    assert "α (vs HS300)" in md
+
+
+def test_hk_mom_alpha_summary_placeholder(learn_mod):
+    """HK_mom benchmark 未接入 (L5.0.2 决策) → alpha_summary 记 reason."""
+    closed = {
+        "A_mom": [],
+        "HK_mom": [_trade("00700", 0.05, market="hk_share", strategy="equity_hk_momentum")],
+        "zhuang": [],
+    }
+    rep = learn_mod.build_report(closed, min_sample=10, benchmark_fetcher=lambda *a: None)
+    hk = rep["sleeves"]["HK_mom"]
+    assert hk["alpha_summary"]["benchmark_code"] is None
+    assert "L5.0.2" in hk["alpha_summary"]["reason"]
+
+
 def test_render_markdown_with_falsified_hit(learn_mod):
     """winner-vs-loser numeric 段命中 manifest → md 含 SOFT-FALSIFY 标记."""
     closed = {"A_mom": [], "HK_mom": [], "zhuang": []}
