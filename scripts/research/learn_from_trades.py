@@ -229,6 +229,77 @@ def cross_check_falsified(candidate_name: str) -> Optional[dict[str, Any]]:
     return None
 
 
+# ── benchmark α 计算 (M2 of L5.0.1) ──────────────────────────────────────────
+
+# sleeve → baostock index code (None 表示 L5.0.1 未接入)
+SLEEVE_BENCHMARK: dict[str, Optional[tuple[str, str]]] = {
+    "A_mom": ("sh.000300", "HS300"),
+    "HK_mom": None,         # HSCHK100 / HSI 选哪个留 L5.0.2 决策
+    "zhuang": ("sh.000905", "CSI500"),
+    "mean_reversion": ("sh.000300", "HS300"),  # M1 启用后归在 A_mom 桶里, 这里留备用
+}
+
+
+def _fetch_benchmark_close(code: str, start: str, end: str) -> Optional[dict[str, float]]:
+    """拉 baostock index 日线, 返 {date_str: close}; fail-soft None.
+
+    单次脚本里多次调用同 (code, start, end) 是 inefficient — 调用方在 build_report
+    最外层 cache 一次即可 (per sleeve 一次 query).
+    """
+    try:
+        import baostock as bs  # type: ignore
+    except ImportError:
+        return None
+    try:
+        bs.login()
+        try:
+            rs = bs.query_history_k_data_plus(
+                code, "date,close",
+                start_date=start, end_date=end,
+                frequency="d", adjustflag="3",
+            )
+            rows = []
+            while rs.next():
+                rows.append(rs.get_row_data())
+            if not rows:
+                return None
+            return {r[0]: float(r[1]) for r in rows}
+        finally:
+            bs.logout()
+    except Exception:
+        return None
+
+
+def _alpha_for_trade(trade: dict, bench_close: Optional[dict[str, float]]) -> tuple[Optional[float], Optional[float]]:
+    """返 (benchmark_pnl_pct, alpha_pct); 任一缺失返 (None, None)."""
+    if bench_close is None or not bench_close:
+        return None, None
+    pnl = trade.get("pnl_pct")
+    if pnl is None:
+        return None, None
+    entry_d = trade.get("entry_date")
+    exit_d = trade.get("exit_date")
+    if not entry_d or not exit_d:
+        return None, None
+    # 用 entry_date / exit_date 的 close (若当天非交易日, 取最近一个早于该日的 close)
+    bench_entry = bench_close.get(entry_d)
+    bench_exit = bench_close.get(exit_d)
+    if bench_entry is None or bench_exit is None:
+        # 找最近 close 前一日
+        dates_sorted = sorted(bench_close.keys())
+        if bench_entry is None:
+            cands = [d for d in dates_sorted if d <= entry_d]
+            bench_entry = bench_close[cands[-1]] if cands else None
+        if bench_exit is None:
+            cands = [d for d in dates_sorted if d <= exit_d]
+            bench_exit = bench_close[cands[-1]] if cands else None
+    if bench_entry is None or bench_exit is None or bench_entry <= 0:
+        return None, None
+    bench_pnl = bench_exit / bench_entry - 1.0
+    alpha = pnl - bench_pnl
+    return bench_pnl, alpha
+
+
 # ── 数据拉取 ──────────────────────────────────────────────────────────────────
 
 def fetch_closed_trades(since: date) -> dict[str, list[dict]]:
@@ -306,8 +377,19 @@ def _split_winner_loser(trades: list[dict]) -> tuple[list[dict], list[dict]]:
     return winners, losers
 
 
-def build_report(closed_by_sleeve: dict[str, list[dict]], min_sample: int) -> dict:
-    """主报表数据结构 (md 渲染 + json 输出共用)."""
+def build_report(
+    closed_by_sleeve: dict[str, list[dict]],
+    min_sample: int,
+    benchmark_fetcher=None,
+) -> dict:
+    """主报表数据结构 (md 渲染 + json 输出共用).
+
+    benchmark_fetcher: 可注入 (test 用 mock 不走网络). 默认走 _fetch_benchmark_close.
+    签名: (code, start, end) -> Optional[dict[str_date, close]]
+    """
+    if benchmark_fetcher is None:
+        benchmark_fetcher = _fetch_benchmark_close
+
     report = {
         "asof": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "min_sample": min_sample,
@@ -328,6 +410,7 @@ def build_report(closed_by_sleeve: dict[str, list[dict]], min_sample: int) -> di
         }
         if n == 0:
             sleeve_data["pnl_summary"] = None
+            sleeve_data["alpha_summary"] = None
             report["sleeves"][sleeve] = sleeve_data
             continue
 
@@ -340,6 +423,50 @@ def build_report(closed_by_sleeve: dict[str, list[dict]], min_sample: int) -> di
             "avg_win_pct": (sum(p for p in pnls if p > 0) / max(1, sum(1 for p in pnls if p > 0))) if pnls else None,
             "avg_loss_pct": (sum(p for p in pnls if p <= 0) / max(1, sum(1 for p in pnls if p <= 0))) if pnls else None,
         }
+
+        # §2.5 benchmark-relative α (M2 of L5.0.1)
+        bench_meta = SLEEVE_BENCHMARK.get(sleeve)
+        if bench_meta is None:
+            sleeve_data["alpha_summary"] = {
+                "benchmark_code": None,
+                "benchmark_name": None,
+                "reason": "未接入 (L5.0.2 决策)",
+            }
+        else:
+            bench_code, bench_name = bench_meta
+            entry_dates = [t["entry_date"] for t in trades if t.get("entry_date")]
+            exit_dates = [t["exit_date"] for t in trades if t.get("exit_date")]
+            if not entry_dates or not exit_dates:
+                sleeve_data["alpha_summary"] = {
+                    "benchmark_code": bench_code, "benchmark_name": bench_name,
+                    "reason": "无 entry/exit 日期",
+                }
+            else:
+                start = min(entry_dates)
+                end = max(exit_dates)
+                bench_close = benchmark_fetcher(bench_code, start, end)
+                if bench_close is None:
+                    sleeve_data["alpha_summary"] = {
+                        "benchmark_code": bench_code, "benchmark_name": bench_name,
+                        "reason": "benchmark 拉取失败 (网络/baostock 不可用)",
+                    }
+                else:
+                    bench_pnls: list[float] = []
+                    alphas: list[float] = []
+                    for t in trades:
+                        bp, a = _alpha_for_trade(t, bench_close)
+                        t["benchmark_pnl_pct"] = bp
+                        t["alpha_pct"] = a
+                        if bp is not None: bench_pnls.append(bp)
+                        if a is not None: alphas.append(a)
+                    sleeve_data["alpha_summary"] = {
+                        "benchmark_code": bench_code,
+                        "benchmark_name": bench_name,
+                        "avg_benchmark_pnl_pct": (sum(bench_pnls) / len(bench_pnls)) if bench_pnls else None,
+                        "avg_alpha_pct": (sum(alphas) / len(alphas)) if alphas else None,
+                        "n_alpha_positive": sum(1 for a in alphas if a > 0),
+                        "n_with_alpha": len(alphas),
+                    }
 
         # §3 winner-vs-loser numeric (仅 N >= min_sample)
         if n < min_sample:
@@ -436,6 +563,22 @@ def render_markdown(report: dict) -> str:
         if data["n_closed"] == 0:
             lines.append("")
             continue
+
+        # §2.5 alpha_summary 不被 sample_sufficient gating — N=1 也算
+        # (单笔 α = pnl - benchmark, descriptive, 不出统计学结论)
+        alpha = data.get("alpha_summary")
+        if alpha and alpha.get("benchmark_name"):
+            if alpha.get("avg_alpha_pct") is not None:
+                lines.append(
+                    f"- **α (vs {alpha['benchmark_name']})**: "
+                    f"avg pnl - avg benchmark = "
+                    f"{alpha['avg_alpha_pct']*100:+.2f}%  "
+                    f"(benchmark avg {alpha.get('avg_benchmark_pnl_pct', 0)*100:+.2f}%, "
+                    f"α>0 笔数 {alpha['n_alpha_positive']}/{alpha['n_with_alpha']})"
+                )
+            else:
+                lines.append(f"- α: {alpha.get('reason', '不可用')} (benchmark={alpha['benchmark_name']})")
+
         if not data["sample_sufficient"]:
             lines.append(f"- ⚠ **样本量不足** (N < {report['min_sample']}); 跳过分布差段")
             for w in data.get("warnings", []):
