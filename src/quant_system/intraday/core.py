@@ -10,17 +10,21 @@
        去重（DB alerts_sent unique index 兜底）→ Telegram.send
     6. 写 alerts_sent 表（delivered + error）
 
-6 阈值 + 1 候选股突破（spec §6 + PR1/PR2 扩展）：
+7 阈值 + 1 候选股突破（spec §6 + PR1/PR2/PR3 扩展）：
 - stop_loss_proximity: 0 ≤ dist_to_stop_pct < proximity_to_stop_loss_pct
 - take_profit_proximity: 0 ≤ dist_to_target_pct < proximity_to_take_profit_pct
 - break_stop_loss: current_price < stop_loss        (PR1 新增, critical)
 - break_ma60:     current_price < ma_long           (PR1 新增, critical)
+- zhuang_distribution_warning: 庄股 day_change ≥ 4% + 量比 ≥ 2 (PR3 新增, warning)
 - portfolio_unrealized_floor: unrealized_pnl_pct < portfolio_unrealized_floor_pct
 - portfolio_peak_drawdown: drawdown_from_peak_pct < portfolio_drawdown_pct
 - daily_screen_breakout: 候选股 current_price > T 日 high × (1+margin) +
                           量比 ≥ vol_ratio_min (PR2 新增, warning, 入场提示)
 
 break_* 与 *_proximity 物理互斥（一旦穿越，proximity 的 dist 转负，不再触发 proximity）。
+zhuang_distribution_warning 仅对 strategy in cfg.zhuang_strategies 的持仓评估;
+独立于 break_/proximity, 可叠加（同股一天最多 4 个 alert: break_stop + break_ma60 +
+zhuang_distribution + take_profit_proximity）。
 daily_screen_breakout 用 BreakoutCandidateQuote + BreakoutConfig 走独立纯函数
 evaluate_breakout_alerts，与持仓告警 evaluate_alerts 解耦（输入/输出分离）。
 """
@@ -45,7 +49,9 @@ class PositionSnapshot:
     current_price: float
     stop_loss: Optional[float]
     take_profit: Optional[float]
-    ma_long: Optional[float] = None  # MA60 from T-1 daily closes; None=数据不足
+    ma_long: Optional[float] = None      # MA60 from T-1 daily closes (PR1); None=数据不足
+    volume_ratio: Optional[float] = None  # spot_em '量比' (PR3); None=缺失
+    day_change_pct: Optional[float] = None  # spot_em '涨跌幅' / 100 (PR3); None=缺失
 
 
 @dataclass
@@ -69,6 +75,11 @@ class IntradayConfig:
     portfolio_unrealized_floor_pct: float = -0.05
     portfolio_drawdown_pct: float = -0.07
     strategies: list[str] = field(default_factory=list)  # 空 list = 全部
+    # PR3: zhuang_distribution_warning 阈值
+    zhuang_change_pct_min: float = 0.04
+    zhuang_vol_ratio_min: float = 2.0
+    zhuang_strategies: list[str] = field(default_factory=lambda: ["zhuang"])
+    zhuang_distribution_enabled: bool = False
     # 交易时段（A 股缺省；HK / US 后续可扩 per-market）
     trading_start: time = time(9, 30)
     trading_lunch_start: time = time(11, 30)
@@ -76,10 +87,12 @@ class IntradayConfig:
     trading_end: time = time(15, 0)
 
     @classmethod
-    def from_yaml_dict(cls, raw: dict) -> "IntradayConfig":
-        """从 config/intraday.yaml 的 intraday_alerts 节构造。"""
+    def from_yaml_dict(cls, raw: dict, zhuang_raw: Optional[dict] = None) -> "IntradayConfig":
+        """从 config/intraday.yaml 的 intraday_alerts 节构造.
+        PR3: zhuang_distribution 节 通过 zhuang_raw 单独传入 (与 intraday_alerts 并列)."""
         triggers = (raw.get("triggers") or {})
         tw = (raw.get("trading_window") or {}).get("a_share") or {}
+        zh = zhuang_raw or {}
 
         def _parse_time(s: str, fallback: time) -> time:
             try:
@@ -96,6 +109,10 @@ class IntradayConfig:
             portfolio_unrealized_floor_pct=float(triggers.get("portfolio_unrealized_floor_pct", -0.05)),
             portfolio_drawdown_pct=float(triggers.get("portfolio_drawdown_pct", -0.07)),
             strategies=list(triggers.get("strategies") or []),
+            zhuang_distribution_enabled=bool(zh.get("enabled", False)),
+            zhuang_change_pct_min=float(zh.get("change_pct_min", 0.04)),
+            zhuang_vol_ratio_min=float(zh.get("vol_ratio_min", 2.0)),
+            zhuang_strategies=list(zh.get("strategies") or ["zhuang"]),
             trading_start=_parse_time(tw.get("start", "09:30"), time(9, 30)),
             trading_lunch_start=_parse_time(tw.get("lunch_start", "11:30"), time(11, 30)),
             trading_lunch_end=_parse_time(tw.get("lunch_end", "13:00"), time(13, 0)),
@@ -224,6 +241,36 @@ def evaluate_alerts(
                         f"距 {dist_to_target_pct*100:.2f}% &lt; {cfg.proximity_to_take_profit_pct*100:.2f}%\n"
                         f"现价 {p.current_price:.2f} / 止盈 {p.take_profit:.2f} "
                         f"({p.strategy_name}/{p.market})"
+                    ),
+                ))
+        # PR3 — zhuang_distribution_warning: 庄股盘中派发预警
+        if (
+            cfg.zhuang_distribution_enabled
+            and p.strategy_name in cfg.zhuang_strategies
+            and p.day_change_pct is not None
+            and p.day_change_pct >= cfg.zhuang_change_pct_min
+        ):
+            # 量比缺失 (None) → 保守降级仍发 alert; 有值则必须达标
+            vol_ok = (p.volume_ratio is None) or (p.volume_ratio >= cfg.zhuang_vol_ratio_min)
+            if vol_ok:
+                vr_str = f"{p.volume_ratio:.2f}" if p.volume_ratio is not None else "N/A"
+                events.append(AlertEvent(
+                    strategy_name=p.strategy_name,
+                    symbol=p.symbol,
+                    alert_type="zhuang_distribution_warning",
+                    severity="warning",
+                    payload={
+                        "current_price": p.current_price,
+                        "day_change_pct": p.day_change_pct,
+                        "volume_ratio": p.volume_ratio,
+                        "change_pct_min": cfg.zhuang_change_pct_min,
+                        "vol_ratio_min": cfg.zhuang_vol_ratio_min,
+                    },
+                    message=(
+                        f"🚨 [庄股派发预警] <b>{p.symbol}</b> "
+                        f"今日 {p.day_change_pct*100:+.2f}% / 量比 {vr_str}\n"
+                        f"现价 {p.current_price:.2f} ({p.strategy_name}/{p.market})\n"
+                        f"⚠ 可能进入派发期, 考虑减仓 (非自动平仓)"
                     ),
                 ))
 

@@ -89,8 +89,9 @@ def fetch_realtime_prices_a_share(codes: list[str]) -> dict[str, float]:
 def fetch_realtime_quote_with_vol_ratio_a_share(
     codes: list[str],
 ) -> dict[str, dict[str, Optional[float]]]:
-    """PR2: 拉实时价 + 量比 (akshare spot_em '量比' 字段, A 股有).
-    返回 {code: {price: float, vol_ratio: Optional[float]}}; 缺失字段 None.
+    """PR2/PR3: 拉实时价 + 量比 + 涨跌幅 (akshare spot_em).
+    返回 {code: {price: float, vol_ratio: Optional[float], change_pct: Optional[float]}}.
+    change_pct 是小数 (0.04 = +4%), 不是百分数. 缺失字段 None 不抛.
     """
     if not codes:
         return {}
@@ -101,6 +102,8 @@ def fetch_realtime_quote_with_vol_ratio_a_share(
         wanted_cols = ["代码", "最新价"]
         if "量比" in df.columns:
             wanted_cols.append("量比")
+        if "涨跌幅" in df.columns:
+            wanted_cols.append("涨跌幅")
         sub = df.loc[mask, wanted_cols]
         out: dict[str, dict[str, Optional[float]]] = {}
         for _, row in sub.iterrows():
@@ -110,14 +113,26 @@ def fetch_realtime_quote_with_vol_ratio_a_share(
             except (TypeError, ValueError):
                 continue
             vol_ratio: Optional[float] = None
+            change_pct: Optional[float] = None
             if "量比" in sub.columns:
                 try:
                     v = float(row["量比"])
-                    if v == v:  # not NaN
+                    if v == v:
                         vol_ratio = v
                 except (TypeError, ValueError):
                     pass
-            out[code] = {"price": price, "vol_ratio": vol_ratio}
+            if "涨跌幅" in sub.columns:
+                try:
+                    c = float(row["涨跌幅"])
+                    if c == c:
+                        change_pct = c / 100.0  # akshare 给百分数; 内部统一小数
+                except (TypeError, ValueError):
+                    pass
+            out[code] = {
+                "price": price,
+                "vol_ratio": vol_ratio,
+                "change_pct": change_pct,
+            }
         return out
     except Exception as exc:
         logger.warning("fetch_realtime_quote_with_vol_ratio_a_share failed: %s", exc)
@@ -168,16 +183,20 @@ def _load_yaml() -> dict:
 
 def _build_position_snapshots(
     journal: Journal,
-    price_map: dict[str, float],
+    quote_map: dict[str, dict[str, Optional[float]]],
     ma_long_map: Optional[dict[str, float]] = None,
 ) -> list[PositionSnapshot]:
-    """journal_trades open + 实时价 + (可选) MA60 → PositionSnapshot list。"""
+    """journal_trades open + quote (price/vol/change) + MA60 → PositionSnapshot list.
+
+    PR3 改: 输入从单纯 price_map 升级为 quote_map (统一 spot_em 单次调用),
+    以同时填 volume_ratio / day_change_pct (zhuang_distribution_warning 用).
+    """
     ma_long_map = ma_long_map or {}
     snapshots: list[PositionSnapshot] = []
     for t in journal.list_open():
         code = t["symbol"]
-        current = price_map.get(code)
-        if current is None:
+        q = quote_map.get(code)
+        if q is None or q.get("price") is None:
             continue
         strategy = t.get("strategy") or "equity_factor"
         snapshots.append(PositionSnapshot(
@@ -185,10 +204,12 @@ def _build_position_snapshots(
             symbol=code,
             market=t["market"],
             entry_price=float(t["entry_price"]),
-            current_price=current,
+            current_price=float(q["price"]),
             stop_loss=float(t["stop_loss_price"]) if t.get("stop_loss_price") else None,
             take_profit=float(t["take_profit_price"]) if t.get("take_profit_price") else None,
             ma_long=ma_long_map.get(code),
+            volume_ratio=q.get("vol_ratio"),
+            day_change_pct=q.get("change_pct"),
         ))
     return snapshots
 
@@ -293,9 +314,13 @@ def _evaluate_breakout_for_watchlist(
     watchlist: Watchlist,
     breakout_cfg: BreakoutConfig,
     open_symbols: set[str],
+    quote_map: dict[str, dict[str, Optional[float]]],
     now: datetime,
 ) -> list[AlertEvent]:
-    """PR2: 读 watchlist → 拉实时报价 + 量比 → 过滤已持仓 → evaluate_breakout_alerts."""
+    """PR2/PR3: 读 watchlist → 过滤已持仓 → 用上层共享的 quote_map → evaluate_breakout_alerts.
+
+    PR3 改: quote_map 由 run_once 统一拉一次 (持仓 + 候选共用), 减半 spot_em 调用.
+    """
     if not breakout_cfg.enabled:
         return []
     if is_watchlist_stale(watchlist, today=now.date(),
@@ -305,22 +330,17 @@ def _evaluate_breakout_for_watchlist(
     candidates = [c for c in watchlist.candidates if c.symbol not in open_symbols]
     if not candidates:
         return []
-    codes = [c.symbol for c in candidates]
-    quote_map = fetch_realtime_quote_with_vol_ratio_a_share(codes)
-    if not quote_map:
-        logger.warning("no realtime quote for watchlist; skip breakout")
-        return []
     quotes: list[BreakoutCandidateQuote] = []
     for c in candidates:
         q = quote_map.get(c.symbol)
-        if q is None:
+        if q is None or q.get("price") is None:
             continue
         quotes.append(BreakoutCandidateQuote(
             symbol=c.symbol,
             name=c.name,
             strategy_name=watchlist.strategy,
             market=watchlist.market,
-            current_price=q["price"],
+            current_price=float(q["price"]),
             reference_high=c.reference_high,
             volume_ratio=q.get("vol_ratio"),
             entry_price_suggested=c.entry_price_suggested,
@@ -334,13 +354,16 @@ def _evaluate_breakout_for_watchlist(
 def run_once(dry_run: bool = False) -> int:
     """执行一次评估 + 推送。返触发条数。
 
-    PR2 后流程:
-    - 持仓评估 (proximity / break_* / portfolio_*) — 若无 open 仍可继续 breakout 评估
-    - 候选股突破评估 (daily_screen_breakout) — 读 watchlist + 量比
+    PR3 后流程:
+    - 统一一次 spot_em 调用拿 (price + vol_ratio + change_pct) for 持仓 ∪ 候选
+    - 持仓评估 (proximity / break_* / zhuang_distribution / portfolio_*)
+    - 候选股突破评估 (daily_screen_breakout) — 共用 quote_map
     """
     raw = _load_yaml()
     raw_alerts = raw.get("intraday_alerts") or {}
-    cfg = IntradayConfig.from_yaml_dict(raw_alerts)
+    cfg = IntradayConfig.from_yaml_dict(
+        raw_alerts, zhuang_raw=raw.get("zhuang_distribution"),
+    )
     breakout_cfg = BreakoutConfig.from_yaml_dict(raw.get("breakout") or {})
     if not cfg.enabled and not breakout_cfg.enabled:
         logger.info("intraday_alerts + breakout 全 disabled; noop")
@@ -354,39 +377,49 @@ def run_once(dry_run: bool = False) -> int:
     journal = Journal(str(_JOURNAL_PATH))
     open_trades = journal.list_open()
     open_symbols = {t["symbol"] for t in open_trades}
-    a_share_codes = [t["symbol"] for t in open_trades if t.get("market") == "a_share"]
+    a_share_open_codes = [t["symbol"] for t in open_trades if t.get("market") == "a_share"]
 
-    events: list[AlertEvent] = []
-
-    # ── 持仓告警 ───────────────────────────────────────────────────────
-    if cfg.enabled and a_share_codes:
-        price_map = fetch_realtime_prices_a_share(a_share_codes)
-        if price_map:
-            ma_long_map = fetch_ma_long_a_share(a_share_codes, asof=now.date())
-            positions = _build_position_snapshots(journal, price_map, ma_long_map)
-            portfolios = _build_portfolio_snapshots(
-                positions, asof=now.strftime("%Y-%m-%d"),
-            )
-            pos_events = evaluate_alerts(positions, portfolios, cfg)
-            logger.info("position alerts: %d (positions=%d portfolios=%d)",
-                        len(pos_events), len(positions), len(portfolios))
-            events.extend(pos_events)
-        else:
-            logger.warning("no realtime prices for positions (network / 非交易日)")
-
-    # ── PR2: 候选股突破 (watchlist) ────────────────────────────────────
+    # ── PR3: 统一 quote_map (持仓 + watchlist 候选共用一次 spot_em) ──
+    wl: Optional[Watchlist] = None
     if breakout_cfg.enabled:
         wl = load_watchlist(_WATCHLIST_EQUITY_PATH)
         if wl is None:
-            logger.info("equity watchlist not found at %s; skip breakout",
+            logger.info("equity watchlist not found at %s",
                         _WATCHLIST_EQUITY_PATH)
-        else:
-            br_events = _evaluate_breakout_for_watchlist(
-                wl, breakout_cfg, open_symbols, now,
-            )
-            logger.info("breakout alerts: %d (watchlist asof=%s, n_cand=%d)",
-                        len(br_events), wl.asof_date, len(wl.candidates))
-            events.extend(br_events)
+    watchlist_codes: list[str] = []
+    if wl is not None and not is_watchlist_stale(
+        wl, today=now.date(), max_age_days=breakout_cfg.watchlist_max_age_days,
+    ):
+        watchlist_codes = [c.symbol for c in wl.candidates if c.symbol not in open_symbols]
+    all_codes = sorted(set(a_share_open_codes) | set(watchlist_codes))
+    quote_map: dict[str, dict[str, Optional[float]]] = {}
+    if all_codes:
+        quote_map = fetch_realtime_quote_with_vol_ratio_a_share(all_codes)
+
+    events: list[AlertEvent] = []
+
+    # ── 持仓告警 (incl. PR3 zhuang_distribution_warning) ─────────────
+    if cfg.enabled and a_share_open_codes and quote_map:
+        ma_long_map = fetch_ma_long_a_share(a_share_open_codes, asof=now.date())
+        positions = _build_position_snapshots(journal, quote_map, ma_long_map)
+        portfolios = _build_portfolio_snapshots(
+            positions, asof=now.strftime("%Y-%m-%d"),
+        )
+        pos_events = evaluate_alerts(positions, portfolios, cfg)
+        logger.info("position alerts: %d (positions=%d portfolios=%d)",
+                    len(pos_events), len(positions), len(portfolios))
+        events.extend(pos_events)
+    elif cfg.enabled and a_share_open_codes:
+        logger.warning("no realtime quote for positions (network / 非交易日)")
+
+    # ── PR2: 候选股突破 (watchlist) — 共用 quote_map ──────────────────
+    if breakout_cfg.enabled and wl is not None:
+        br_events = _evaluate_breakout_for_watchlist(
+            wl, breakout_cfg, open_symbols, quote_map, now,
+        )
+        logger.info("breakout alerts: %d (watchlist asof=%s, n_cand=%d)",
+                    len(br_events), wl.asof_date, len(wl.candidates))
+        events.extend(br_events)
 
     if not events:
         return 0

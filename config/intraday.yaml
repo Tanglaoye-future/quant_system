@@ -53,3 +53,12 @@ breakout:
   vol_ratio_min: 1.2                   # 量比下限；akshare 缺失字段降级 skip 该 filter
   watchlist_max_age_days: 5            # asof_date 超过 N 自然日视 stale，noop
   strategies: ["equity_factor"]        # PR2 仅 equity_factor；zhuang 留 PR3
+
+# PR3: zhuang 庄股盘中派发预警
+#   持仓 zhuang 股盘中今日大涨 (≥ 4%) + 量比放大 (≥ 2.0) →
+#   庄家可能进入派发期，推送 "考虑减仓" (非自动平仓, Backstop #4)
+zhuang_distribution:
+  enabled: true                        # 默认开
+  change_pct_min: 0.04                 # 今日涨幅下限 (小数, 0.04 = 4%)
+  vol_ratio_min: 2.0                   # 量比下限；缺失保守降级仍发 alert
+  strategies: ["zhuang"]               # 只对 strategy_name 在此列表内的持仓评估
