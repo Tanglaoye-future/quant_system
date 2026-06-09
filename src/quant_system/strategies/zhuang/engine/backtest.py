@@ -1,12 +1,15 @@
 """
 庄股策略回测引擎.
 
-流程：
-  逐日遍历交易日历 →
-    Step 1: 执行昨日待卖出（以今日开盘价成交）
-    Step 2: 检查现有持仓出场信号（以今日收盘为基准）
-    Step 3: 扫描 universe 入场信号
-    Step 4: 执行入场（以明日开盘价，此处用今日收盘近似，回测中标准做法）
+T+1 模型（与实盘 daily_zhuang.py pending entry/exit state machine 对齐）：
+  D 日盘后: 扫描出场信号 → pending_exits; 扫描入场信号 → pending_entries
+  D+1 日盘前: 执行 pending_exits + pending_entries at D+1 开盘价
+
+逐日遍历交易日历 →
+  Step 1a: 执行昨日 pending_exits（以今日开盘价成交）
+  Step 1b: 执行昨日 pending_entries（以今日开盘价成交）
+  Step 2:  检查现有持仓出场信号（以今日收盘为基准）→ pending_exits
+  Step 3:  扫描 universe 入场信号 → pending_entries
 """
 from __future__ import annotations
 
@@ -225,9 +228,11 @@ class ZhuangBacktester:
         closed_trades: list[ClosedTrade] = []
         equity_curve: list[tuple[str, float]] = []
         pending_exits: list[tuple[str, str]] = []   # (code, reason)
+        # T+1 入场锁: D 日信号 → D+1 开盘价执行. 每项: {code, accumulation_score, phase, reason}
+        pending_entries: list[dict] = []
 
         for date_idx, date in enumerate(all_dates):
-            # ── Step 1: 执行昨日待出场 ───────────────────────────────────────
+            # ── Step 1a: 执行昨日待出场 (T+1 exit) ────────────────────────────
             new_pending: list[tuple[str, str]] = []
             for code, reason in pending_exits:
                 if code not in positions:
@@ -272,6 +277,58 @@ class ZhuangBacktester:
                 ))
                 cash += sell_px * pos.size - sell_cost
                 del positions[code]
+            pending_exits = new_pending
+
+            # ── Step 1b: 执行昨日待入场 (T+1 entry) at 今日开盘价 ─────────────
+            new_pending_entries: list[dict] = []
+            for pe in pending_entries:
+                code = pe["code"]
+                if code in positions:
+                    continue
+                if len(positions) >= self.pos_max_count:
+                    break
+                if code not in px_cache:
+                    new_pending_entries.append(pe)
+                    continue
+                today_df = px_cache[code]
+                today_row = today_df[today_df["date"].astype(str).str[:10] == date]
+                if today_row.empty:
+                    new_pending_entries.append(pe)
+                    continue
+                entry_px = float(today_row.iloc[0]["open"]) * (1 + self.slippage)
+                pos_pct = self._compute_position_pct(pe["accumulation_score"])
+                max_value = self.initial_capital * pos_pct
+                raw_size = int(max_value / entry_px / 100) * 100
+                if raw_size < 100:
+                    continue
+                cost = entry_px * raw_size * (1 + self.commission)
+                if cash < cost:
+                    continue
+
+                full_df = px_cache[code]
+                df_up_to = full_df[full_df["date"].astype(str).str[:10] <= date]
+                atr_series = self.loader.compute_atr(df_up_to)
+                atr_val = float(atr_series.iloc[-1]) if not atr_series.empty else entry_px * 0.03
+                if np.isnan(atr_val):
+                    atr_val = entry_px * 0.03
+
+                stop_loss_px = entry_px - self.stop_loss_atr_mult * atr_val
+                take_profit_px = entry_px * (1.0 + self.take_profit_pct)
+
+                positions[code] = Position(
+                    code=code,
+                    entry_date=date,
+                    entry_price=entry_px,
+                    size=raw_size,
+                    atr_at_entry=atr_val,
+                    stop_loss_price=stop_loss_px,
+                    take_profit_price=take_profit_px,
+                    accumulation_score=pe["accumulation_score"],
+                    phase=pe["phase"],
+                    entry_reason=pe["reason"],
+                )
+                cash -= cost
+            pending_entries = new_pending_entries
 
             # ── 计算今日持仓市值 → 权益曲线 ─────────────────────────────────
             pos_value = 0.0
@@ -287,9 +344,12 @@ class ZhuangBacktester:
                     pos_value += pos.entry_price * pos.size
             equity_curve.append((date, cash + pos_value))
 
-            # ── Step 2: 检查现有持仓出场 ─────────────────────────────────────
+            # ── Step 2: 检查现有持仓出场 (T+1: D 日信号 → D+1 开盘执行) ─────
             for code in list(positions.keys()):
                 pos = positions[code]
+                # A 股 T+1: 当日买入的不能当日卖出
+                if pos.entry_date == date:
+                    continue
                 if code not in px_cache:
                     continue
                 full_df = px_cache[code]
@@ -317,8 +377,8 @@ class ZhuangBacktester:
                 if sig.action == "EXIT":
                     pending_exits.append((code, sig.reason))
 
-            # ── Step 3 & 4: 扫描入场信号 ────────────────────────────────────
-            if len(positions) >= self.pos_max_count:
+            # ── Step 3: 扫描入场信号 → pending_entries (T+1 entry) ────────────
+            if len(positions) + len(pending_entries) >= self.pos_max_count:
                 continue
 
             # 市场趋势过滤：指数在MA60以下时不开新仓
@@ -340,7 +400,8 @@ class ZhuangBacktester:
                     if p_20 > 0:
                         bench_20d_ret = (p_now - p_20) / p_20
 
-            already_in = set(positions.keys()) | {c for c, _ in pending_exits}
+            pending_codes = {pe["code"] for pe in pending_entries}
+            already_in = set(positions.keys()) | {c for c, _ in pending_exits} | pending_codes
             candidates: list[BuySignal] = []
             for code in universe:
                 if code in already_in:
@@ -372,47 +433,17 @@ class ZhuangBacktester:
                 if sig is not None:
                     candidates.append(sig)
 
-            # 按吃货期评分降序选取
+            # T+1: D 日信号 → pending_entries, D+1 开盘执行
             candidates.sort(key=lambda s: s.accumulation_score, reverse=True)
             for sig in candidates:
-                if len(positions) >= self.pos_max_count:
+                if len(positions) + len(pending_entries) >= self.pos_max_count:
                     break
-                code = sig.code
-                # 入场价用当日收盘（回测近似；实盘改用次日开盘）
-                entry_px = sig.price * (1 + self.slippage)
-                pos_pct = self._compute_position_pct(sig.accumulation_score)
-                max_value = self.initial_capital * pos_pct
-                raw_size = int(max_value / entry_px / 100) * 100
-                if raw_size < 100:
-                    continue
-                cost = entry_px * raw_size * (1 + self.commission)
-                if cash < cost:
-                    continue
-
-                # ATR
-                full_df = px_cache[code]
-                df_up_to = full_df[full_df["date"].astype(str).str[:10] <= date]
-                atr_series = self.loader.compute_atr(df_up_to)
-                atr_val = float(atr_series.iloc[-1]) if not atr_series.empty else entry_px * 0.03
-                if np.isnan(atr_val):
-                    atr_val = entry_px * 0.03
-
-                stop_loss_px = entry_px - self.stop_loss_atr_mult * atr_val
-                take_profit_px = entry_px * (1.0 + self.take_profit_pct)
-
-                positions[code] = Position(
-                    code=code,
-                    entry_date=date,
-                    entry_price=entry_px,
-                    size=raw_size,
-                    atr_at_entry=atr_val,
-                    stop_loss_price=stop_loss_px,
-                    take_profit_price=take_profit_px,
-                    accumulation_score=sig.accumulation_score,
-                    phase=sig.phase,
-                    entry_reason=sig.reason,
-                )
-                cash -= cost
+                pending_entries.append({
+                    "code": sig.code,
+                    "accumulation_score": sig.accumulation_score,
+                    "phase": sig.phase,
+                    "reason": sig.reason,
+                })
 
         # ── 强平剩余持仓 ──────────────────────────────────────────────────────
         last_date = all_dates[-1] if all_dates else end
