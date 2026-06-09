@@ -31,6 +31,9 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
+# PR3.5 — 在 ALL akshare import 之前激活 curl_cffi TLS 绕过 (Clash 兼容)
+import quant_system.intraday.akshare_cffi_patch  # noqa: F401 — side-effect import
+
 from quant_system.db import AlertsSent  # noqa: E402
 from quant_system.db.ingest import (  # noqa: E402
     _dualwrite_enabled,

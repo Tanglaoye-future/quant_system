@@ -20,4 +20,12 @@ os.environ["no_proxy"] = _merged
 # 设全局 socket 超时, 避免单只股票拉数据卡死整个脚本.
 socket.setdefaulttimeout(15)
 
+# PR3.5 — curl_cffi TLS 绕过 (Clash/系统代理兼容).
+# requests 库的 TLS 指纹被 eastmoney reject; curl_cffi impersonate Chrome.
+# try/except 安全: curl_cffi 未安装时静默回退 (不影响 package import).
+try:
+    from quant_system.intraday import akshare_cffi_patch as _ak_cffi  # noqa: F401
+except ImportError:
+    pass
+
 __version__ = "0.1.2"

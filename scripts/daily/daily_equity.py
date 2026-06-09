@@ -30,6 +30,9 @@ _REPORT_DATA = Path(__file__).resolve().parents[2] / "report" / "data"
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
+# PR3.5 — 在 ALL akshare import 之前激活 curl_cffi TLS 绕过 (Clash 兼容)
+import quant_system.intraday.akshare_cffi_patch  # noqa: F401 — side-effect import
+
 from quant_system.strategies.equity_factor.bottomup.factors import FactorWeights, score_universe
 from quant_system.strategies.equity_factor.bottomup.portfolio import m4_config_from_yaml
 from quant_system.strategies.equity_factor.catalyst.monitor import CatalystMonitor
