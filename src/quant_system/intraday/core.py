@@ -4,16 +4,21 @@
   scripts/intraday/intraday_risk_check.py:
     1. journal.list_open() → open_trades
     2. fetch_realtime_prices(codes) → {code: current_price}
-    3. 拼 PositionSnapshot + PortfolioSnapshot 喂 evaluate_alerts
-    4. AlertEvent list → 按 (asof_date, strategy_name, symbol, alert_type)
+    3. fetch_ma_long_a_share(codes, asof) → {code: ma60}
+    4. 拼 PositionSnapshot + PortfolioSnapshot 喂 evaluate_alerts
+    5. AlertEvent list → 按 (asof_date, strategy_name, symbol, alert_type)
        去重（DB alerts_sent unique index 兜底）→ Telegram.send
-    5. 写 alerts_sent 表（delivered + error）
+    6. 写 alerts_sent 表（delivered + error）
 
-4 阈值（spec §6 + 用户 2026-06-07 授权）：
-- stop_loss_proximity: dist_to_stop_pct < proximity_to_stop_loss_pct
-- take_profit_proximity: dist_to_target_pct < proximity_to_take_profit_pct
+6 阈值（spec §6 + PR1 of pr1_intraday_5min_breach.md 扩展）：
+- stop_loss_proximity: 0 ≤ dist_to_stop_pct < proximity_to_stop_loss_pct
+- take_profit_proximity: 0 ≤ dist_to_target_pct < proximity_to_take_profit_pct
+- break_stop_loss: current_price < stop_loss        (PR1 新增, critical)
+- break_ma60:     current_price < ma_long           (PR1 新增, critical)
 - portfolio_unrealized_floor: unrealized_pnl_pct < portfolio_unrealized_floor_pct
 - portfolio_peak_drawdown: drawdown_from_peak_pct < portfolio_drawdown_pct
+
+break_* 与 *_proximity 物理互斥（一旦穿越，proximity 的 dist 转负，不再触发 proximity）。
 """
 from __future__ import annotations
 
@@ -36,6 +41,7 @@ class PositionSnapshot:
     current_price: float
     stop_loss: Optional[float]
     take_profit: Optional[float]
+    ma_long: Optional[float] = None  # MA60 from T-1 daily closes; None=数据不足
 
 
 @dataclass
@@ -53,7 +59,7 @@ class PortfolioSnapshot:
 @dataclass
 class IntradayConfig:
     enabled: bool = False
-    poll_interval_minutes: int = 15
+    poll_interval_minutes: int = 5
     proximity_to_stop_loss_pct: float = 0.005
     proximity_to_take_profit_pct: float = 0.005
     portfolio_unrealized_floor_pct: float = -0.05
@@ -80,7 +86,7 @@ class IntradayConfig:
 
         return cls(
             enabled=bool(raw.get("enabled", False)),
-            poll_interval_minutes=int(raw.get("poll_interval_minutes", 15)),
+            poll_interval_minutes=int(raw.get("poll_interval_minutes", 5)),
             proximity_to_stop_loss_pct=float(triggers.get("proximity_to_stop_loss_pct", 0.005)),
             proximity_to_take_profit_pct=float(triggers.get("proximity_to_take_profit_pct", 0.005)),
             portfolio_unrealized_floor_pct=float(triggers.get("portfolio_unrealized_floor_pct", -0.05)),
@@ -134,6 +140,46 @@ def evaluate_alerts(
             continue
         if p.current_price <= 0:
             continue
+        # PR1 — break_stop_loss: 已跌破止损（critical, 优先级高于 proximity）
+        if p.stop_loss and p.stop_loss > 0 and p.current_price < p.stop_loss:
+            breach_pct = (p.stop_loss - p.current_price) / p.stop_loss
+            events.append(AlertEvent(
+                strategy_name=p.strategy_name,
+                symbol=p.symbol,
+                alert_type="break_stop_loss",
+                severity="critical",
+                payload={
+                    "current_price": p.current_price,
+                    "stop_loss": p.stop_loss,
+                    "breach_pct": breach_pct,
+                },
+                message=(
+                    f"🛑 <b>{p.symbol}</b> 已跌破止损 "
+                    f"{breach_pct*100:.2f}%\n"
+                    f"现价 {p.current_price:.2f} &lt; 止损 {p.stop_loss:.2f} "
+                    f"({p.strategy_name}/{p.market})"
+                ),
+            ))
+        # PR1 — break_ma60: 已跌破 MA60（critical 长期趋势支撑失守）
+        if p.ma_long and p.ma_long > 0 and p.current_price < p.ma_long:
+            breach_ma_pct = (p.ma_long - p.current_price) / p.ma_long
+            events.append(AlertEvent(
+                strategy_name=p.strategy_name,
+                symbol=p.symbol,
+                alert_type="break_ma60",
+                severity="critical",
+                payload={
+                    "current_price": p.current_price,
+                    "ma_long": p.ma_long,
+                    "breach_pct": breach_ma_pct,
+                },
+                message=(
+                    f"📉 <b>{p.symbol}</b> 跌破 MA60 "
+                    f"{breach_ma_pct*100:.2f}%\n"
+                    f"现价 {p.current_price:.2f} &lt; MA60 {p.ma_long:.2f} "
+                    f"({p.strategy_name}/{p.market})"
+                ),
+            ))
         if p.stop_loss and p.stop_loss > 0:
             dist_to_stop_pct = (p.current_price - p.stop_loss) / p.current_price
             if 0 <= dist_to_stop_pct < cfg.proximity_to_stop_loss_pct:

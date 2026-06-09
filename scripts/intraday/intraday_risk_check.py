@@ -23,7 +23,7 @@ import argparse
 import logging
 import sys
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -77,6 +77,40 @@ def fetch_realtime_prices_a_share(codes: list[str]) -> dict[str, float]:
         return {}
 
 
+def fetch_ma_long_a_share(codes: list[str], asof: date, n: int = 60) -> dict[str, float]:
+    """每只票拉 ≈ 2n 个自然日的 daily 收盘 (qfq) → 取最后 n 条算 SMA。
+
+    用 T-1 作为 end_date 避免 T 日盘中价污染 MA60 基线。
+    失败 / 数据不足 静默 None。回测 / 单测 monkeypatch 本函数。
+    """
+    if not codes:
+        return {}
+    try:
+        import akshare as ak
+    except ImportError:
+        logger.warning("akshare not available; ma_long fetch noop")
+        return {}
+    end = (asof - timedelta(days=1)).strftime("%Y%m%d")
+    # 2n 自然日 + 30 天缓冲覆盖周末/节假日
+    start = (asof - timedelta(days=n * 2 + 30)).strftime("%Y%m%d")
+    out: dict[str, float] = {}
+    for code in codes:
+        try:
+            df = ak.stock_zh_a_hist(
+                symbol=code, period="daily",
+                start_date=start, end_date=end, adjust="qfq",
+            )
+            if df is None or len(df) < n:
+                continue
+            closes = df["收盘"].dropna().astype(float).tail(n)
+            if len(closes) < n:
+                continue
+            out[code] = float(closes.mean())
+        except Exception as exc:
+            logger.warning("fetch_ma_long(%s) failed: %s", code, exc)
+    return out
+
+
 def _load_yaml() -> dict:
     if not _CONFIG_PATH.exists():
         return {}
@@ -88,8 +122,10 @@ def _load_yaml() -> dict:
 def _build_position_snapshots(
     journal: Journal,
     price_map: dict[str, float],
+    ma_long_map: Optional[dict[str, float]] = None,
 ) -> list[PositionSnapshot]:
-    """journal_trades open + 实时价 → PositionSnapshot list。"""
+    """journal_trades open + 实时价 + (可选) MA60 → PositionSnapshot list。"""
+    ma_long_map = ma_long_map or {}
     snapshots: list[PositionSnapshot] = []
     for t in journal.list_open():
         code = t["symbol"]
@@ -105,6 +141,7 @@ def _build_position_snapshots(
             current_price=current,
             stop_loss=float(t["stop_loss_price"]) if t.get("stop_loss_price") else None,
             take_profit=float(t["take_profit_price"]) if t.get("take_profit_price") else None,
+            ma_long=ma_long_map.get(code),
         ))
     return snapshots
 
@@ -233,8 +270,11 @@ def run_once(dry_run: bool = False) -> int:
         logger.warning("no realtime prices fetched (network / 非交易日); skip")
         return 0
 
+    # 2b. MA60 baseline (T-1 日 60 日 SMA) for break_ma60 alert
+    ma_long_map = fetch_ma_long_a_share(codes, asof=now.date())
+
     # 3. snapshots → evaluate
-    positions = _build_position_snapshots(journal, price_map)
+    positions = _build_position_snapshots(journal, price_map, ma_long_map)
     portfolios = _build_portfolio_snapshots(positions, asof=now.strftime("%Y-%m-%d"))
     events = evaluate_alerts(positions, portfolios, cfg)
     logger.info("evaluated %d alerts (positions=%d portfolios=%d)",
