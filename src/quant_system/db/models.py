@@ -137,6 +137,12 @@ class JournalTrade(Base):
     exit_date: Mapped[Optional[date]] = mapped_column(Date, index=True)
     exit_price: Mapped[Optional[float]] = mapped_column(Float)
     exit_reason: Mapped[Optional[str]] = mapped_column(String(255))
+    # T+1 开盘价退出锁 (feat/t1-open-exit):
+    # D 日检测到退出信号 → mark_pending_exit(D, reason); D+1 日执行 at open.
+    # nullable → 既有行 NULL, 零回退
+    pending_exit_date: Mapped[Optional[date]] = mapped_column(Date,
+        index=True)
+    pending_exit_reason: Mapped[Optional[str]] = mapped_column(String(255))
     pnl: Mapped[Optional[float]] = mapped_column(Float)
     pnl_pct: Mapped[Optional[float]] = mapped_column(Float)
     hold_days: Mapped[Optional[int]] = mapped_column(Integer)
@@ -203,6 +209,10 @@ class ZhuangTrade(Base):
     exit_date: Mapped[Optional[date]] = mapped_column(Date, index=True)
     exit_price: Mapped[Optional[float]] = mapped_column(Float)
     exit_reason: Mapped[Optional[str]] = mapped_column(String(64))
+    # T+1 开盘价退出锁 (feat/t1-open-exit) — 与 journal_trades 同 schema
+    pending_exit_date: Mapped[Optional[date]] = mapped_column(Date,
+        index=True)
+    pending_exit_reason: Mapped[Optional[str]] = mapped_column(String(255))
     pnl: Mapped[Optional[float]] = mapped_column(Float)
     pnl_pct: Mapped[Optional[float]] = mapped_column(Float)
     hold_days: Mapped[Optional[int]] = mapped_column(Integer)
