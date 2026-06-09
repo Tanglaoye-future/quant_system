@@ -10,15 +10,19 @@
        去重（DB alerts_sent unique index 兜底）→ Telegram.send
     6. 写 alerts_sent 表（delivered + error）
 
-6 阈值（spec §6 + PR1 of pr1_intraday_5min_breach.md 扩展）：
+6 阈值 + 1 候选股突破（spec §6 + PR1/PR2 扩展）：
 - stop_loss_proximity: 0 ≤ dist_to_stop_pct < proximity_to_stop_loss_pct
 - take_profit_proximity: 0 ≤ dist_to_target_pct < proximity_to_take_profit_pct
 - break_stop_loss: current_price < stop_loss        (PR1 新增, critical)
 - break_ma60:     current_price < ma_long           (PR1 新增, critical)
 - portfolio_unrealized_floor: unrealized_pnl_pct < portfolio_unrealized_floor_pct
 - portfolio_peak_drawdown: drawdown_from_peak_pct < portfolio_drawdown_pct
+- daily_screen_breakout: 候选股 current_price > T 日 high × (1+margin) +
+                          量比 ≥ vol_ratio_min (PR2 新增, warning, 入场提示)
 
 break_* 与 *_proximity 物理互斥（一旦穿越，proximity 的 dist 转负，不再触发 proximity）。
+daily_screen_breakout 用 BreakoutCandidateQuote + BreakoutConfig 走独立纯函数
+evaluate_breakout_alerts，与持仓告警 evaluate_alerts 解耦（输入/输出分离）。
 """
 from __future__ import annotations
 
@@ -263,4 +267,102 @@ def evaluate_alerts(
                 ),
             ))
 
+    return events
+
+
+# ── PR2: daily_screen_breakout (候选股盘中突破入场提示) ───────────────────
+
+@dataclass
+class BreakoutConfig:
+    """daily_screen_breakout 触发参数 (config/intraday.yaml breakout 节)."""
+    enabled: bool = False
+    breakout_margin: float = 0.005     # current_price > ref_high × (1 + margin)
+    vol_ratio_min: float = 1.2          # 量比下限; None / 缺失字段降级 skip 该 filter
+    watchlist_max_age_days: int = 5
+    strategies: list[str] = field(default_factory=lambda: ["equity_factor"])
+
+    @classmethod
+    def from_yaml_dict(cls, raw: dict) -> "BreakoutConfig":
+        return cls(
+            enabled=bool(raw.get("enabled", False)),
+            breakout_margin=float(raw.get("breakout_margin", 0.005)),
+            vol_ratio_min=float(raw.get("vol_ratio_min", 1.2)),
+            watchlist_max_age_days=int(raw.get("watchlist_max_age_days", 5)),
+            strategies=list(raw.get("strategies") or ["equity_factor"]),
+        )
+
+
+@dataclass
+class BreakoutCandidateQuote:
+    """评估 daily_screen_breakout 时单只候选股的盘中实时输入.
+
+    daily watchlist 给 reference_high / 建议 entry/sl/tp; spot_em 给 current_price /
+    volume_ratio. 主脚本合并后喂 evaluate_breakout_alerts.
+    """
+    symbol: str
+    name: str
+    strategy_name: str
+    market: str
+    current_price: float
+    reference_high: float           # T 日 high
+    volume_ratio: Optional[float]   # akshare spot_em '量比'; None=缺失
+    entry_price_suggested: float
+    stop_loss_suggested: Optional[float] = None
+    take_profit_suggested: Optional[float] = None
+    factor_score: float = 0.0
+
+
+def evaluate_breakout_alerts(
+    quotes: list[BreakoutCandidateQuote],
+    cfg: BreakoutConfig,
+) -> list[AlertEvent]:
+    """纯评估 daily_screen_breakout. 已在主脚本过滤 持仓 / stale watchlist.
+
+    触发条件全部满足:
+      1. current > reference_high × (1 + breakout_margin)
+      2. volume_ratio is None OR volume_ratio ≥ vol_ratio_min
+    """
+    events: list[AlertEvent] = []
+    if not cfg.enabled:
+        return events
+    for q in quotes:
+        if cfg.strategies and q.strategy_name not in cfg.strategies:
+            continue
+        if q.current_price <= 0 or q.reference_high <= 0:
+            continue
+        threshold_price = q.reference_high * (1.0 + cfg.breakout_margin)
+        if q.current_price <= threshold_price:
+            continue
+        # 量比降级: None 仍发 alert (akshare 字段缺失保守不挡)
+        if q.volume_ratio is not None and q.volume_ratio < cfg.vol_ratio_min:
+            continue
+        breakout_pct = (q.current_price - q.reference_high) / q.reference_high
+        vol_str = f"{q.volume_ratio:.2f}" if q.volume_ratio is not None else "N/A"
+        sl_str = f"{q.stop_loss_suggested:.2f}" if q.stop_loss_suggested else "N/A"
+        tp_str = f"{q.take_profit_suggested:.2f}" if q.take_profit_suggested else "N/A"
+        events.append(AlertEvent(
+            strategy_name=q.strategy_name,
+            symbol=q.symbol,
+            alert_type="daily_screen_breakout",
+            severity="warning",
+            payload={
+                "current_price": q.current_price,
+                "reference_high": q.reference_high,
+                "breakout_pct": breakout_pct,
+                "volume_ratio": q.volume_ratio,
+                "entry_price_suggested": q.entry_price_suggested,
+                "stop_loss_suggested": q.stop_loss_suggested,
+                "take_profit_suggested": q.take_profit_suggested,
+                "factor_score": q.factor_score,
+                "threshold_pct": cfg.breakout_margin,
+                "vol_ratio_min": cfg.vol_ratio_min,
+            },
+            message=(
+                f"📈 [候选] <b>{q.symbol}</b>({q.name}) 突破 T 日 high "
+                f"{breakout_pct*100:+.2f}% / 量比 {vol_str}\n"
+                f"现价 {q.current_price:.2f} &gt; ref_high {q.reference_high:.2f}; "
+                f"建议入场 {q.entry_price_suggested:.2f} / 止损 {sl_str} / 止盈 {tp_str}\n"
+                f"⚠ 可考虑次日开盘建仓 (非自动下单)"
+            ),
+        ))
     return events
