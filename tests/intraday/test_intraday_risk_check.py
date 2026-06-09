@@ -313,3 +313,188 @@ def test_from_yaml_dict_defaults_poll_5min():
     """PR1: poll_interval 默认 5（从 15 改）"""
     cfg = IntradayConfig.from_yaml_dict({})
     assert cfg.poll_interval_minutes == 5
+
+
+# ── PR2: daily_screen_breakout / watchlist ───────────────────────────
+
+import tempfile
+from datetime import date as _date, timedelta as _td
+from pathlib import Path as _Path
+
+from quant_system.intraday.core import (
+    BreakoutCandidateQuote,
+    BreakoutConfig,
+    evaluate_breakout_alerts,
+)
+from quant_system.intraday.watchlist import (
+    Watchlist,
+    WatchlistCandidate,
+    dump_watchlist,
+    load_watchlist,
+    is_watchlist_stale,
+)
+
+
+def _bcfg(**overrides) -> BreakoutConfig:
+    defaults = dict(
+        enabled=True,
+        breakout_margin=0.005,
+        vol_ratio_min=1.2,
+        watchlist_max_age_days=5,
+        strategies=["equity_factor"],
+    )
+    defaults.update(overrides)
+    return BreakoutConfig(**defaults)
+
+
+def _bq(symbol="601939", name="建设银行", current=10.30, ref_high=10.15,
+        vr=1.5, entry=10.10, sl=9.50, tp=11.00, strategy="equity_factor",
+        market="a_share", score=0.6) -> BreakoutCandidateQuote:
+    return BreakoutCandidateQuote(
+        symbol=symbol, name=name, strategy_name=strategy, market=market,
+        current_price=current, reference_high=ref_high, volume_ratio=vr,
+        entry_price_suggested=entry, stop_loss_suggested=sl,
+        take_profit_suggested=tp, factor_score=score,
+    )
+
+
+def test_breakout_triggers_warning():
+    """current > ref_high × (1.005) + vol ≥ 1.2 → daily_screen_breakout warning"""
+    events = evaluate_breakout_alerts([_bq()], _bcfg())
+    assert len(events) == 1
+    ev = events[0]
+    assert ev.alert_type == "daily_screen_breakout"
+    assert ev.severity == "warning"
+    assert ev.symbol == "601939"
+    assert ev.strategy_name == "equity_factor"
+    assert ev.payload["breakout_pct"] > 0
+    assert ev.payload["volume_ratio"] == 1.5
+    assert "突破 T 日 high" in ev.message
+    assert "非自动下单" in ev.message
+
+
+def test_breakout_below_threshold_does_not_trigger():
+    """current ≤ ref_high × (1+margin) → 不触发"""
+    # current 10.16, ref_high 10.15, margin 0.005 → threshold 10.20075
+    events = evaluate_breakout_alerts([_bq(current=10.16)], _bcfg())
+    assert events == []
+
+
+def test_breakout_low_vol_ratio_does_not_trigger():
+    """量比 < vol_ratio_min → 不触发"""
+    events = evaluate_breakout_alerts([_bq(vr=1.0)], _bcfg())
+    assert events == []
+
+
+def test_breakout_none_vol_ratio_still_triggers():
+    """量比缺失 (akshare 字段没拿到) → 降级保守发 alert (不挡)"""
+    events = evaluate_breakout_alerts([_bq(vr=None)], _bcfg())
+    assert len(events) == 1
+    assert events[0].payload["volume_ratio"] is None
+
+
+def test_breakout_disabled_when_cfg_false():
+    """breakout.enabled=false → 即使条件满足也不发"""
+    events = evaluate_breakout_alerts([_bq()], _bcfg(enabled=False))
+    assert events == []
+
+
+def test_breakout_strategies_filter_applies():
+    """strategies 白名单不含 zhuang → zhuang 候选股被跳过"""
+    qs = [
+        _bq(symbol="601939", strategy="equity_factor"),
+        _bq(symbol="600519", strategy="zhuang"),
+    ]
+    events = evaluate_breakout_alerts(qs, _bcfg())
+    syms = [e.symbol for e in events]
+    assert "601939" in syms
+    assert "600519" not in syms
+
+
+def test_breakout_zero_price_safe():
+    """current_price ≤ 0 / ref_high ≤ 0 → 不抛错，跳过"""
+    qs = [_bq(current=0.0), _bq(symbol="X", ref_high=0.0)]
+    events = evaluate_breakout_alerts(qs, _bcfg())
+    assert events == []
+
+
+# ── watchlist roundtrip + stale ─────────────────────────────────────
+
+def test_watchlist_dump_load_roundtrip():
+    wl = Watchlist(
+        asof_date="2026-06-09",
+        strategy="equity_factor",
+        market="a_share",
+        candidates=[
+            WatchlistCandidate(
+                symbol="601939", name="建设银行",
+                reference_high=10.15, reference_close=10.10,
+                entry_price_suggested=10.10, stop_loss_suggested=9.50,
+                take_profit_suggested=11.00, factor_score=0.625,
+                reasons=["MA60 OK", "RSI 58"],
+            ),
+        ],
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = _Path(td) / "wl.json"
+        dump_watchlist(wl, p)
+        assert p.exists()
+        wl2 = load_watchlist(p)
+        assert wl2 is not None
+        assert wl2.asof_date == "2026-06-09"
+        assert wl2.strategy == "equity_factor"
+        assert len(wl2.candidates) == 1
+        assert wl2.candidates[0].symbol == "601939"
+        assert wl2.candidates[0].reasons == ["MA60 OK", "RSI 58"]
+
+
+def test_watchlist_load_missing_file_returns_none():
+    p = _Path("/nonexistent/watchlist.json")
+    assert load_watchlist(p) is None
+
+
+def test_watchlist_stale_when_old():
+    wl = Watchlist(
+        asof_date="2026-06-01", strategy="equity_factor", market="a_share",
+    )
+    today = _date(2026, 6, 9)
+    assert is_watchlist_stale(wl, today, max_age_days=5) is True
+
+
+def test_watchlist_not_stale_when_recent():
+    wl = Watchlist(
+        asof_date="2026-06-08", strategy="equity_factor", market="a_share",
+    )
+    today = _date(2026, 6, 9)
+    assert is_watchlist_stale(wl, today, max_age_days=5) is False
+
+
+def test_watchlist_stale_when_unparseable_date():
+    wl = Watchlist(asof_date="garbage", strategy="x", market="y")
+    today = _date(2026, 6, 9)
+    assert is_watchlist_stale(wl, today, max_age_days=5) is True
+
+
+def test_breakout_config_from_yaml():
+    raw = {
+        "enabled": True,
+        "breakout_margin": 0.008,
+        "vol_ratio_min": 1.5,
+        "watchlist_max_age_days": 3,
+        "strategies": ["equity_factor", "zhuang"],
+    }
+    cfg = BreakoutConfig.from_yaml_dict(raw)
+    assert cfg.enabled is True
+    assert cfg.breakout_margin == 0.008
+    assert cfg.vol_ratio_min == 1.5
+    assert cfg.watchlist_max_age_days == 3
+    assert cfg.strategies == ["equity_factor", "zhuang"]
+
+
+def test_breakout_config_defaults():
+    cfg = BreakoutConfig.from_yaml_dict({})
+    assert cfg.enabled is False
+    assert cfg.breakout_margin == 0.005
+    assert cfg.vol_ratio_min == 1.2
+    assert cfg.watchlist_max_age_days == 5
+    assert cfg.strategies == ["equity_factor"]

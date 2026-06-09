@@ -39,11 +39,17 @@ from quant_system.db.ingest import (  # noqa: E402
 from quant_system.db.session import session_scope  # noqa: E402
 from quant_system.intraday import (  # noqa: E402
     AlertEvent,
+    BreakoutCandidateQuote,
+    BreakoutConfig,
     IntradayConfig,
     PortfolioSnapshot,
     PositionSnapshot,
+    Watchlist,
     evaluate_alerts,
+    evaluate_breakout_alerts,
     is_in_trading_window,
+    is_watchlist_stale,
+    load_watchlist,
 )
 from quant_system.notify import TelegramSender  # noqa: E402
 from quant_system.strategies.equity_factor.journal.journal import Journal  # noqa: E402
@@ -54,6 +60,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message
 
 _CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "intraday.yaml"
 _JOURNAL_PATH = Path(__file__).resolve().parents[2] / "data" / "journal.db"
+_WATCHLIST_EQUITY_PATH = (
+    Path(__file__).resolve().parents[2] / "data" / "intraday" / "equity_watchlist.json"
+)
 
 
 # ── data fetchers ────────────────────────────────────────────────────
@@ -74,6 +83,44 @@ def fetch_realtime_prices_a_share(codes: list[str]) -> dict[str, float]:
         return {str(row["代码"]): float(row["最新价"]) for _, row in sub.iterrows()}
     except Exception as exc:
         logger.warning("fetch_realtime_prices_a_share failed: %s", exc)
+        return {}
+
+
+def fetch_realtime_quote_with_vol_ratio_a_share(
+    codes: list[str],
+) -> dict[str, dict[str, Optional[float]]]:
+    """PR2: 拉实时价 + 量比 (akshare spot_em '量比' 字段, A 股有).
+    返回 {code: {price: float, vol_ratio: Optional[float]}}; 缺失字段 None.
+    """
+    if not codes:
+        return {}
+    try:
+        import akshare as ak
+        df = ak.stock_zh_a_spot_em()
+        mask = df["代码"].astype(str).isin(codes)
+        wanted_cols = ["代码", "最新价"]
+        if "量比" in df.columns:
+            wanted_cols.append("量比")
+        sub = df.loc[mask, wanted_cols]
+        out: dict[str, dict[str, Optional[float]]] = {}
+        for _, row in sub.iterrows():
+            code = str(row["代码"])
+            try:
+                price = float(row["最新价"])
+            except (TypeError, ValueError):
+                continue
+            vol_ratio: Optional[float] = None
+            if "量比" in sub.columns:
+                try:
+                    v = float(row["量比"])
+                    if v == v:  # not NaN
+                        vol_ratio = v
+                except (TypeError, ValueError):
+                    pass
+            out[code] = {"price": price, "vol_ratio": vol_ratio}
+        return out
+    except Exception as exc:
+        logger.warning("fetch_realtime_quote_with_vol_ratio_a_share failed: %s", exc)
         return {}
 
 
@@ -242,13 +289,61 @@ def _persist_alert(
         return False
 
 
+def _evaluate_breakout_for_watchlist(
+    watchlist: Watchlist,
+    breakout_cfg: BreakoutConfig,
+    open_symbols: set[str],
+    now: datetime,
+) -> list[AlertEvent]:
+    """PR2: 读 watchlist → 拉实时报价 + 量比 → 过滤已持仓 → evaluate_breakout_alerts."""
+    if not breakout_cfg.enabled:
+        return []
+    if is_watchlist_stale(watchlist, today=now.date(),
+                          max_age_days=breakout_cfg.watchlist_max_age_days):
+        logger.info("watchlist stale (asof=%s); skip breakout", watchlist.asof_date)
+        return []
+    candidates = [c for c in watchlist.candidates if c.symbol not in open_symbols]
+    if not candidates:
+        return []
+    codes = [c.symbol for c in candidates]
+    quote_map = fetch_realtime_quote_with_vol_ratio_a_share(codes)
+    if not quote_map:
+        logger.warning("no realtime quote for watchlist; skip breakout")
+        return []
+    quotes: list[BreakoutCandidateQuote] = []
+    for c in candidates:
+        q = quote_map.get(c.symbol)
+        if q is None:
+            continue
+        quotes.append(BreakoutCandidateQuote(
+            symbol=c.symbol,
+            name=c.name,
+            strategy_name=watchlist.strategy,
+            market=watchlist.market,
+            current_price=q["price"],
+            reference_high=c.reference_high,
+            volume_ratio=q.get("vol_ratio"),
+            entry_price_suggested=c.entry_price_suggested,
+            stop_loss_suggested=c.stop_loss_suggested,
+            take_profit_suggested=c.take_profit_suggested,
+            factor_score=c.factor_score,
+        ))
+    return evaluate_breakout_alerts(quotes, breakout_cfg)
+
+
 def run_once(dry_run: bool = False) -> int:
-    """执行一次评估 + 推送。返触发条数。"""
+    """执行一次评估 + 推送。返触发条数。
+
+    PR2 后流程:
+    - 持仓评估 (proximity / break_* / portfolio_*) — 若无 open 仍可继续 breakout 评估
+    - 候选股突破评估 (daily_screen_breakout) — 读 watchlist + 量比
+    """
     raw = _load_yaml()
     raw_alerts = raw.get("intraday_alerts") or {}
     cfg = IntradayConfig.from_yaml_dict(raw_alerts)
-    if not cfg.enabled:
-        logger.info("intraday_alerts.enabled=false; noop")
+    breakout_cfg = BreakoutConfig.from_yaml_dict(raw.get("breakout") or {})
+    if not cfg.enabled and not breakout_cfg.enabled:
+        logger.info("intraday_alerts + breakout 全 disabled; noop")
         return 0
 
     now = datetime.now()
@@ -256,33 +351,47 @@ def run_once(dry_run: bool = False) -> int:
         logger.info("not in trading window (%s); skip", now.strftime("%H:%M:%S"))
         return 0
 
-    # 1. open positions
     journal = Journal(str(_JOURNAL_PATH))
     open_trades = journal.list_open()
-    if not open_trades:
-        logger.info("no open trades; noop")
-        return 0
-    codes = [t["symbol"] for t in open_trades if t.get("market") == "a_share"]
+    open_symbols = {t["symbol"] for t in open_trades}
+    a_share_codes = [t["symbol"] for t in open_trades if t.get("market") == "a_share"]
 
-    # 2. realtime prices (currently A-share only; HK / US 后续扩)
-    price_map = fetch_realtime_prices_a_share(codes)
-    if not price_map:
-        logger.warning("no realtime prices fetched (network / 非交易日); skip")
-        return 0
+    events: list[AlertEvent] = []
 
-    # 2b. MA60 baseline (T-1 日 60 日 SMA) for break_ma60 alert
-    ma_long_map = fetch_ma_long_a_share(codes, asof=now.date())
+    # ── 持仓告警 ───────────────────────────────────────────────────────
+    if cfg.enabled and a_share_codes:
+        price_map = fetch_realtime_prices_a_share(a_share_codes)
+        if price_map:
+            ma_long_map = fetch_ma_long_a_share(a_share_codes, asof=now.date())
+            positions = _build_position_snapshots(journal, price_map, ma_long_map)
+            portfolios = _build_portfolio_snapshots(
+                positions, asof=now.strftime("%Y-%m-%d"),
+            )
+            pos_events = evaluate_alerts(positions, portfolios, cfg)
+            logger.info("position alerts: %d (positions=%d portfolios=%d)",
+                        len(pos_events), len(positions), len(portfolios))
+            events.extend(pos_events)
+        else:
+            logger.warning("no realtime prices for positions (network / 非交易日)")
 
-    # 3. snapshots → evaluate
-    positions = _build_position_snapshots(journal, price_map, ma_long_map)
-    portfolios = _build_portfolio_snapshots(positions, asof=now.strftime("%Y-%m-%d"))
-    events = evaluate_alerts(positions, portfolios, cfg)
-    logger.info("evaluated %d alerts (positions=%d portfolios=%d)",
-                len(events), len(positions), len(portfolios))
+    # ── PR2: 候选股突破 (watchlist) ────────────────────────────────────
+    if breakout_cfg.enabled:
+        wl = load_watchlist(_WATCHLIST_EQUITY_PATH)
+        if wl is None:
+            logger.info("equity watchlist not found at %s; skip breakout",
+                        _WATCHLIST_EQUITY_PATH)
+        else:
+            br_events = _evaluate_breakout_for_watchlist(
+                wl, breakout_cfg, open_symbols, now,
+            )
+            logger.info("breakout alerts: %d (watchlist asof=%s, n_cand=%d)",
+                        len(br_events), wl.asof_date, len(wl.candidates))
+            events.extend(br_events)
+
     if not events:
         return 0
 
-    # 4. 推送（已去重的才发）
+    # ── 推送 (dedup + persist) ────────────────────────────────────────
     asof_date = now.date()
     sender = TelegramSender()
     channel = "telegram"

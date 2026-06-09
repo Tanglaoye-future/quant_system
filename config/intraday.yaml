@@ -14,6 +14,9 @@
 # - 个股层: 现价距 take_profit 阈值 < proximity_to_take_profit_pct → "take_profit_proximity"
 # - 组合层: unrealized_pnl_pct < portfolio_unrealized_floor_pct → "portfolio_unrealized_floor"
 # - 组合层: drawdown_from_peak_pct < portfolio_drawdown_pct → "portfolio_peak_drawdown"
+# - 候选股: current > T 日 high × (1+margin) + 量比 ≥ vol_ratio_min → "daily_screen_breakout"
+#          (PR2 新增, warning, 入场提示 — daily 跑完写 data/intraday/equity_watchlist.json,
+#           intraday 读取后 5min 监控)
 
 intraday_alerts:
   enabled: true                      # 2026-06-08 用户启动全套服务时翻开
@@ -39,3 +42,14 @@ intraday_alerts:
     portfolio_drawdown_pct: -0.07
     # 评估哪些策略（默认全部 enabled 的 open_trade 走一遍）；空 list = 全部
     strategies: []
+
+# PR2: 候选股盘中突破入场提示
+#   daily_equity 跑完写 data/intraday/equity_watchlist.json；
+#   intraday cron 读 watchlist 后 5min 监控突破；
+#   触发后推送「可考虑次日开盘建仓」，**不自动下单** (Backstop #4)
+breakout:
+  enabled: true                        # 默认开；若想关掉只看持仓告警，改 false
+  breakout_margin: 0.005               # current > ref_high × (1 + margin)
+  vol_ratio_min: 1.2                   # 量比下限；akshare 缺失字段降级 skip 该 filter
+  watchlist_max_age_days: 5            # asof_date 超过 N 自然日视 stale，noop
+  strategies: ["equity_factor"]        # PR2 仅 equity_factor；zhuang 留 PR3
