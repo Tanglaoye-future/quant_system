@@ -60,6 +60,60 @@ fall through baostock 后实际 **-14.32%** (close 70.30 <= stop 77.13). 用户
 - L5 retrospective 报表只看 closed trades → 持有期间不进报表
 - 庄股跌 -15%+ 后 30 天反弹概率 ~25% (历史经验值, 非严格统计)
 
+## 06-09 反弹 (advisory 误信号 sample #1)
+
+**实证 (akshare 新浪实时, 11:51 盘中)**:
+- 600584 06-08 收 70.30 → 06-09 盘中 **75.00 = +6.69%** 反弹
+- 实时 pnl: -14.32% → **-8.59%** (反弹 5.73 pp, 一日内)
+- 同日 000063 +5.95% / 600919 +2.27% / 600584 +6.69% — 多只跟涨, A 股小幅普涨日
+
+**advisory 误信号 sample 入账**:
+- 06-08 daily 给出 "卖出建议: stop_loss close=70.30 <= stop=77.13"
+- 用户没卖 → 06-09 反弹 +6.69% → **advisory 这次错了**
+- 若按 advisory 平仓 70.30 → 少赚 4.70 元/股 × 1500 = **-7,050 元 opportunity loss**
+
+**关键澄清** (PM 心理校准, 避免错误归因):
+- N=1 sample 不能推翻 advisory 出场机制 (zhuang 6y Sharpe 1.81 含大量"卖出后继续跌"的对样本)
+- "advisory 卖错" 是策略机制的固有 noise, ~30-40% 误判率
+- 这次反弹不证明"系统坏", 下次同样信号 PM 拿住, 可能继续跌
+- 真正的"教训"不是"该信 / 不该信 advisory", 是 **样本量积累后看分布** (L5 报表)
+
+**记入 self-learning pipeline 的方式**:
+- 当前 trade 仍 open → entry_features 已落 (L3 PR #12)
+- 用户最终决定平仓时 → close_trade 自动落 exit_features (L4 PR #13):
+  exit_type / max_drawdown_during_hold_pct / max_profit_during_hold_pct
+- L5 报表会把这笔归入 winner/loser (按最终 pnl), 而非按 advisory 是否对/错
+
+## "高冲低卖" 诊断 (PM 心理 — 2026-06-09)
+
+用户 06-09 批评: "高的时候让我冲进去, 跌的时候让我卖, 一来一回全是亏算".
+
+诚实回应:
+1. **"高冲入"** 是 momentum/zhuang 算法机制 — A_mom 突破入场必然抓阶段新高;
+   zhuang 信号 = 量异常 + 价高位 = 主力吃货迹象, 入场点不会是底部
+2. **"低位卖"** 是 stop_loss / distribution 出场触发, advisory 不强制
+3. 用户感觉的"全是亏" 部分错觉部分真实:
+   - **真实**: 17 天里多数浮亏, 心理压力大
+   - **错觉**: 浮亏 ≠ 实亏; closed trade 只有 1 笔 (601066 +3.46%)
+   - **真整体**: 06-09 盘中实时 pnl ≈ -0.51% (A_mom +1.34% / zhuang -6.29%)
+4. **真痛点不是策略, 是**:
+   - cache stale 显示偏差 (M5 修了)
+   - advisory 工作流 gap (没卖 → 这次侥幸赢了)
+   - 实盘 17 天 sample 不足以判断
+
+**Why** (写给未来 cold-start): 用户在实盘窗口 (尤其前 30-60 天) 会反复体验
+"看到浮亏 → 怀疑策略 → 想推翻". 不要被这种 narrative 牵着走, 必须用 **数据**
+(closed trades + α vs benchmark + 8y backtest 历史 DD) 反驳, 同时承认 PM 心理
+压力真实 (不要冷冰冰说"再等等"). 600584 这一笔是 advisory 误信号 sample #1,
+未来积累 ≥ 30 笔 closed 后才有 L5 报表去看 advisory 准确率.
+
+**How to apply**: 用户再次说"系统就是骗我亏" 时, 按以下顺序回应:
+1. 拉实时数据 (akshare 新浪, push2 被代理拦绕开)
+2. 给真实当前 pnl (区分 A_mom vs zhuang vs 整体)
+3. 给已 closed trade 数 + 平均 pnl
+4. 不否认 PM 心理痛苦, 但要校准事实
+5. 把"误信号" / "对信号" 都记入 L5 sample, 不要单方面叙事
+
 ## 沉淀 (PM 未来决策)
 
 **Why**: 这个 case 暴露了 deployment / observability / data freshness 三个 gap, 不是 alpha 失败. self-learning pipeline 的真"学习"应该是修这三个 gap, 而不是 sweep zhuang 参数.
