@@ -8,6 +8,8 @@
 #      nohup venv/bin/python scripts/intraday/intraday_risk_check.py --loop &
 #
 # 触发条件 (任一即推):
+# - 个股层: 现价 < stop_loss → "break_stop_loss"           (PR1 新增, critical)
+# - 个股层: 现价 < MA60 → "break_ma60"                     (PR1 新增, critical)
 # - 个股层: 现价距 stop_loss 阈值 < proximity_to_stop_loss_pct → "stop_loss_proximity"
 # - 个股层: 现价距 take_profit 阈值 < proximity_to_take_profit_pct → "take_profit_proximity"
 # - 组合层: unrealized_pnl_pct < portfolio_unrealized_floor_pct → "portfolio_unrealized_floor"
@@ -15,7 +17,7 @@
 
 intraday_alerts:
   enabled: true                      # 2026-06-08 用户启动全套服务时翻开
-  poll_interval_minutes: 15          # cron / loop 频率
+  poll_interval_minutes: 5           # PR1: 15→5 min（pr1_intraday_5min_breach.md）
   trading_window:
     a_share:                         # A 股交易时段（local time, 9:30-15:00；中午 11:30-13:00 休市）
       start: "09:30"

@@ -34,11 +34,12 @@ def _cfg(**overrides) -> IntradayConfig:
 
 
 def _pos(symbol="601939", strategy="equity_factor", market="a_share",
-         entry=10.0, current=10.10, stop=9.50, tp=11.0) -> PositionSnapshot:
+         entry=10.0, current=10.10, stop=9.50, tp=11.0,
+         ma_long=None) -> PositionSnapshot:
     return PositionSnapshot(
         strategy_name=strategy, symbol=symbol, market=market,
         entry_price=entry, current_price=current,
-        stop_loss=stop, take_profit=tp,
+        stop_loss=stop, take_profit=tp, ma_long=ma_long,
     )
 
 
@@ -162,13 +163,14 @@ def test_stop_loss_none_safe():
     assert "stop_loss_proximity" not in types
 
 
-def test_negative_dist_to_stop_does_not_trigger():
-    """current < stop（已破止损）→ dist_to_stop_pct < 0 → 不再触发 proximity（已该 EXIT，daily 决策）"""
-    # current 9.40 / stop 9.50 → dist = -0.0106
+def test_negative_dist_to_stop_does_not_trigger_proximity():
+    """current < stop（已破止损）→ proximity 不触发；PR1 新增 break_stop_loss 接管"""
+    # current 9.40 / stop 9.50 → dist = -0.0106 < 0
     positions = [_pos(current=9.40, stop=9.50)]
     events = evaluate_alerts(positions, [], _cfg())
     types = [e.alert_type for e in events]
     assert "stop_loss_proximity" not in types
+    assert "break_stop_loss" in types  # PR1: 替代触发
 
 
 # ── from_yaml_dict roundtrip ────────────────────────────────────────
@@ -176,7 +178,7 @@ def test_negative_dist_to_stop_does_not_trigger():
 def test_from_yaml_dict_defaults():
     cfg = IntradayConfig.from_yaml_dict({})
     assert cfg.enabled is False
-    assert cfg.poll_interval_minutes == 15
+    assert cfg.poll_interval_minutes == 5  # PR1: 15→5
     assert cfg.proximity_to_stop_loss_pct == 0.005
     assert cfg.portfolio_drawdown_pct == -0.07
 
@@ -238,3 +240,76 @@ def test_alert_event_message_includes_threshold():
     assert "0.50%" in ev.message  # threshold
     assert ev.payload["threshold_pct"] == 0.005
     assert isinstance(ev, AlertEvent)
+
+
+# ── PR1: break_stop_loss / break_ma60 ────────────────────────────────
+
+def test_break_stop_loss_triggers_critical():
+    """current < stop → break_stop_loss critical；不再触发 proximity"""
+    positions = [_pos(symbol="601838", current=18.50, stop=18.79, tp=22.0)]
+    events = evaluate_alerts(positions, [], _cfg())
+    types = [e.alert_type for e in events]
+    assert "break_stop_loss" in types
+    assert "stop_loss_proximity" not in types
+    ev = next(e for e in events if e.alert_type == "break_stop_loss")
+    assert ev.severity == "critical"
+    assert ev.payload["current_price"] == 18.50
+    assert ev.payload["stop_loss"] == 18.79
+    # breach_pct = (18.79 - 18.50) / 18.79 ≈ 0.01543
+    assert abs(ev.payload["breach_pct"] - (18.79 - 18.50) / 18.79) < 1e-9
+    assert "跌破止损" in ev.message
+    assert "601838" in ev.message
+
+
+def test_break_stop_loss_does_not_fire_when_above():
+    """current ≥ stop → break_stop_loss 不触发"""
+    positions = [_pos(current=10.00, stop=9.50)]
+    events = evaluate_alerts(positions, [], _cfg())
+    types = [e.alert_type for e in events]
+    assert "break_stop_loss" not in types
+
+
+def test_break_ma60_triggers_critical():
+    """current < ma_long → break_ma60 critical"""
+    # ma60=10.50, current=10.05 → breach (10.50-10.05)/10.50 ≈ 0.0429
+    positions = [_pos(symbol="600519", current=10.05, stop=9.50, ma_long=10.50)]
+    events = evaluate_alerts(positions, [], _cfg())
+    types = [e.alert_type for e in events]
+    assert "break_ma60" in types
+    ev = next(e for e in events if e.alert_type == "break_ma60")
+    assert ev.severity == "critical"
+    assert ev.payload["ma_long"] == 10.50
+    assert abs(ev.payload["breach_pct"] - (10.50 - 10.05) / 10.50) < 1e-9
+    assert "MA60" in ev.message
+    assert "600519" in ev.message
+
+
+def test_break_ma60_does_not_fire_when_above_ma():
+    """current ≥ ma_long → break_ma60 不触发"""
+    positions = [_pos(current=11.00, stop=9.50, ma_long=10.50)]
+    events = evaluate_alerts(positions, [], _cfg())
+    types = [e.alert_type for e in events]
+    assert "break_ma60" not in types
+
+
+def test_break_ma60_skipped_when_ma_long_none():
+    """ma_long=None（数据不足）→ break_ma60 不触发，不抛错"""
+    positions = [_pos(current=9.00, stop=9.50, ma_long=None)]
+    events = evaluate_alerts(positions, [], _cfg())
+    types = [e.alert_type for e in events]
+    assert "break_ma60" not in types
+
+
+def test_break_stop_loss_and_break_ma60_can_coexist():
+    """跌破 stop 同时跌破 ma60 → 两个 alert 都出"""
+    positions = [_pos(current=9.00, stop=9.50, ma_long=10.50)]
+    events = evaluate_alerts(positions, [], _cfg())
+    types = [e.alert_type for e in events]
+    assert "break_stop_loss" in types
+    assert "break_ma60" in types
+
+
+def test_from_yaml_dict_defaults_poll_5min():
+    """PR1: poll_interval 默认 5（从 15 改）"""
+    cfg = IntradayConfig.from_yaml_dict({})
+    assert cfg.poll_interval_minutes == 5
