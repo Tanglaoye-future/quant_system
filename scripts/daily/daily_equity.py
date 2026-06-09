@@ -40,6 +40,11 @@ from quant_system.strategies.equity_factor.journal.journal import Journal
 from quant_system.strategies.equity_factor.risk.monitor import RiskMonitor
 from quant_system.strategies.equity_factor.timing.regime import MarketRegimeGate, build_timing_regime_context
 from quant_system.strategies.equity_factor.timing.signals import enrich, scan_today_entries, timing_config_from_yaml_node
+from quant_system.intraday.watchlist import (
+    Watchlist,
+    WatchlistCandidate,
+    dump_watchlist,
+)
 
 
 def _safe_float(value) -> Optional[float]:
@@ -108,6 +113,58 @@ def _build_entry_features_for_code(
     except Exception:
         # fail-soft: 采集失败不阻断 open_trade (Backstop #5)
         return None
+
+
+def _write_equity_watchlist(
+    loader,
+    market: str,
+    strategy: str,
+    asof: str,
+    hits: list[dict],
+    name_map: dict,
+    top: int,
+    repo_root: Path,
+) -> Optional[Path]:
+    """PR2: daily 跑完 (a_share + equity_factor) 后写 equity_watchlist.json,
+    供 intraday breakout 告警 (pr2_intraday_watchlist_breakout.md).
+
+    每只 candidate 拉 T 日 daily 末根 K 取 high; loader 失败 → 该只 reference_high=close.
+    """
+    if not hits:
+        return None
+    candidates: list[WatchlistCandidate] = []
+    for c in hits[:top]:
+        code = c["code"]
+        ref_high = float(c.get("entry_price", 0.0))
+        ref_close = float(c.get("entry_price", 0.0))
+        try:
+            px = loader.get_daily(market, code, "2026-01-01", asof)
+            if px is not None and len(px) > 0:
+                last = px.iloc[-1]
+                ref_close = float(last["close"])
+                ref_high = float(last["high"]) if "high" in px.columns else ref_close
+        except Exception:
+            pass
+        candidates.append(WatchlistCandidate(
+            symbol=code,
+            name=name_map.get(code, ""),
+            reference_high=ref_high,
+            reference_close=ref_close,
+            entry_price_suggested=float(c.get("entry_price", ref_close)),
+            stop_loss_suggested=float(c["stop_loss"]) if c.get("stop_loss") else None,
+            take_profit_suggested=float(c["take_profit"]) if c.get("take_profit") else None,
+            factor_score=float(c.get("score", 0.0)),
+            reasons=list(c.get("reasons", [])),
+        ))
+    wl = Watchlist(
+        asof_date=asof,
+        strategy=strategy,
+        market=market,
+        candidates=candidates,
+    )
+    path = repo_root / "data" / "intraday" / "equity_watchlist.json"
+    dump_watchlist(wl, path)
+    return path
 
 
 def main() -> None:
@@ -370,6 +427,32 @@ def main() -> None:
             if cat.to_label() != "-":
                 flag = "⚠利空" if cat.is_negative() else ("✓利好" if cat.is_positive() else "")
                 print(f"      催化剂: {cat.to_label()}  {flag}")
+
+    # ---------------- PR2: 写 intraday breakout watchlist ----------------
+    # 仅 A 股 + 非 mean_reversion (mr 是 bottom-fish, 跟 breakout 反向);
+    # dry-run 不写副作用文件; hits 已按 score 排序.
+    if (
+        not args.dry_run
+        and not args.no_write
+        and args.market == "a_share"
+        and args.kind != "mean_reversion"
+        and hits
+    ):
+        try:
+            wl_path = _write_equity_watchlist(
+                loader=loader,
+                market=args.market,
+                strategy=eff_strategy or args.strategy,
+                asof=args.asof,
+                hits=hits,
+                name_map=name_map,
+                top=args.top,
+                repo_root=Path(__file__).resolve().parents[2],
+            )
+            if wl_path:
+                print(f"  写 intraday watchlist: {wl_path.relative_to(Path.cwd()) if wl_path.is_relative_to(Path.cwd()) else wl_path}")
+        except Exception as exc:
+            print(f"  (写 watchlist 失败: {exc})")
 
     # ---------------- Step 3: 自动开仓 ----------------
     # sleeve 内隔离: A_mom / A_mr / HK_mom 各自独立 slot 池, 不互挤
