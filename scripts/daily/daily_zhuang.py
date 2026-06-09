@@ -30,8 +30,16 @@ from quant_system.strategies.zhuang.journal.journal import TradeOpen, ZhuangJour
 from quant_system.strategies.zhuang.signals.accumulation import accumulation_score_detail
 from quant_system.strategies.zhuang.signals.entry import check_entry_signal
 from quant_system.strategies.zhuang.signals.exit import check_exit_signal
+from quant_system.intraday.watchlist import (
+    PendingEntry,
+    PendingEntryManifest,
+    dump_pending_entries,
+    load_pending_entries,
+)
 
 _REPORT_DATA = Path(__file__).resolve().parents[2] / "report" / "data"
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_PENDING_ZHUANG_PATH = _REPO_ROOT / "data" / "intraday" / "pending_entries_zhuang.json"
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -168,6 +176,53 @@ def _market_trend_ok(loader: ZhuangDataLoader, strat: dict, asof: str):
     return ok
 
 
+def _execute_pending_zhuang_entries(
+    loader, strat: dict, asof: str, journal, capital: float,
+) -> int:
+    """T+1 入场锁 Step 0: 执行昨日 zhuang pending entries at 当日 open 价."""
+    if not _PENDING_ZHUANG_PATH.exists():
+        return 0
+    manifest = load_pending_entries(_PENDING_ZHUANG_PATH)
+    if manifest is None or not manifest.entries:
+        return 0
+    executed = 0
+    for pe in manifest.entries:
+        if pe.asof_date >= asof:
+            continue
+        try:
+            px = loader.get_daily(pe.symbol, asof)
+        except Exception:
+            continue
+        if px is None or px.empty:
+            continue
+        open_price = float(px["open"].iloc[-1]) if "open" in px.columns else float(px["close"].iloc[-1])
+        slp = 0.003
+        exec_price = round(open_price * (1.0 + slp), 2)
+        pos_pct = _compute_position_pct(strat, pe.accumulation_score or 60.0)
+        size = int(capital * pos_pct / exec_price / 100) * 100
+        if size < 100:
+            continue
+        atr_series = loader.compute_atr(px)
+        atr_val = float(atr_series.iloc[-1]) if not atr_series.empty else exec_price * 0.03
+        if np.isnan(atr_val):
+            atr_val = exec_price * 0.03
+        from quant_system.strategies.zhuang.journal.journal import TradeOpen as ZTradeOpen
+        tid = journal.open_trade(ZTradeOpen(
+            code=pe.symbol, market=pe.market, entry_date=asof,
+            entry_price=exec_price, entry_size=size,
+            accumulation_score=pe.accumulation_score, phase=pe.phase or "A",
+            atr_at_entry=atr_val, entry_reason=" · ".join(pe.reasons),
+            stop_loss_price=pe.stop_loss, take_profit_price=pe.take_profit,
+            entry_features=pe.entry_features,
+        ))
+        name = pe.name or ""
+        print(f"  T+1 入场 #{tid} {pe.symbol} {name}  "
+              f"{size}股 @ {exec_price:.2f} (open={open_price:.2f} +slip)")
+        executed += 1
+    _PENDING_ZHUANG_PATH.unlink(missing_ok=True)
+    return executed
+
+
 def main():
     args = parse_args()
     config_path = Path(args.config)
@@ -188,6 +243,15 @@ def main():
     print("=" * 78)
     print(f"  庄股 daily   asof = {args.date}   market = {market}")
     print("=" * 78)
+
+    # ── Step 0: T+1 入场锁 — 执行昨日 pending entries at 当日 open ──
+    if not args.dry_run and not args.no_write:
+        executed_cnt = _execute_pending_zhuang_entries(
+            loader=loader, strat=strat, asof=args.date,
+            journal=journal, capital=args.capital,
+        )
+        if executed_cnt:
+            print()
 
     # ── Step 1: 风控（open 持仓出场评估 + 盯市快照，advisory 不自动平）─────────
     # safety margin 阈值：距离 < 1% 算"贴线"，与 equity_factor 同款
@@ -352,12 +416,17 @@ def main():
     # ── Step 3: 自动建仓（check_entry_signal Phase-A + 市场趋势门 + tiered sizing）─
     market_trend = _market_trend_ok(loader, strat, args.date)
     pos_max = int(strat.get("position_max_count", 6))
-    available_slots = pos_max - len(open_trades)
+    # T+1 pending entries also occupy slots
+    pending_manifest = load_pending_entries(_PENDING_ZHUANG_PATH)
+    pending_zhuang_codes = {e.symbol for e in (pending_manifest.entries if pending_manifest else [])}
+    effective_open = len(open_trades) + len(pending_zhuang_codes - open_codes)
+    available_slots = pos_max - len(open_trades) - len(pending_zhuang_codes - open_codes)
     acc_score_entry = float(strat.get("accumulation_score_entry", 70.0))
     price_pos_min = float(strat.get("entry_price_position_min", 0.4))
     vol_spike = float(strat.get("volume_spike_ratio_min", 2.0))
 
-    new_trades = []
+    new_trades: list[dict] = []
+    pending_zhuang: list[PendingEntry] = []
     print()
     if args.dry_run or args.no_write:
         print("【自动建仓】 (干跑模式，不实际建仓)")
@@ -403,20 +472,44 @@ def main():
             entry_feats = _build_zhuang_entry_features(
                 df, sig, atr_val, pos_pct, market, args.date, market_trend, acc_w,
             )
-            tid = journal.open_trade(TradeOpen(
-                code=code, market=market, entry_date=args.date,
-                entry_price=entry_px, entry_size=size,
-                accumulation_score=sig.accumulation_score, phase=sig.phase,
-                atr_at_entry=atr_val, entry_reason=sig.reason,
-                stop_loss_price=stop_px, take_profit_price=tp_px,
+            # T+1 入场锁: 写 pending entries, 不立即 open_trade
+            name = loader.name_map.get(code, "") if hasattr(loader, "name_map") else ""
+            pe = PendingEntry(
+                symbol=code,
+                name=name,
+                market=market,
+                strategy="zhuang",
+                entry_price_signal=entry_px,
+                stop_loss=stop_px,
+                take_profit=tp_px,
+                factor_score=float(sig.accumulation_score),
+                reasons=[sig.reason] if sig.reason else [],
                 entry_features=entry_feats,
-            ))
-            new_trades.append({"id": tid, "code": code, "size": size, "entry_px": entry_px,
+                entry_bar_date=args.date,
+                accumulation_score=sig.accumulation_score,
+                phase=sig.phase,
+                atr_at_entry=atr_val,
+            )
+            pending_zhuang.append(pe)
+            new_trades.append({"id": -1, "code": code, "size": size, "entry_px": entry_px,
                                "score": sig.accumulation_score, "pos_pct": pos_pct,
                                "stop": stop_px, "tp": tp_px})
             open_codes.add(code)
 
-        if new_trades:
+        if pending_zhuang:
+            print(f"【自动建仓】 ({len(pending_zhuang)} 笔，标 pending — 明天开盘价执行)")
+            for t, pe in zip(new_trades, pending_zhuang):
+                print(f"  {t['code']}  score {t['score']:.1f}  参考价 {t['entry_px']:.2f}  "
+                      f"止损 {t['stop']:.2f}  止盈 {t['tp']:.2f}")
+            if not args.dry_run and not args.no_write:
+                m = PendingEntryManifest(
+                    asof_date=args.date,
+                    market=market,
+                    strategy="zhuang",
+                    entries=pending_zhuang,
+                )
+                dump_pending_entries(m, _PENDING_ZHUANG_PATH)
+        elif new_trades:
             print(f"【自动建仓】 ({len(new_trades)} 笔)")
             for t in new_trades:
                 cost = t["size"] * t["entry_px"]

@@ -26,6 +26,8 @@ import numpy as np
 import pandas as pd
 
 _REPORT_DATA = Path(__file__).resolve().parents[2] / "report" / "data"
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_PENDING_ENTRIES_PATH = _REPO_ROOT / "data" / "intraday" / "pending_entries_equity.json"
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -44,9 +46,13 @@ from quant_system.strategies.equity_factor.risk.monitor import RiskMonitor
 from quant_system.strategies.equity_factor.timing.regime import MarketRegimeGate, build_timing_regime_context
 from quant_system.strategies.equity_factor.timing.signals import enrich, scan_today_entries, timing_config_from_yaml_node
 from quant_system.intraday.watchlist import (
+    PendingEntry,
+    PendingEntryManifest,
     Watchlist,
     WatchlistCandidate,
+    dump_pending_entries,
     dump_watchlist,
+    load_pending_entries,
 )
 
 
@@ -170,6 +176,64 @@ def _write_equity_watchlist(
     return path
 
 
+def _execute_pending_entries(
+    loader, market: str, strategy: str, asof: str,
+    journal, capital: float, max_single_pct: float,
+    name_map: dict,
+) -> int:
+    """T+1 入场锁 Step 0: 执行昨日 pending entries at 当日 open 价.
+
+    Returns: 执行笔数.
+    """
+    if not _PENDING_ENTRIES_PATH.exists():
+        return 0
+    manifest = load_pending_entries(_PENDING_ENTRIES_PATH)
+    if manifest is None or not manifest.entries:
+        return 0
+    # 只执行 strictly-before-asof 的 (防同一天重跑两次)
+    executed = 0
+    for pe in manifest.entries:
+        if pe.asof_date >= asof:
+            continue
+        try:
+            px = loader.get_daily(pe.market, pe.symbol, "2026-01-01", asof)
+        except Exception:
+            continue
+        if px is None or px.empty or "open" not in px.columns:
+            continue
+        open_price = float(px["open"].iloc[-1])
+        # 滑点对齐 T+1 exit (1 - slippage), 买入价略高 (买价更差)
+        slp = 0.003
+        exec_price = round(open_price * (1.0 + slp), 2)
+        entry_size_lots = int(capital * max_single_pct / exec_price / 100)
+        if entry_size_lots < 1:
+            continue
+        entry_size = entry_size_lots * 100
+        entry_date_actual = pe.entry_bar_date or asof
+        from quant_system.strategies.equity_factor.journal.journal import TradeOpen
+        t = TradeOpen(
+            symbol=pe.symbol,
+            market=pe.market,
+            strategy=pe.strategy,
+            entry_date=entry_date_actual,
+            entry_price=exec_price,
+            entry_size=entry_size,
+            entry_score=pe.factor_score,
+            reason_timing=" · ".join(pe.reasons),
+            stop_loss_price=pe.stop_loss,
+            take_profit_price=pe.take_profit,
+            entry_features=pe.entry_features,
+        )
+        tid = journal.open_trade(t)
+        name = name_map.get(pe.symbol, pe.name or "")
+        print(f"  T+1 入场 #{tid} {pe.symbol} {name}  "
+              f"{entry_size}股 @ {exec_price:.2f} (open={open_price:.2f} +slip)")
+        executed += 1
+    # 执行后删除文件 (无论全部执行还是部分, 避免 residual state)
+    _PENDING_ENTRIES_PATH.unlink(missing_ok=True)
+    return executed
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
@@ -241,7 +305,19 @@ def main() -> None:
     # 有效策略标识：mean_reversion 等 kind 式调用 strategy_name 为 None，回退到 args.strategy，
     # 否则风控的 strategy 过滤失效 → 又会评估到 momentum 的仓位（串台）。
     eff_strategy = args.strategy_name or args.strategy
-    # 组合层风控（仅 alert，不自动平仓）；yaml `portfolio_risk:` 缺失或 enabled=false 时整段 noop
+
+    # ── Step 0: T+1 入场锁 — 执行昨日 pending entries at 当日 open ──
+    max_single_pct = float(cfg.get("strategy", "single_position_pct_max", default=0.20))
+    if not args.dry_run and not args.no_write and args.market == "a_share":
+        executed_cnt = _execute_pending_entries(
+            loader=loader, market=args.market, strategy=eff_strategy,
+            asof=args.asof, journal=j, capital=args.capital,
+            max_single_pct=max_single_pct, name_map=name_map,
+        )
+        if executed_cnt:
+            print()
+
+    # ---------------- Step 1: 风控 ----------------
     from quant_system.strategies.equity_factor.risk.monitor import PortfolioRiskConfig
     pr_node = cfg.get("portfolio_risk") or {}
     portfolio_risk_cfg = PortfolioRiskConfig(
@@ -464,11 +540,15 @@ def main() -> None:
         t["symbol"]
         for t in j.list_open(market=args.market, strategy=eff_strategy)
     }
+    # T+1 pending entries also occupy slots (money committed)
+    pending_manifest = load_pending_entries(_PENDING_ENTRIES_PATH)
+    pending_codes = {e.symbol for e in (pending_manifest.entries if pending_manifest else [])}
+    open_codes_set |= pending_codes
     max_positions = int(cfg.get("strategy", "position_max_count", default=6))
-    max_single_pct = float(cfg.get("strategy", "single_position_pct_max", default=0.20))
     available_slots = max_positions - len(open_codes_set)
 
     new_trades = []
+    pending_new: list[PendingEntry] = []
     if args.dry_run:
         print()
         print(f"【自动开仓】 (干跑模式，不实际录入)")
@@ -478,45 +558,53 @@ def main() -> None:
     elif not hits:
         pass  # 无信号，静默跳过
     else:
-        from quant_system.strategies.equity_factor.journal.journal import TradeOpen
         for c in hits[:args.top]:
-            if len(new_trades) >= available_slots:
+            if len(new_trades) + len(pending_new) >= available_slots:
                 break
             code = c["code"]
             if code in open_codes_set:
                 continue
-            entry_size_lots = int(args.capital * max_single_pct / c["entry_price"] / 100)
-            if entry_size_lots < 1:
-                continue
-            entry_size = entry_size_lots * 100
             reasons_str = " · ".join(c.get("reasons", []))
-            # L2 of self_learning_pipeline: 采集结构化 entry features (fail-soft)
             entry_feats = _build_entry_features_for_code(
                 loader, args.market, code, args.asof,
                 eff_strategy or args.strategy, tcfg, c.get("score", 0.0),
             )
-            # M3 of fix_hold_days_entry_bar_date: entry_date 用实际 K 线日 (周一跑
-            # daily 时 baostock 当日 K 线未入库, args.asof 是未来日 → hold_days 负数 +
-            # α benchmark 错位). 兜底回 args.asof.
             entry_date_actual = c.get("entry_bar_date") or args.asof
-            t = TradeOpen(
+            name = name_map.get(code, "")
+            pe = PendingEntry(
                 symbol=code,
+                name=name,
                 market=args.market,
                 strategy=eff_strategy,
-                entry_date=entry_date_actual,
-                entry_price=c["entry_price"],
-                entry_size=entry_size,
-                entry_score=c.get("score", 0.0),
-                reason_timing=reasons_str,
-                stop_loss_price=c["stop_loss"],
-                take_profit_price=c["take_profit"],
+                entry_price_signal=float(c["entry_price"]),
+                stop_loss=float(c["stop_loss"]),
+                take_profit=float(c["take_profit"]),
+                factor_score=float(c.get("score", 0.0)),
+                reasons=list(c.get("reasons", [])),
                 entry_features=entry_feats,
+                entry_bar_date=entry_date_actual,
             )
-            trade_id = j.open_trade(t)
-            new_trades.append((code, trade_id, entry_size, c["entry_price"]))
+            pending_new.append(pe)
+            new_trades.append((code, -1, 0, float(c["entry_price"])))
             open_codes_set.add(code)
 
-        if new_trades:
+        if pending_new:
+            print()
+            print(f"【自动开仓】 ({len(pending_new)} 笔，标 pending — 明天开盘价执行)")
+            for pe, (code, _, _, ep) in zip(pending_new, new_trades):
+                print(f"  {code} {pe.name}  参考价 {ep:.2f}  "
+                      f"止损 {pe.stop_loss:.2f}  止盈 {pe.take_profit:.2f}  "
+                      f"因子分 {pe.factor_score:+.3f}")
+            # 写 pending entries file (dry-run / no-write 不写)
+            if not args.dry_run and not args.no_write:
+                m = PendingEntryManifest(
+                    asof_date=args.asof,
+                    market=args.market,
+                    strategy=eff_strategy,
+                    entries=pending_new,
+                )
+                dump_pending_entries(m, _PENDING_ENTRIES_PATH)
+        elif new_trades:
             print()
             print(f"【自动开仓】 ({len(new_trades)} 笔)")
             for code, tid, sz, ep in new_trades:
