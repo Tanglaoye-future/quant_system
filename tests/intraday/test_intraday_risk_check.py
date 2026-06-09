@@ -498,3 +498,107 @@ def test_breakout_config_defaults():
     assert cfg.vol_ratio_min == 1.2
     assert cfg.watchlist_max_age_days == 5
     assert cfg.strategies == ["equity_factor"]
+
+
+# ── PR3: zhuang_distribution_warning ─────────────────────────────────
+
+def _zh_pos(symbol="600519", current=120.0, change=0.05, vr=2.5,
+            strategy="zhuang", market="a_share") -> PositionSnapshot:
+    """庄股持仓 fixture (chg + vol_ratio 已填)."""
+    return PositionSnapshot(
+        strategy_name=strategy, symbol=symbol, market=market,
+        entry_price=100.0, current_price=current,
+        stop_loss=90.0, take_profit=None,
+        ma_long=110.0,
+        volume_ratio=vr, day_change_pct=change,
+    )
+
+
+def _zh_cfg(**overrides) -> IntradayConfig:
+    defaults = dict(
+        enabled=True,
+        zhuang_distribution_enabled=True,
+        zhuang_change_pct_min=0.04,
+        zhuang_vol_ratio_min=2.0,
+        zhuang_strategies=["zhuang"],
+    )
+    defaults.update(overrides)
+    return IntradayConfig(**defaults)
+
+
+def test_zhuang_distribution_triggers_when_both_met():
+    """庄股今日 +5% + 量比 2.5 → zhuang_distribution_warning"""
+    events = evaluate_alerts([_zh_pos()], [], _zh_cfg())
+    types = [e.alert_type for e in events]
+    assert "zhuang_distribution_warning" in types
+    ev = next(e for e in events if e.alert_type == "zhuang_distribution_warning")
+    assert ev.severity == "warning"
+    assert ev.symbol == "600519"
+    assert ev.payload["day_change_pct"] == 0.05
+    assert ev.payload["volume_ratio"] == 2.5
+    assert "派发预警" in ev.message
+    assert "考虑减仓" in ev.message
+
+
+def test_zhuang_distribution_skipped_when_change_below():
+    """涨幅 < 4% → 不触发"""
+    events = evaluate_alerts([_zh_pos(change=0.02)], [], _zh_cfg())
+    types = [e.alert_type for e in events]
+    assert "zhuang_distribution_warning" not in types
+
+
+def test_zhuang_distribution_skipped_when_vol_below():
+    """量比 < 2.0 (有值) → 不触发"""
+    events = evaluate_alerts([_zh_pos(vr=1.5)], [], _zh_cfg())
+    types = [e.alert_type for e in events]
+    assert "zhuang_distribution_warning" not in types
+
+
+def test_zhuang_distribution_triggers_when_vol_none():
+    """量比缺失 (akshare 字段未取到) → 保守降级仍发 alert"""
+    events = evaluate_alerts([_zh_pos(vr=None)], [], _zh_cfg())
+    types = [e.alert_type for e in events]
+    assert "zhuang_distribution_warning" in types
+    ev = next(e for e in events if e.alert_type == "zhuang_distribution_warning")
+    assert ev.payload["volume_ratio"] is None
+    assert "N/A" in ev.message
+
+
+def test_zhuang_distribution_strategy_filter():
+    """非 zhuang 策略持仓即使条件满足也不发 zhuang_distribution_warning"""
+    p = _zh_pos(strategy="equity_factor")
+    events = evaluate_alerts([p], [], _zh_cfg())
+    types = [e.alert_type for e in events]
+    assert "zhuang_distribution_warning" not in types
+
+
+def test_zhuang_distribution_disabled_when_cfg_off():
+    """zhuang_distribution_enabled=False → 即使条件满足也不发"""
+    events = evaluate_alerts([_zh_pos()], [], _zh_cfg(zhuang_distribution_enabled=False))
+    types = [e.alert_type for e in events]
+    assert "zhuang_distribution_warning" not in types
+
+
+def test_zhuang_distribution_change_none_safe():
+    """day_change_pct=None → 不抛错, 不触发 (akshare 字段缺失安全)"""
+    events = evaluate_alerts([_zh_pos(change=None)], [], _zh_cfg())
+    types = [e.alert_type for e in events]
+    assert "zhuang_distribution_warning" not in types
+
+
+def test_zhuang_distribution_yaml_roundtrip():
+    """from_yaml_dict 拼 zhuang_distribution 节; 默认 vs full"""
+    cfg = IntradayConfig.from_yaml_dict({}, zhuang_raw={
+        "enabled": True, "change_pct_min": 0.06, "vol_ratio_min": 3.0,
+        "strategies": ["zhuang", "extra"],
+    })
+    assert cfg.zhuang_distribution_enabled is True
+    assert cfg.zhuang_change_pct_min == 0.06
+    assert cfg.zhuang_vol_ratio_min == 3.0
+    assert cfg.zhuang_strategies == ["zhuang", "extra"]
+
+    cfg_def = IntradayConfig.from_yaml_dict({})
+    assert cfg_def.zhuang_distribution_enabled is False
+    assert cfg_def.zhuang_change_pct_min == 0.04
+    assert cfg_def.zhuang_vol_ratio_min == 2.0
+    assert cfg_def.zhuang_strategies == ["zhuang"]
