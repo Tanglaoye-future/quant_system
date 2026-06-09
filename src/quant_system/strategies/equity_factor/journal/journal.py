@@ -76,6 +76,8 @@ def _trade_row(t: JournalTrade) -> dict[str, Any]:
         "notes": t.notes,
         "entry_features": t.entry_features,
         "exit_features": t.exit_features,
+        "pending_exit_date": str(t.pending_exit_date) if t.pending_exit_date else None,
+        "pending_exit_reason": t.pending_exit_reason,
     }
 
 
@@ -168,6 +170,38 @@ class Journal:
                 }
             except Exception:
                 pass  # fail-soft: close_trade 主行为不受影响
+            # T+1 pending exit: execution 完成, 清 pending 状态
+            trade.pending_exit_date = None
+            trade.pending_exit_reason = None
+
+    def mark_pending_exit(
+        self, trade_id: int, pending_date: str, reason: str,
+    ) -> None:
+        """T+1 退出锁: 标记待执行退出 (D 日标 pending, D+1 日 open 执行)."""
+        with self._scope() as s:
+            trade = s.get(JournalTrade, trade_id)
+            if trade is None:
+                raise ValueError(f"trade {trade_id} 不存在")
+            trade.pending_exit_date = _to_date(pending_date)
+            trade.pending_exit_reason = reason
+
+    def list_pending_exits(
+        self, market: Optional[str] = None, strategy: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        """返回所有已标 pending 但未 close 的 trades (按 pending_exit_date 旧→新)."""
+        with self._scope() as s:
+            stmt = select(JournalTrade).where(
+                JournalTrade.exit_date.is_(None),
+                JournalTrade.pending_exit_date.is_not(None),
+            )
+            if market is not None:
+                stmt = stmt.where(JournalTrade.market == market)
+            if strategy is not None:
+                stmt = stmt.where(JournalTrade.strategy == strategy)
+            rows = s.scalars(
+                stmt.order_by(JournalTrade.pending_exit_date)
+            ).all()
+            return [_trade_row(t) for t in rows]
 
     def update_stop_loss(self, trade_id: int, new_stop: float) -> None:
         with self._scope() as s:

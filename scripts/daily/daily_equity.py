@@ -262,7 +262,7 @@ def main() -> None:
     holds = [p for p in positions if p.action == "HOLD"]
 
     print()
-    print(f"【今日卖出建议】 ({len(exits)} 笔)")
+    print(f"【今日卖出建议】 ({len(exits)} 笔，标 pending — 明天开盘价执行)")
     if not exits:
         print("  无")
     for p in exits:

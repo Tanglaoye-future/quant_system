@@ -141,8 +141,52 @@ class RiskMonitor:
         # 拉一段够 MA60 + RSI 热身的窗口
         start = "2024-01-01"
 
+        # ── Step 0: T+1 退出锁 — 执行昨日 pending exits at 当日 open ──
+        executed_count = 0
+        for pt in self.journal.list_pending_exits(
+            market=self.market, strategy=self.strategy,
+        ):
+            if not pt.get("pending_exit_date"):
+                continue
+            # 仅执行 strictly-before-asof 的 pending exits
+            # (当天标 pending 的同日不 exec, 防同一天跑两次 daily 误提前平仓)
+            if pt["pending_exit_date"] >= asof:
+                continue
+            try:
+                px_pt = self.loader.get_daily(
+                    pt["market"], pt["symbol"], start, asof,
+                )
+            except Exception:
+                continue
+            if px_pt is None or px_pt.empty:
+                continue
+            if "open" not in px_pt.columns:
+                continue
+            open_price = float(px_pt["open"].iloc[-1])
+            # 滑点对齐回测: 卖出开放价 × (1 - slippage)
+            slp = getattr(self.cfg, "slippage", 0.003)
+            exec_price = open_price * (1.0 - slp)
+            self.journal.close_trade(
+                pt["id"],
+                asof,  # 执行日期 = 当日
+                round(exec_price, 2),
+                str(pt.get("pending_exit_reason", f"T+1 开盘退出 (open={open_price:.2f})")),
+            )
+            executed_count += 1
+        if executed_count:
+            import logging
+            _logger = logging.getLogger("risk.monitor")
+            _logger.info(
+                "T+1 pending exit executed: %d trades at %s open (slip=%.1f%%)",
+                executed_count, asof,
+                getattr(self.cfg, "slippage", 0.003) * 100,
+            )
+
         positions: list[PositionRisk] = []
         for trade in self.journal.list_open(market=self.market, strategy=self.strategy):
+            # T+1: 跳过已标 pending exit 的仓 (等待 D+1 open 执行)
+            if trade.get("pending_exit_date"):
+                continue
             try:
                 px = self.loader.get_daily(trade["market"], trade["symbol"], start, asof)
             except Exception:
@@ -175,11 +219,10 @@ class RiskMonitor:
 
             if ex["signal"]:
                 risk_flag = "exit"
-                # 自动平仓结算
-                exit_price_use = ex.get("exit_price", current_price)
-                self.journal.close_trade(
-                    trade["id"], current_date, exit_price_use,
-                    str(ex.get("reason", "自动退出"))
+                # T+1 退出锁: 不立即 close_trade, 标 pending — D+1 日 open 执行
+                self.journal.mark_pending_exit(
+                    trade["id"], current_date,
+                    str(ex.get("reason", "自动退出")),
                 )
             elif pnl_pct < -0.05:
                 risk_flag = "drawdown"
