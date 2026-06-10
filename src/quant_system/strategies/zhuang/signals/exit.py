@@ -34,6 +34,7 @@ def check_exit_signal(
     stop_loss_atr_mult: float = 2.0,
     max_stop_loss_pct: float = 0.06,        # P0: 单笔最大止损上限6%
     momentum_stop_pct: float = 0.05,        # P0: 持有≥3日跌-5%即提前离场
+    min_stop_distance_pct: float = 0.0,     # 最小止损距离: cap 止损价不超过 entry*(1-此值) (0=无下限)
     take_profit_pct: float = 0.15,
     max_hold_days: int = 15,
     extend_hold_days: int = 25,             # P3: 浮盈≥extend_profit_pct时延长持有
@@ -52,6 +53,10 @@ def check_exit_signal(
     atr_stop = entry_price - stop_loss_atr_mult * atr_at_entry
     pct_stop = entry_price * (1.0 - max_stop_loss_pct)
     stop_loss_price = max(atr_stop, pct_stop)   # 取两者中较高的（更严格）
+    # 最小止损距离: 防止 ATR 过小导致止损太紧（如 gap 0~0.5% 横盘股 ATR 极低）
+    if min_stop_distance_pct > 0:
+        min_distance_stop = entry_price * (1.0 - min_stop_distance_pct)
+        stop_loss_price = min(stop_loss_price, min_distance_stop)
     if close <= stop_loss_price:
         return ExitSignal(
             code=code, date=today_date, action="EXIT",

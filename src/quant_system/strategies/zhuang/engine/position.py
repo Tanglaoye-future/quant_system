@@ -19,6 +19,7 @@ class Position:
     accumulation_score: float = 0.0
     phase: str = "A"
     entry_reason: str = ""
+    min_stop_distance_pct: float = 0.0  # 最小止损距离; >0 时 cap 止损价不超过 entry*(1-此值)
 
 
 @dataclass

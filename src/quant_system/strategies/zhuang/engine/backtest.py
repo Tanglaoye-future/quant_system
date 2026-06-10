@@ -54,6 +54,8 @@ class ZhuangBacktester:
         self.stop_loss_atr_mult = float(strat.get("stop_loss_atr_mult", 2.0))
         self.max_stop_loss_pct = float(strat.get("max_stop_loss_pct", 0.06))
         self.momentum_stop_pct = float(strat.get("momentum_stop_pct", 0.05))
+        self.min_stop_distance_pct = float(strat.get("min_stop_distance_pct", 0.05))
+        self.vol_ratio_entry_max = float(strat.get("vol_ratio_entry_max", 2.0))
         self.take_profit_pct = float(strat.get("take_profit_pct", 0.15))
         self.dist_turnover_thresh = float(strat.get("distribution_turnover_thresh", 8.0))
         self.extend_hold_days = int(strat.get("extend_hold_days", 25))
@@ -296,6 +298,26 @@ class ZhuangBacktester:
                     new_pending_entries.append(pe)
                     continue
                 entry_px = float(today_row.iloc[0]["open"]) * (1 + self.slippage)
+
+                # 计算 gap = (T+1开盘 - D日收盘) / D日收盘
+                full_df = px_cache[code]
+                prev_rows = full_df[full_df["date"].astype(str).str[:10] < date]
+                if not prev_rows.empty:
+                    d_close = float(prev_rows.iloc[-1]["close"])
+                    d_row = prev_rows.iloc[-1]
+                    gap = (entry_px - d_close) / d_close if d_close > 0 else 0.0
+                    # vol_ratio: D日量 / D日前20日均量
+                    d_vol = float(d_row["volume"])
+                    avg_vol_20 = prev_rows.tail(20)["volume"].astype(float).mean()
+                    vol_ratio = d_vol / avg_vol_20 if avg_vol_20 > 0 else 1.0
+                else:
+                    gap = 0.0
+                    vol_ratio = 1.0
+
+                # gap 5%+ 且 D日放量>vol_ratio_entry_max → 派发信号，拒绝入场
+                if gap >= 0.05 and vol_ratio > self.vol_ratio_entry_max:
+                    continue
+
                 pos_pct = self._compute_position_pct(pe["accumulation_score"])
                 max_value = self.initial_capital * pos_pct
                 raw_size = int(max_value / entry_px / 100) * 100
@@ -305,7 +327,6 @@ class ZhuangBacktester:
                 if cash < cost:
                     continue
 
-                full_df = px_cache[code]
                 df_up_to = full_df[full_df["date"].astype(str).str[:10] <= date]
                 atr_series = self.loader.compute_atr(df_up_to)
                 atr_val = float(atr_series.iloc[-1]) if not atr_series.empty else entry_px * 0.03
@@ -314,6 +335,11 @@ class ZhuangBacktester:
 
                 stop_loss_px = entry_px - self.stop_loss_atr_mult * atr_val
                 take_profit_px = entry_px * (1.0 + self.take_profit_pct)
+
+                # gap 0~0.5% 段放宽止损距离，防 ATR 过紧误扫
+                min_stop_distance_pct = 0.0
+                if 0.0 <= gap < 0.005:
+                    min_stop_distance_pct = self.min_stop_distance_pct
 
                 positions[code] = Position(
                     code=code,
@@ -326,6 +352,7 @@ class ZhuangBacktester:
                     accumulation_score=pe["accumulation_score"],
                     phase=pe["phase"],
                     entry_reason=pe["reason"],
+                    min_stop_distance_pct=min_stop_distance_pct,
                 )
                 cash -= cost
             pending_entries = new_pending_entries
@@ -367,6 +394,7 @@ class ZhuangBacktester:
                     atr_at_entry=pos.atr_at_entry,
                     stop_loss_atr_mult=self.stop_loss_atr_mult,
                     max_stop_loss_pct=self.max_stop_loss_pct,
+                    min_stop_distance_pct=pos.min_stop_distance_pct,
                     momentum_stop_pct=self.momentum_stop_pct,
                     take_profit_pct=self.take_profit_pct,
                     max_hold_days=self.max_hold_days,
