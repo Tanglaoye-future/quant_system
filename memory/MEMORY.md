@@ -1,5 +1,7 @@
 # Memory Index
 
+- **[2026-06-10 v5 T+1 重校准 — efficient frontier 失效](v5_t1_recalibration_2026-06.md)** ⭐ — zhuang T+1 入场后 v5 8y Sharpe 2.231→1.801 (Δ-0.43) / 4y 2.751→2.105 (Δ-0.65); grid 真最优 zhuang 砍到 10-15% + HK 顶到 40% (max_weight cap); zhuang sleeve 仍正 Sharpe (0.30/0.20) 不被砍 0 数据支持; PM 5 选项 + 不自动改 yaml; supersede [[v5_efficient_frontier_2026-05]]
+- **[2026-06-10 zhuang gap-up filter + accumulation_score 双证伪](zhuang_gap_score_precheck_falsified_2026-06.md)** — gap-up 5%+ 是唯一正收益 bin (sum +176.7%)，过滤 gap-up 会砍掉全部 alpha；accumulation_score 缺失率 84% + IQR 1.5 点无判别力；phase 全 A 废变量；zhuang alpha 落在 lottery-ticket 尾部 (20% 交易贡献全部正收益)，入场侧 filter 会破坏结构
 - **[2026-06-08/09 case 600584 zhuang -14.32% 三重 gap](case_2026_06_08_600584_distribution.md)** ⭐ — 实盘 zhuang advisory 出场 6-1 已触发 PM 没卖 + DuckDB cache 4 天 stale 显示 -2.40% 假掩盖真实 -14.32% + daily 输出"已跌穿"与"贴近"无视觉差异; 用户授权"拿住做训练样本"不平; M4 (stop_breach 三级告警) + M5 (cache freshness fall through baostock) 修法
 - **[2026-06-08 实盘反馈 → 7 PR + self-learning pipeline 收尾](session_2026_06_08_self_learning_pipeline.md)** ⭐ — 用户报"实盘亏损"诊断: -0.59% 量级正常, 真问题是 Bug A (VARCHAR 32) + Bug B (alembic dormant) + Bug C (DuckDB stale-flock); 用户 RL framing 校准为"程序产出报告不自动改 alpha"; 5 PR pipeline (L1 JSONB schema / L2 A_mom+HK_mom entry / L3 zhuang entry / L4 exit 内部自动 / L5 retrospective 报表 + 17 falsified manifest); 5 条硬性 backstop 永不撞; 313/313 pytest
 - **[Harness-first + PR 拆分 (2026-06-07 起强制)](feedback_harness_first_pr_split.md)** ⭐ — 改动开始前先写 docs/specs/<topic>.md (schema/测试名/验收 step) 才动代码; 每步独立 PR; 禁止流式 commit 长串直推 main; 06-04/05/06 三连 12 commit 是反面教材
