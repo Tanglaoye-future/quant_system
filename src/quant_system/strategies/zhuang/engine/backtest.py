@@ -60,6 +60,8 @@ class ZhuangBacktester:
         self.dist_turnover_thresh = float(strat.get("distribution_turnover_thresh", 8.0))
         self.extend_hold_days = int(strat.get("extend_hold_days", 25))
         self.extend_profit_pct = float(strat.get("extend_profit_pct", 0.05))
+        self.dead_money_days = int(strat.get("dead_money_days", 5))
+        self.dead_money_pct = float(strat.get("dead_money_pct", 0.02))
         self.entry_price_position_min = float(strat.get("entry_price_position_min", 0.5))
         # L2: 相对强度过滤（个股 20d 超额收益 vs 基准）。None=关闭
         rs_min = strat.get("entry_relative_strength_min", None)
@@ -336,10 +338,8 @@ class ZhuangBacktester:
                 stop_loss_px = entry_px - self.stop_loss_atr_mult * atr_val
                 take_profit_px = entry_px * (1.0 + self.take_profit_pct)
 
-                # gap 0~0.5% 段放宽止损距离，防 ATR 过紧误扫
-                min_stop_distance_pct = 0.0
-                if 0.0 <= gap < 0.005:
-                    min_stop_distance_pct = self.min_stop_distance_pct
+                # 最小止损距离: 防 ATR 过紧误扫（低波动股高发），对所有入场统一生效
+                min_stop_distance_pct = self.min_stop_distance_pct
 
                 positions[code] = Position(
                     code=code,
@@ -396,6 +396,8 @@ class ZhuangBacktester:
                     max_stop_loss_pct=self.max_stop_loss_pct,
                     min_stop_distance_pct=pos.min_stop_distance_pct,
                     momentum_stop_pct=self.momentum_stop_pct,
+                    dead_money_days=self.dead_money_days,
+                    dead_money_pct=self.dead_money_pct,
                     take_profit_pct=self.take_profit_pct,
                     max_hold_days=self.max_hold_days,
                     extend_hold_days=self.extend_hold_days,

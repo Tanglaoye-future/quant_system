@@ -61,7 +61,7 @@ class TestExitSignal:
         assert "take_profit" in sig.reason
 
     def test_time_stop(self):
-        # 持有 5 天触发时间止损
+        # 持有 5 天触发时间止损（dead_money_days=0 禁用死钱退出）
         df = _make_position_df(6, entry_price=10.0, drift=0.001)
         sig = check_exit_signal(
             code="000003", df_since_entry=df,
@@ -69,6 +69,7 @@ class TestExitSignal:
             atr_at_entry=0.3,
             stop_loss_atr_mult=3.0, take_profit_pct=0.15,
             max_hold_days=5,
+            dead_money_days=999,
         )
         assert sig.action == "EXIT"
         assert "time_stop" in sig.reason

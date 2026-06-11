@@ -85,12 +85,13 @@ strategy:
   # 出场参数
   stop_loss_atr_mult: 1.5                # L4-combo4: 2.0→1.5 收紧 ATR 止损
   max_stop_loss_pct: 0.06                # 单笔最大止损上限6%（防止ATR过大导致止损过深）
-  momentum_stop_pct: 0.10                # 06-10优化: 0.03→0.10，消除3%噪声级momentum_stop（占旧交易8%全亏损avg-3.77%）
-  min_stop_distance_pct: 0.05            # 06-10优化: gap 0~0.5%段最小止损距离5%，防ATR过紧误扫（占旧交易48% wr=12%）
+  momentum_stop_pct: 0.05                # 06-10优化: 0.10→0.05，截断早期小幅亏损（反事实分析验证+4.5%）
+  min_stop_distance_pct: 0.03            # 06-10优化v2: 0.05→0.03，对所有入场生效；防ATR过紧误扫低波股（反事实验证+7.3x收益）
   take_profit_pct: 0.10                  # 庄股拉升 10-12% 后高位放量出货
   distribution_turnover_thresh: 6.0      # 提早识别派发信号
   extend_hold_days: 25                   # 浮盈≥5%时最长持有延至25日
   extend_profit_pct: 0.05                # 触发延长的浮盈门槛（max_hold=10下少触发）
+  dead_money_days: 999                   # 死钱退出禁用（反事实验证害>利）; 设为5启用
 
   # 入场增强过滤
   vol_ratio_entry_max: 2.0               # 06-10优化: gap 5%+ plus D日量>2x→派发信号拒绝入场（5笔avg-10.54%确定性亏损）
