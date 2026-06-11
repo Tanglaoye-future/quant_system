@@ -235,7 +235,13 @@ class ZhuangBacktester:
         # T+1 入场锁: D 日信号 → D+1 开盘价执行. 每项: {code, accumulation_score, phase, reason}
         pending_entries: list[dict] = []
 
+        n_dates = len(all_dates)
         for date_idx, date in enumerate(all_dates):
+            if verbose and n_dates > 100 and date_idx % (n_dates // 5) == 0 and date_idx > 0:
+                print(f"  [loop] {date_idx}/{n_dates} days ({date_idx*100//n_dates}%) "
+                      f"positions={len(positions)} trades={len(closed_trades)}",
+                      flush=True)
+
             # ── Step 1a: 执行昨日待出场 (T+1 exit) ────────────────────────────
             new_pending: list[tuple[str, str]] = []
             for code, reason in pending_exits:

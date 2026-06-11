@@ -76,8 +76,9 @@ def check_entry_signal(
     close = float(df["close"].iloc[-1])
     volume = float(df["volume"].iloc[-1])
 
-    # 吃货期评分
-    acc = accumulation_score(df, weights=acc_weights)
+    # 吃货期评分 — 只传最后 60 行防 O(N²) rolling 膨胀
+    df_score = df.iloc[-60:] if len(df) > 60 else df
+    acc = accumulation_score(df_score, weights=acc_weights)
 
     if phase == "A":
         # Phase-A：评分达阈值且价格处于20日区间上半段（P1：接近突破点才入场）
