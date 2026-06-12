@@ -61,11 +61,11 @@ strategy:
   position_max_count: 6                  # 同时持仓上限
 
   # L5-B: score 分级仓位（取代等权 5%）
-  # score >=80 (高分): 8% / 75-80 (中): 5% / 70-75 (低): 3%
-  # 6y 验证: Sharpe 1.627→1.806 (+0.18) / 收益 +48%→+76% / DD -3.1%→-4.9%
+  # 06-12 sweep: score>=85 (高分): 10% / 70-85 (中): 5% / <70 (低): 2%
+  # 8y 验证: Sharpe 0.253→0.282 (+0.029) / 收益 +36.3%→+45.6% / DD -10.3%→-12.3%
   position_size_mode: tiered
-  tiered_score_thresholds: [75.0, 80.0]
-  tiered_position_pcts: [0.03, 0.05, 0.08]
+  tiered_score_thresholds: [70.0, 85.0]
+  tiered_position_pcts: [0.02, 0.05, 0.10]
 
   # 吃货期积分阈值
   accumulation_score_entry: 70           # L1-E: 65→70，score >= 70（放宽位置后收紧score保证质量）
