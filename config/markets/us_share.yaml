@@ -22,6 +22,8 @@ data:
     sp500_daily_dir: "./data/sp500_prices"
     sp500_index_daily_csv: "./data/sp500_prices/SPX_index.csv"
     sp500_constituents_csv: "./data/sp500_prices/sp500_constituents.csv"
+    # 全美股 (DataLoader.us_universe="all" 时启用)
+    us_all_daily_dir: "./data/us_prices_all"
     # fundamentals via yfinance: 5 年年度 (income/balance/cashflow)，2018-2020 段缺失
     # 备选 provider: akshare_em (stock_financial_us_analysis_indicator_em)，未实现
     fundamentals_provider: yfinance

@@ -1,0 +1,66 @@
+# 策略：港股全市场趋势扫描（纯量价信号）
+# 2026-06-12 新建：从 equity_hk_momentum (hs100限定) 扩展为全港股扫描
+# 与 equity_hk_momentum 的 key diff:
+#   - universe: all (全港股)
+#   - pure_price_volume: true — 跳过所有基本面数据拉取，仅用 4 个量价信号打分
+#   - 去掉了南向资金信号（全市场无此数据）
+
+name: equity_trend_scan_hk
+kind: bottomup_timing
+
+deployments:
+  - market: hk_share
+    universe: all
+    enabled: true                # 2026-06-14 保留: 8y Sharpe +0.33 / 总收益 +73.98% / vs HS300 +94.30% — admission FAIL 但 alpha 显著，待 sweep
+    capital_pct: 0.00            # sweep 通过 admission 后再调
+
+# --- 算法层 ---
+
+timing:
+  m2_regime_enabled: true
+  m2_regime_ma_days: 200         # 港股长熊用 MA200
+  rsi_entry_low: 40.0
+  rsi_entry_high: 72.0
+  ma_long: 80
+  max_hold_days: 80
+  m2_rsi_atr_adjust: true
+  m2_rsi_atr_k: 400.0
+  m2_rsi_atr_cap: 8.0
+  m2_vol_green_bar: false
+  m2_vol_median_lookback: 5
+  m2_vol_median_mult: 1.0
+  m2_structure_lookback: 20
+  m2_structure_eps: 0.002
+  m2_breakout_mode: false
+  m2_breakout_ma_trend: true
+  vol_breakout_mult: 1.3
+  atr_stop_mult: 2.5
+  atr_target_mult: 5.0
+  tp_runner_enabled: true
+  atr_stop_mult_runner: 2.0
+  tp_runner_lock_atr_mult: 1.0
+  m3_regime_rsi_band: false
+  m3_reg_rsi_lo_widen_pts_per_ma_gap_1pct: 1.5
+  m3_reg_rsi_lo_widen_cap: 8.0
+  m3_reg_vol_tighten_hi: false
+  m3_reg_vol_hi_tighten_k: 18.0
+  m3_reg_vol_hi_tighten_cap: 6.0
+  m3_reg_index_atr_pct_median_window: 20
+  m3_mtf_rsi_enabled: false
+  m3_mtf_rsi_period: 28
+  m3_mtf_rsi_min: 48.0
+  m5_regime_exit_enabled: false
+  partial_exit_enabled: false
+  partial_exit_pct: 0.5
+  partial_exit_trail_mult: 1.5
+
+factors:
+  pure_price_volume: true
+  weights: {}
+
+# 无 hedge（全市场无标的对冲）
+admission:
+  min_sharpe: 0.3
+  min_sortino: 0.4
+  max_drawdown: 0.30
+  min_win_rate: 0.35

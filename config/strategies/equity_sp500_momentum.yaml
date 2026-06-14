@@ -12,8 +12,8 @@ deployments:
   - market: us_share
     universe: sp500                 # 覆盖 market 默认 nasdaq100；走 sp500_daily_dir
     benchmark: SPX                  # SPY ETF as SPX proxy
-    enabled: true
-    capital_pct: 0.0                # capital_pct 在 Phase C 用户拍板后再调
+    enabled: false                 # SP500 momentum 4y Sharpe -0.18 FAIL，2026-06-12 停用
+    capital_pct: 0.0
 
 timing:
   # M2 市况门：SP500 用 MA200 (美股标准)

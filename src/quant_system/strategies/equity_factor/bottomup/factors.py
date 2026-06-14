@@ -187,6 +187,41 @@ def compute_raw_factors(
     return factors
 
 
+def compute_raw_factors_pv(
+    loader: DataLoader, market: Market, code: str, asof: str
+) -> dict[str, float]:
+    """纯量价因子 — 不拉取任何基本面数据，仅从日线 OHLCV 计算 4 个趋势信号。"""
+    factors: dict[str, float] = {
+        "momentum_3m": np.nan,
+        "momentum_6m": np.nan,
+        "vol_adj_momentum": np.nan,
+        "trend_strength": np.nan,
+    }
+    try:
+        end_dt = pd.to_datetime(asof)
+        start_dt = max(end_dt - pd.Timedelta(days=250), pd.Timestamp("2018-01-01"))
+        px = loader.get_daily(market, code, start_dt.strftime("%Y-%m-%d"), asof)
+        if len(px) < 60:
+            return factors
+        close = px["close"].values.astype(float)
+        factors["momentum_3m"] = float(close[-1] / close[-60] - 1.0)
+        if len(px) >= 120:
+            factors["momentum_6m"] = float(close[-1] / close[-120] - 1.0)
+        # vol_adj_momentum: 3m动量 / 60日年化波动率
+        rets = pd.Series(close).pct_change().dropna()
+        if len(rets) >= 60:
+            vol60 = float(rets.iloc[-60:].std() * np.sqrt(252))
+            if vol60 > 0:
+                factors["vol_adj_momentum"] = factors["momentum_3m"] / vol60
+        # trend_strength: 收盘价 / MA60 - 1
+        ma60 = float(np.mean(close[-60:]))
+        if ma60 > 0:
+            factors["trend_strength"] = float(close[-1] / ma60 - 1.0)
+    except Exception:
+        pass
+    return factors
+
+
 def zscore(series: pd.Series) -> pd.Series:
     s = series.astype(float)
     mu = s.mean(skipna=True)
@@ -194,6 +229,14 @@ def zscore(series: pd.Series) -> pd.Series:
     if not sd or np.isnan(sd):
         return pd.Series(np.nan, index=s.index)
     return (s - mu) / sd
+
+
+PV_FACTOR_WEIGHTS = {
+    "momentum_3m": 0.30,
+    "momentum_6m": 0.25,
+    "vol_adj_momentum": 0.25,
+    "trend_strength": 0.20,
+}
 
 
 def score_universe(
@@ -204,24 +247,35 @@ def score_universe(
     weights: FactorWeights,
     verbose: bool = False,
     m4_cfg: Optional["M4Config"] = None,
+    pure_pv: bool = False,
 ) -> pd.DataFrame:
-    """对 universe 内每只股票打分, 返回按总分降序的 DataFrame.m4_cfg 可选（M4 因子离散度惩罚）。"""
+    """对 universe 内每只股票打分, 返回按总分降序的 DataFrame。
+    pure_pv=True 时跳过所有基本面数据拉取，仅用 4 个纯量价信号等权打分。
+    """
     rows = []
     for i, code in enumerate(codes, 1):
         if verbose:
             print(f"  [{i}/{len(codes)}] {code}", flush=True)
-        f = compute_raw_factors(loader, market, code, asof)
+        if pure_pv:
+            f = compute_raw_factors_pv(loader, market, code, asof)
+        else:
+            f = compute_raw_factors(loader, market, code, asof)
         f["code"] = code
         rows.append(f)
     raw = pd.DataFrame(rows).set_index("code")
 
     z = raw.apply(zscore)
-    w = weights.as_series()
+    if pure_pv:
+        w = pd.Series(PV_FACTOR_WEIGHTS)
+    else:
+        w = weights.as_series()
     # 缺失因子用 0 (中性), 避免一只股票因为单个因子缺失就被淘汰
     z_filled = z.fillna(0.0)
-    raw["score"] = z_filled.mul(w, axis=1).sum(axis=1)
+    # 只取 weight 中存在的列
+    common_cols = [c for c in w.index if c in z_filled.columns]
+    raw["score"] = z_filled[common_cols].mul(w[common_cols], axis=1).sum(axis=1)
     if m4_cfg is not None and float(m4_cfg.m4_factor_dispersion_lambda) > 0:
         lam = float(m4_cfg.m4_factor_dispersion_lambda)
-        row_std = z_filled.std(axis=1, ddof=0).clip(upper=5.0)
+        row_std = z_filled[common_cols].std(axis=1, ddof=0).clip(upper=5.0)
         raw["score"] = raw["score"] - lam * row_std
     return raw.sort_values("score", ascending=False)

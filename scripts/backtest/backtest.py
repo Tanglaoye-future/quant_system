@@ -95,6 +95,7 @@ def build_strategy(kind: str, loader: DataLoader, cfg, market: str,
             regime_benchmark_symbol=str(params["benchmark"]),
             m4_cfg=m4_cfg,
             market_ctx=market_ctx,
+            pure_pv=bool(params.get("pure_price_volume", False)),
         )
     raise ValueError(f"未注册策略 kind: {kind}")
 

@@ -7,10 +7,13 @@
 # scripts/backtest.py 与 daily_*.py 完全不感知变化（Phase 1b 再翻转入口签名）
 
 strategies:
-  - strategies/equity_momentum.yaml        # A 股 L7-C3 (a_share)
-  - strategies/equity_hk_momentum.yaml     # 港股 L1+L2-B (hk_share)
+  - strategies/equity_momentum.yaml        # A 股 L7-C3 (a_share, hs300)
+  - strategies/equity_hk_momentum.yaml     # 港股 L1+L2-B (hk_share, hs100)
   - strategies/equity_us_momentum.yaml     # 美股 NASDAQ100 deprecated (us_share, disabled)
-  - strategies/equity_sp500_momentum.yaml  # 美股 SP500 quality+momentum (us_share/sp500)
+  - strategies/equity_sp500_momentum.yaml  # 美股 SP500 quality+momentum (us_share/sp500, disabled)
+  - strategies/equity_trend_scan_a.yaml    # A 股全扫描趋势 (a_share, all)
+  - strategies/equity_trend_scan_hk.yaml   # 港股全扫描趋势 (hk_share, all)
+  - strategies/equity_trend_scan_us.yaml   # 美股全扫描趋势 (us_share, all)
 
 markets:
   - markets/a_share.yaml

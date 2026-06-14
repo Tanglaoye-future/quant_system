@@ -37,6 +37,11 @@ class UniverseFilterConfig:
     min_listed_days: int = 180                # 上市不足 180 个交易日（用可得日线数量近似）
     suspension_lookback_days: int = 10        # 近 N 日出现停牌(成交量=0 或缺 bar)则剔除
 
+    # --- pure_pv 旁路 ---
+    # 纯量价策略不应被基本面 gate (market_cap / ROE / debt_ratio) 拦截。
+    # 启用后跳过 stage2，避免对全 A 股每日调 fundamentals API（数小时级开销）。
+    skip_fundamentals: bool = False
+
 
 def _to_date_str(asof: str | datetime) -> str:
     if isinstance(asof, datetime):
@@ -185,6 +190,8 @@ class UniverseFilter:
 
         base = pd.DataFrame(rows)
         if base.empty:
+            # 上游靠 `filtered_df["code"]` 取列，空 df 也得带上 code/name
+            base = pd.DataFrame(columns=["code", "name"])
             stats = {
                 "asof": asof_str,
                 "input_n": int(len(df)),
@@ -215,6 +222,32 @@ class UniverseFilter:
             & base["pass_ma20_price"]
         )
         stage1 = base[cheap_mask].copy()
+
+        def _count_false(s: pd.Series) -> int:
+            return int((~s.fillna(False)).sum())
+
+        # pure_pv 旁路: cheap filter 已够，直接返回，跳过 fundamentals 网络拉取。
+        if cfg.skip_fundamentals:
+            stats = {
+                "asof": asof_str,
+                "input_n": int(len(df)),
+                "base_n": int(len(base)),
+                "output_n": int(len(stage1)),
+                "limit_data_ok": bool(limit_data_ok),
+                "dropped_no_bar": int(n_no_bar),
+                "dropped_short_history": int(n_short_hist),
+                "skip_fundamentals": True,
+                "config": asdict(cfg),
+                "rule_counts": {
+                    "pass_listed_days_false": _count_false(base["pass_listed_days"]),
+                    "pass_no_suspension_false": _count_false(base["pass_no_suspension"]),
+                    "pass_not_limit_false": _count_false(base["pass_not_limit"]),
+                    "pass_turnover_false": _count_false(base["pass_turnover"]),
+                    "pass_ma20_price_false": _count_false(base["pass_ma20_price"]),
+                    "stage1_after_cheap": int(len(stage1)),
+                },
+            }
+            return stage1.reset_index(drop=True), stats
 
         # ---------- 市值/财务（以 asof 截断；缺失视为不通过硬过滤） ----------
         market_caps = []
@@ -267,9 +300,6 @@ class UniverseFilter:
         out = stage1[full_mask].copy()
 
         # ---------- stats（逐条规则剔除数） ----------
-        def _count_false(s: pd.Series) -> int:
-            return int((~s.fillna(False)).sum())
-
         rule_counts = {
             "pass_listed_days_false": _count_false(base["pass_listed_days"]),
             "pass_no_suspension_false": _count_false(base["pass_no_suspension"]),

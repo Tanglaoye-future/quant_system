@@ -457,6 +457,7 @@ class BottomupTimingStrategy:
         regime_benchmark_symbol: Optional[str] = None,
         m4_cfg: Optional[M4Config] = None,
         market_ctx: Optional[MarketContext] = None,
+        pure_pv: bool = False,
     ):
         self.loader = loader
         self.market = market                                    # 仍保留供 loader.get_daily 数据源 dispatch
@@ -466,6 +467,7 @@ class BottomupTimingStrategy:
         self.weights = weights or FactorWeights()
         self.m4_cfg: M4Config = m4_cfg or M4Config()
         self._m4_prev_top: set[str] = set()
+        self._pure_pv = pure_pv
         self.history_start = history_start
         self._regime_benchmark_symbol = regime_benchmark_symbol or "sh000300"
         self._regime_gate: MarketRegimeGate | None = None
@@ -483,7 +485,10 @@ class BottomupTimingStrategy:
             )
         # enrich 缓存：按需构建（UniverseFilter 先缩小集合，再 enrich）
         self._enriched: dict[str, "object"] = {}
-        self._universe_filter = UniverseFilter(loader, UniverseFilterConfig())
+        # pure_pv 模式跳过 fundamentals gate（市值/ROE/负债率），仅留 liquidity / 价格 / 涨跌停 / 停牌
+        self._universe_filter = UniverseFilter(
+            loader, UniverseFilterConfig(skip_fundamentals=pure_pv)
+        )
         self._filtered_cache: dict[str, list[str]] = {}   # asof_str -> codes
 
     def _filtered_universe_codes(self, asof_str: str) -> list[str]:
@@ -569,7 +574,7 @@ class BottomupTimingStrategy:
         try:
             ranked = score_universe(
                 self.loader, self.market, hit_codes, asof_str, self.weights,
-                verbose=False, m4_cfg=m4_for_score,
+                verbose=False, m4_cfg=m4_for_score, pure_pv=self._pure_pv,
             )
             for h in hits:
                 h["_score"] = float(ranked.loc[h["code"], "score"]) if h["code"] in ranked.index else 0.0

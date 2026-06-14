@@ -1,26 +1,36 @@
 ---
-name: 实盘部署计划 2026-05-28（6-asset 多策略 + v5 grid-search 权重）
-description: 8 年回测后的实盘部署蓝图；6 账户配资（HK + A_mom + A_mr + zhuang + QQQ + GLD）+ 季度再平衡；v5 经 P1 grid search + P1+ 跨区间稳健性 + P2 capacity 三重验证
+name: 实盘部署计划 2026-06-12（趋势交易转向 — A_mr 停用 + 三市场全扫描）
+description: 6 资产配资（HK + A_trend + A_trend_scan + zhuang + QQQ + GLD）+ 季度再平衡；2026-06-12 关停 A_mr/SP500/NASDAQ100，新增三市场全扫描趋势策略
 type: project
 ---
 
-## 资金配置（基础资金 = 100%，v5 2026-05-28 — grid search + 稳健性验证后落地）
+## ⚠️ 2026-06-12 策略转向（趋势交易）
+
+**关停**：A_mr mean_reversion（8y Sharpe ~0 纯噪音）、SP500 momentum（4y Sharpe -0.18）、NASDAQ100 momentum（8y Sharpe -0.05）
+
+**新增**（回测验证中）：
+- `equity_trend_scan_a` — A 股全市场纯量价趋势（3866 只）
+- `equity_trend_scan_hk` — 港股全市场纯量价趋势
+- `equity_trend_scan_us` — 美股全市场纯量价趋势
+
+**保留**：equity_momentum (hs300) / equity_hk_momentum (hs100) 作为对照，待全扫描版回测通过后决定去留。
+
+## 资金配置（基础资金 = 100%，待全扫描回测后重新 grid search）
 
 | 账户 | 占比 | 标的 | 策略 |
 |---|---|---|---|
 | **HK 港股账户** | **25%** | HSCHK100 成份股 | `daily_run --market hk_share` |
 | **A 股账户 — 子策略 A** | **10%** | HS300 momentum (L9-A) | `daily_run --market a_share --strategy equity_momentum` |
-| **A 股账户 — 子策略 B** | 10% | HS300 mean-reversion | `daily_run --market a_share --strategy mean_reversion` |
+| **A 股账户 — 子策略 B** | 0% | ~~HS300 mean-reversion~~ (2026-06-12 停用) | 等待 trend_scan_a 回测结果替代 |
 | **A 股账户 — zhuang ⭐** | **40%** | A 股 50亿-2000亿中小盘 | `daily_zhuang.py` |
 | **US ETF 账户** | **5%** | QQQ ETF | 被动买入持有 |
 | **黄金 ETF 账户** | **10%** | GLD（境外）或 518880（华安黄金 ETF，境内）| 被动买入持有 |
 
-**v5 升级原因**（详见 `memory/portfolio_p1_p2_weights_capacity_2026-05.md`）：从量化对冲基金视角的组合层优化。
+**v5 升级原因**：从量化对冲基金视角的组合层优化。
 
-- **P1 grid search**（2020-2026, 27,237 组合）：v4 (20/20/10/20/15/15) Sharpe 1.86 → v5 (25/10/10/40/5/10) Sharpe **2.22 / DD -2.7%**。重权重 +0.36 Sharpe，远大于单策略 L9-A 迭代的 +0.086。
-- **P1+ 跨区间稳健性**：v5 在 5 个市场段 DD 全部更小；**2022 熊市 v4 是 -0.62（亏损年）而 v5 是 +0.47（盈利年）**，ΔSharpe +1.087 —— 高 zhuang 配比是熊市压舱石。zhuang 40% 是 5 段里 4 段的共同最优（非过拟合）。
-- **P2 capacity**：zhuang universe ADV 中位 200M RMB；40% 配比在**总 AUM ≤30M 保留 96% Sharpe**；>100M 须压回 20-25%。
-- **cap sensitivity**：解开 cap zhuang 想到 55% 封顶，但 40% 已捕获理论上限 98%；40% 同时满足 capacity + 集中度铁律。
+- **P1 grid search**（2020-2026, 27,237 组合）：v4 (20/20/10/20/15/15) Sharpe 1.86 → v5 (25/10/10/40/5/10) Sharpe **2.22 / DD -2.7%**。
+- **P1+ 跨区间稳健性**：v5 在 5 个市场段 DD 全部更小；**2022 熊市 v4 是 -0.62（亏损年）而 v5 是 +0.47（盈利年）**。
+- **2026-06-12 更新**：A_mr 停用后 10% 权重待重分配，趋势全扫描回测通过后重新 grid search 组合权重。
 
 **⚠️ v5 的真实 trade-off — 防守倾斜**：v5 比 v4 更防守，在 beta 驱动的强反弹段（2020 疫情后 / 2023-24）少赚一点（ΔSharpe -0.38 / -0.18，但绝对 Sharpe 仍 >1.0 / >2.8）。换来全局更低 DD + 熊市抗跌。**若判断未来是持续大牛市，可回调 QQQ/GLD 权重吃 beta；若优先下行保护，维持 v5。**
 
@@ -43,7 +53,7 @@ type: project
 
 ### 3. 策略服务端
 
-HK + A 两个账户跑策略（A 账户内含 momentum 10% + mean-reversion 10% + zhuang 40% = 60%）：
+HK + A 两个账户跑策略（A 账户内含 momentum 10% + zhuang 40% = 50%；A_mr 已停用，10% 待重新分配）：
 
 ```bash
 # HK（25% 资金，示例总资金 1M → 250K）
@@ -52,11 +62,11 @@ python scripts/daily/daily_equity.py --market hk_share --strategy equity_hk_mome
 # A 股 momentum L9-A（10%）
 python scripts/daily/daily_equity.py --market a_share --strategy equity_momentum --capital 100000
 
-# A 股 mean-reversion（10%）
-python scripts/daily/daily_equity.py --market a_share --strategy mean_reversion --capital 100000
-
 # A 股 zhuang（40%）
 python scripts/daily/daily_zhuang.py --capital 400000
+
+# 新趋势全扫描（待回测验收后启用，capital_pct 待定）
+# python scripts/daily/daily_equity.py --market a_share --strategy equity_trend_scan_a --capital 100000
 ```
 
 US 账户买入 QQQ（5%）后**不动**；黄金账户买入 GLD/518880（10%）后**不动**。再平衡时调整。
