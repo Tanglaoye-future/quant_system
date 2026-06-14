@@ -31,3 +31,8 @@ declarations:
     market: hk_small
     status: blocked
     reason: "HK 小盘股数据源不可用 (详见 Phase 1-D 调研)"
+
+  - strategy: equity_mean_reversion
+    market: a_share
+    status: deprecated
+    reason: "均值回归策略 8y Sharpe ~0（纯噪音分散），2026-06-12 全面转向趋势交易"

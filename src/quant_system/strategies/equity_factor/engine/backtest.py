@@ -206,6 +206,9 @@ class Backtester:
                     still_pending_buys.append(sig)
                     continue
                 exec_price = float(bar["open"]) * (1.0 + self.slippage)
+                if exec_price <= 0:
+                    # 美股 universe 含退市/OTC 脏数据 open=0；跳过避免 ZeroDivisionError
+                    continue
                 # 仓位 sizing
                 max_value = self.initial_capital * self.single_position_pct
                 avail_cash = cash * (1.0 - self.cash_buffer_pct)

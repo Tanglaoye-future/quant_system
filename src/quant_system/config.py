@@ -255,4 +255,7 @@ def resolve_strategy_params(
         ),
         "universe": market_cfg.get("universe"),
         "enabled": bool(market_cfg.get("enabled", False)),
+        "pure_price_volume": bool(
+            (market_cfg.get("factors") or {}).get("pure_price_volume", False)
+        ),
     }

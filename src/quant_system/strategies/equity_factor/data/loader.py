@@ -47,7 +47,7 @@ class DataLoader:
 
     def _us_paths(self) -> dict[str, str]:
         """根据 us_universe 返回 {daily_dir, index_daily_csv, constituents_csv}。
-        sp500 走 sp500_* 前缀字段；nasdaq100 / 未指定 走旧字段（向后兼容）。"""
+        sp500 走 sp500_* 前缀字段；all 走 us_all_* 字段；nasdaq100 / 未指定 走旧字段（向后兼容）。"""
         if self.us_universe == "sp500":
             return {
                 "daily_dir": self._us_cfg.get("sp500_daily_dir")
@@ -56,6 +56,13 @@ class DataLoader:
                              or self._us_cfg.get("index_daily_csv") or "",
                 "constituents_csv": self._us_cfg.get("sp500_constituents_csv")
                              or self._us_cfg.get("constituents_csv") or "",
+            }
+        if self.us_universe == "all":
+            return {
+                "daily_dir": self._us_cfg.get("us_all_daily_dir")
+                             or self._us_cfg.get("daily_dir") or "",
+                "index_daily_csv": self._us_cfg.get("index_daily_csv") or "",
+                "constituents_csv": self._us_cfg.get("constituents_csv") or "",
             }
         return {
             "daily_dir": self._us_cfg.get("daily_dir") or "",
@@ -79,25 +86,31 @@ class DataLoader:
     # ---------- universe ----------
 
     def get_universe(self, market: Market, name: str) -> pd.DataFrame:
-        """成分股清单, 返回列: code, name"""
+        """成分股清单, 返回列: code, name。
+        name="all" 时返回全市场股票（acache 24h 过期因为 spot 是当日快照）。
+        """
         cache = self.cache_dir / f"universe_{market}_{name}.parquet"
-        if self._is_fresh(cache):
+        if name != "all" and self._is_fresh(cache):
             return pd.read_parquet(cache)
 
         if market == "a_share":
             if name == "hs300":
                 df = ak.index_stock_cons_csindex(symbol="000300")
                 df = df.rename(columns={"成分券代码": "code", "成分券名称": "name"})[["code", "name"]]
+            elif name == "all":
+                df = self._a_share_full_universe()
             else:
                 raise ValueError(
-                    f"未知 A 股 universe: {name}（本项目仅支持 hs300）",
+                    f"未知 A 股 universe: {name}（本项目支持 hs300 / all）",
                 )
         elif market == "hk_share":
             if name == "hs100":
                 df = load_hschk100_constituents(self._hsi_cfg)
+            elif name == "all":
+                df = self._hk_full_universe()
             else:
                 raise ValueError(
-                    f"未知 港股 universe: {name}（本项目仅支持 hs100=恒生 HSCHK100）",
+                    f"未知 港股 universe: {name}（本项目支持 hs100=恒生 HSCHK100 / all）",
                 )
         elif market == "us_share":
             if name in ("nasdaq100", "sp500"):
@@ -114,13 +127,68 @@ class DataLoader:
                 if not p.is_absolute():
                     p = PROJECT_ROOT / p
                 df = pd.read_csv(p)[["code", "name"]]
+            elif name == "all":
+                self.us_universe = "all"
+                df = self._us_full_universe()
             else:
-                raise ValueError(f"未知美股 universe: {name}（本项目支持 nasdaq100 / sp500）")
+                raise ValueError(f"未知美股 universe: {name}（本项目支持 nasdaq100 / sp500 / all）")
         else:
             raise ValueError(f"未知 market: {market}")
 
         df.to_parquet(cache)
         return df
+
+    def _a_share_full_universe(self) -> pd.DataFrame:
+        """全 A 股 universe — 优先从 data/prices/ 已缓存 CSV 文件扫描，失败回退 akshare。"""
+        from quant_system.config import PROJECT_ROOT
+
+        csv_dir = PROJECT_ROOT / "data" / "prices"
+        if csv_dir.exists():
+            codes = sorted(
+                f.stem.replace("_daily", "")
+                for f in csv_dir.glob("*_daily.csv")
+                if not f.stem.startswith("sh.") and not f.stem.startswith("sz.")
+            )
+            if codes:
+                return pd.DataFrame({"code": codes, "name": codes})
+
+        # 回退 akshare 实时行情
+        spot = ak.stock_zh_a_spot_em()
+        df = spot[["代码", "名称"]].copy()
+        df.columns = ["code", "name"]
+        df = df[~df["name"].str.contains("ST", na=False)]
+        df = df[~df["code"].str.contains("ST", na=False)]
+        return df.reset_index(drop=True)
+
+    def _hk_full_universe(self) -> pd.DataFrame:
+        """全港股 universe — 优先扫 data/hk_prices/ 已 prefetch 的 CSV，
+        无缓存才回 akshare spot (sina；em 端点 push2 在本机被拦)。"""
+        from quant_system.config import PROJECT_ROOT
+        csv_dir = PROJECT_ROOT / "data" / "hk_prices"
+        if csv_dir.exists():
+            codes = sorted(f.stem for f in csv_dir.glob("*.csv"))
+            if codes:
+                return pd.DataFrame({"code": codes, "name": codes})
+
+        spot = ak.stock_hk_spot()
+        df = spot[["代码", "中文名称"]].copy()
+        df.columns = ["code", "name"]
+        return df.reset_index(drop=True)
+
+    def _us_full_universe(self) -> pd.DataFrame:
+        """全美股 universe — 优先扫 data/us_prices_all/ 已 prefetch 的 CSV，
+        无缓存才回 akshare spot (sina, 17000+ 只)。"""
+        from quant_system.config import PROJECT_ROOT
+        csv_dir = PROJECT_ROOT / "data" / "us_prices_all"
+        if csv_dir.exists():
+            codes = sorted(f.stem for f in csv_dir.glob("*.csv"))
+            if codes:
+                return pd.DataFrame({"code": codes, "name": codes})
+
+        spot = ak.stock_us_spot()
+        df = spot[["symbol", "cname"]].copy()
+        df.columns = ["code", "name"]
+        return df.reset_index(drop=True)
 
     # ---------- daily prices ----------
 
@@ -178,8 +246,20 @@ class DataLoader:
             # 缓存范围不够 (cache 起点晚于请求的 start), 落到下面重拉
 
         if market == "a_share":
-            # sina 比 eastmoney 稳定 (eastmoney 高频拉取易触发限流).
-            # symbol 需要带交易所前缀: 6 -> sh, 0/3 -> sz, 8 -> bj
+            # 3a. CSV 文件缓存（data/prices/{code}_daily.csv，zhuang 子策略已预热）
+            from quant_system.config import PROJECT_ROOT
+            csv_path = PROJECT_ROOT / "data" / "prices" / f"{code}_daily.csv"
+            if csv_path.exists():
+                raw = pd.read_csv(csv_path)
+                if len(raw) > 0:
+                    raw["date"] = raw["date"].astype(str)
+                    raw = raw[(raw["date"] >= start) & (raw["date"] <= end)]
+                    if not raw.empty:
+                        cols = ["date", "open", "high", "low", "close", "volume"]
+                        available = [c for c in cols if c in raw.columns]
+                        return raw[available].copy()
+
+            # 3b. 远程 akshare
             prefix = "sh" if code.startswith("6") else (
                 "bj" if code.startswith("8") else "sz"
             )

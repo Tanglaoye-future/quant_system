@@ -44,16 +44,16 @@ class TestDeploymentsIndex:
         assert hk_entry["strategy_name"] == "equity_hk_momentum"
         assert hk_entry["enabled"] is True
 
-    def test_markets_us_share_prefers_enabled(self, cfg):
-        # us_share 部署:
+    def test_markets_us_share_first_deployment(self, cfg):
+        # us_share 部署（2026-06-14 双窗口判定后全部 disabled）:
         #   equity_momentum (enabled=false, nasdaq100)
         #   equity_us_momentum (enabled=false, nasdaq100)
-        #   equity_sp500_momentum (enabled=true, sp500 universe override)
-        # raw["markets"]["us_share"] 应保留首个 enabled=true → equity_sp500_momentum
+        #   equity_sp500_momentum (enabled=false, sp500 — 2026-06-12 停用)
+        #   equity_trend_scan_us (enabled=false, all — 2026-06-14 8y FAIL 关停)
+        # 无 enabled=true 时 raw["markets"]["us_share"] 落到首个部署
         us_entry = cfg.get("markets", "us_share")
-        assert us_entry["strategy_name"] == "equity_sp500_momentum"
-        assert us_entry["enabled"] is True
-        assert us_entry["universe"] == "sp500"
+        assert us_entry["enabled"] is False  # 三市场 trend_scan 全 enabled=true 时旧记录: trend_scan_us
+        assert us_entry["strategy_name"] in {"equity_momentum", "equity_us_momentum", "equity_sp500_momentum", "equity_trend_scan_us"}
 
 
 class TestResolveStrategyParamsBySname:
