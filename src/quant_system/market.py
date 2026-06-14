@@ -26,10 +26,14 @@ class MarketContext:
             'a_share' → UniverseFilter.filter_a_share；None / 'none' → 不过滤.
         industry_concentration: 是否启用 M4 行业集中度约束.
             目前仅 A 股有 industry_map 数据.
+        settlement_mode: 结算规则 — 't+0' / 't+1'.
+            A 股 T+1: 当日买入次日才能卖；HK / US T+0: 同日可平仓.
+            equity_factor Backtester Step 3 用此判断是否锁仓.
     """
     name: str
     universe_filter: str | None
     industry_concentration: bool
+    settlement_mode: str = "t+1"
 
     @property
     def has_universe_filter(self) -> bool:
@@ -41,7 +45,8 @@ def load_market_context(cfg: Config, market: str) -> MarketContext:
 
     raw['markets'][<m>] 由 _assemble_split 装配，承载 markets/<m>.yaml 的字段.
     向下兼容：当字段缺失时取与 Phase 1 之前一致的默认值（a_share → industry=True，
-    其他 → industry=False；universe_filter 默认 'none'）.
+    其他 → industry=False；universe_filter 默认 'none'；settlement_mode 按市场名兜底：
+    a_share → t+1，其他 → t+0）.
     """
     entry: dict[str, Any] = cfg.get("markets", market) or {}
     universe_filter = entry.get("universe_filter")
@@ -50,8 +55,16 @@ def load_market_context(cfg: Config, market: str) -> MarketContext:
     # 旧默认：a_share industry=True, 其他 False (与 portfolio.py:64 原硬编码等价)
     default_industry = (market == "a_share")
     industry_concentration = bool(entry.get("industry_concentration", default_industry))
+    # settlement_mode 兜底：a_share → t+1，其他 → t+0
+    default_settlement = "t+1" if market == "a_share" else "t+0"
+    settlement_mode = str(entry.get("settlement_mode", default_settlement)).lower()
+    if settlement_mode not in ("t+0", "t+1"):
+        raise ValueError(
+            f"markets/{market}.yaml settlement_mode 非法: {settlement_mode!r}，需 't+0' 或 't+1'"
+        )
     return MarketContext(
         name=market,
         universe_filter=universe_filter,
         industry_concentration=industry_concentration,
+        settlement_mode=settlement_mode,
     )
