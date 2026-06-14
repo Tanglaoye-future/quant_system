@@ -9,11 +9,11 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/franktang/Documents/projects/quant_system/deploy/run_daily.sh</string>
+        <string>/Users/franktang/quant_system/deploy/run_daily.sh</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/franktang/Documents/projects/quant_system</string>
+    <string>/Users/franktang/quant_system</string>
 
     <key>StartCalendarInterval</key>
     <array>
@@ -45,10 +45,10 @@
     </array>
 
     <key>StandardOutPath</key>
-    <string>/Users/franktang/Documents/projects/quant_system/logs/launchd_stdout.log</string>
+    <string>/Users/franktang/quant_system/logs/launchd_stdout.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/franktang/Documents/projects/quant_system/logs/launchd_stderr.log</string>
+    <string>/Users/franktang/quant_system/logs/launchd_stderr.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>

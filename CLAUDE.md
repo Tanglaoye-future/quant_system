@@ -46,15 +46,29 @@ python scripts/backtest/audit_m0_outputs.py data/backtest/<strategy>_<market>_<s
 - 运行了哪些验收命令
 - 输出目录在哪里
 
-## Daily 调度（2026-05-27 起手动）
+## Daily 调度（2026-06-14 起 launchd 自动，迁出 Documents 后恢复）
 
-launchd 自动调度因 macOS Full Disk Access（TCC）阻塞已停用（详见 `memory/session_2026_05_27.md`）。**每天手动跑**：
+仓库 2026-06-14 从 `~/Documents/projects/quant_system` 迁至 `~/quant_system`（详见 `memory/migration_out_of_documents_plan.md`），消除 macOS Full Disk Access (TCC) 对 launchd 的拦截。**launchd `com.quant.daily` 每个工作日 16:30 自动跑** `deploy/run_daily.sh --no-options`。
+
+手动跑（带期权扫描 / 临时调试）：
 
 ```bash
-cd ~/Documents/projects/quant_system && ./deploy/run_daily.sh --no-options
+cd ~/quant_system && ./deploy/run_daily.sh           # 含 IBKR 期权
+cd ~/quant_system && ./deploy/run_daily.sh --no-options
 ```
 
-去掉 `--no-options` 会带 IBKR 期权扫描。脚本启动时自动 chflags strip macOS UF_HIDDEN flag（修 venv editable install 失效）。
+launchd 状态/日志：
+
+```bash
+launchctl list | grep com.quant.daily
+tail -f ~/quant_system/logs/launchd_stderr.log
+```
+
+intraday loop 从终端 nohup 起：
+
+```bash
+cd ~/quant_system && nohup venv/bin/python scripts/intraday/intraday_risk_check.py --loop &
+```
 
 ## 接美股因子/策略需求前
 
