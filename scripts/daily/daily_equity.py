@@ -306,6 +306,9 @@ def main() -> None:
     # 否则风控的 strategy 过滤失效 → 又会评估到 momentum 的仓位（串台）。
     eff_strategy = args.strategy_name or args.strategy
 
+    universe = loader.get_universe(args.market, market_cfg["universe"])
+    name_map = dict(zip(universe["code"], universe["name"]))
+
     # ── Step 0: T+1 入场锁 — 执行昨日 pending entries at 当日 open ──
     max_single_pct = float(cfg.get("strategy", "single_position_pct_max", default=0.20))
     if not args.dry_run and not args.no_write and args.market == "a_share":
@@ -395,13 +398,11 @@ def main() -> None:
     print()
     print(f"【今日买入候选】 (全市场扫 entry signal -> 因子排序)")
 
-    universe = loader.get_universe(args.market, market_cfg["universe"])
     if args.limit > 0:
         universe = universe.head(args.limit)
     print(f"  universe = {market_cfg['universe']}, 扫 {len(universe)} 只 entry signal ...", flush=True)
 
     open_codes = {t["symbol"] for t in j.list_open()}
-    name_map = dict(zip(universe["code"], universe["name"]))
 
     regime_ctx = None
     # Phase 2b: 由 tcfg 字段驱动（hk_share 策略默认未开这两个字段，不会进；
