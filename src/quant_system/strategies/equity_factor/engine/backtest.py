@@ -1,13 +1,16 @@
 """
 回测引擎.
 
-模拟 A 股真实交易:
+执行序（不分市场）:
   - 信号 D 日盘后产生, D+1 开盘价成交
-  - A 股 T+1: 当日买入的不能当日卖
   - 单边滑点 (买高卖低)
-  - 佣金双边收, 印花税仅卖出收
+  - 佣金双边收, 印花税仅卖出收（HK/US 在 markets/<m>.yaml.fees 关）
   - 单只仓位上限 (按初始资金的百分比)
   - 同时持仓上限
+
+settlement_mode (按市场分流, 见 markets/<m>.yaml + MarketContext):
+  - 't+1' (A 股): 当日买入的不能当日卖 → Step 3 evaluate 跳过 entry_date == day_dt 的仓
+  - 't+0' (HK / US): 同日可平仓 → Step 3 evaluate 不跳过, D+1 close 可触发出场信号 → D+2 open 出场
 """
 from __future__ import annotations
 
@@ -70,6 +73,8 @@ class Backtester:
         benchmark_hedge_ratio: float = 0.0,        # 0=关闭；建议 0.3-0.5
         benchmark_hedge_ma_days: int = 200,         # regime 判别 MA 窗口
         benchmark_hedge_borrow_cost: float = 0.03,  # 年化借券成本
+        # --- 市场结算规则（A 股 T+1 / HK / US T+0）---
+        settlement_mode: str = "t+1",               # 默认兼容旧调用（A 股语义）
     ):
         self.loader = loader
         self.initial_capital = initial_capital
@@ -82,6 +87,10 @@ class Backtester:
         self.benchmark_hedge_ratio = benchmark_hedge_ratio
         self.benchmark_hedge_ma_days = benchmark_hedge_ma_days
         self.benchmark_hedge_borrow_cost = benchmark_hedge_borrow_cost
+        settlement_mode = str(settlement_mode).lower()
+        if settlement_mode not in ("t+0", "t+1"):
+            raise ValueError(f"settlement_mode 非法: {settlement_mode!r}, 需 't+0' 或 't+1'")
+        self.settlement_mode = settlement_mode
 
     def run(
         self,
@@ -263,8 +272,8 @@ class Backtester:
             # ===== Step 3: 评估持仓 (今日盘后) =====
             already_pending = {p.symbol for p, _, _f in pending_sells}
             for sym, pos in list(positions.items()):
-                # A 股 T+1: 当日买的不能当日卖
-                if pos.entry_date == day_dt:
+                # T+1 市场 (A 股): 当日买的不能当日卖；T+0 市场 (HK / US) 跳过本锁
+                if self.settlement_mode == "t+1" and pos.entry_date == day_dt:
                     continue
                 if sym in already_pending:
                     continue   # 已在卖出队列, 不重复评估 / append

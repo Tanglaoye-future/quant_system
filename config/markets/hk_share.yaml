@@ -5,6 +5,7 @@ benchmark: HSCHK100
 regime_benchmark: HSCHK100
 universe_filter: none
 industry_concentration: false     # HK 无 industry_map 数据，关闭 M4 行业约束
+settlement_mode: "t+0"            # 港股：同日可平仓（与 A 股 T+1 区分；详见 docs/specs/market_settlement_t0_t1.md）
 
 fees:
   stamp_tax: 0.0                  # HK 无印花税（实际上 HK 有 0.13% stamp duty，本系统目前未建模）

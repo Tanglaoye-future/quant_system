@@ -224,6 +224,7 @@ def main() -> None:
         benchmark_hedge_ratio=float(hedge_cfg.get("ratio", 0.0)),
         benchmark_hedge_ma_days=int(hedge_cfg.get("ma_days", 200)),
         benchmark_hedge_borrow_cost=float(hedge_cfg.get("borrow_cost", 0.03)),
+        settlement_mode=market_ctx.settlement_mode,
     )
 
     # ---------- 固定输出目录（同策略+市场+区间覆盖写入，不产生历史 run_id 子目录） ----------

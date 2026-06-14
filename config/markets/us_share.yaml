@@ -8,6 +8,7 @@ benchmark: NDX
 regime_benchmark: NDX
 universe_filter: none
 industry_concentration: false     # US 无 industry_map 数据，关闭 M4 行业约束
+settlement_mode: "t+0"            # 美股：同日可平仓
 
 fees:
   stamp_tax: 0.0                  # 美股无印花税

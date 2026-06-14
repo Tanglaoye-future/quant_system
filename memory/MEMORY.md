@@ -1,5 +1,7 @@
 # Memory Index
 
+- **[2026-06-14 HK T+0 recalibration — backtester market-aware settlement](hk_t0_recalibration_2026-06.md)** ⭐ — equity_factor Backtester 历史把 A 股 T+1 全市场套用错配；改 MarketContext.settlement_mode + Backtester.settlement_mode 后 HK 4y Sharpe +0.059 / 8y +0.065 双窗口同向 PASS, Ret +5/+9pp, DD 略改善, alpha 一行未动; A1' 饱和结论需在新 baseline 下重审; US 同款修法可继续
+- **[仓库迁出 Documents 迁移计划](migration_out_of_documents_plan.md)** — ~/Documents/projects/quant_system → ~/quant_system，消除 TCC 阻塞 launchd/cron；8 步计划待迭代完成后执行
 - **[2026-06-10 v5 T+1 重校准 — efficient frontier 失效](v5_t1_recalibration_2026-06.md)** ⭐ — zhuang T+1 入场后 v5 8y Sharpe 2.231→1.801 (Δ-0.43) / 4y 2.751→2.105 (Δ-0.65); grid 真最优 zhuang 砍到 10-15% + HK 顶到 40% (max_weight cap); zhuang sleeve 仍正 Sharpe (0.30/0.20) 不被砍 0 数据支持; PM 5 选项 + 不自动改 yaml; supersede [[v5_efficient_frontier_2026-05]]
 - **[2026-06-12 zhuang 全维度 sweep (B1-B6) → extreme sizing 落地](zhuang_sweep_2026-06-12.md)** ⭐ — 6 类别 16 变体 3y+8y sweep；唯一有效改进: extreme tiered sizing [70,85]→[2%,5%,10%] 8y Sharpe +0.029 Ret +9.3pp；B4 min_dist=0% 8y 灾难级反转；已落 config/zhuang.yaml
 - **[2026-06-10 zhuang gap-up filter + accumulation_score 双证伪](zhuang_gap_score_precheck_falsified_2026-06.md)** — gap-up 5%+ 是唯一正收益 bin (sum +176.7%)，过滤 gap-up 会砍掉全部 alpha；accumulation_score 缺失率 84% + IQR 1.5 点无判别力；phase 全 A 废变量；zhuang alpha 落在 lottery-ticket 尾部 (20% 交易贡献全部正收益)，入场侧 filter 会破坏结构
