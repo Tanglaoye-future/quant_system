@@ -73,8 +73,11 @@ zhuang_distribution:
 #   2. 改 t_signals.enabled: true
 #   3. nohup venv/bin/python scripts/intraday/intraday_t_signals.py --loop &
 t_signals:
-  enabled: false                       # 默认 OFF
-  strategies: ["equity_factor"]        # 白名单: 不含 zhuang/mean_reversion
+  enabled: true                        # 2026-06-15 用户授权试跑 advisory v1
+  # 白名单: 与 journal_trades.strategy 实际值对齐 (非包名 equity_factor);
+  # zhuang / mean_reversion / equity_hk_momentum / equity_sp500_momentum 不入,
+  # PR1 只覆盖 A 股 a_mom (即 equity_momentum). HK / US 扩展走后续 PR.
+  strategies: ["equity_momentum"]
   markets: ["a_share"]                 # PR1 only A 股; HK/US 不在 scope
   trading_window:
     start: "09:30"
