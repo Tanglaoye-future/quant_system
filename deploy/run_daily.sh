@@ -6,7 +6,7 @@
 #   2. equity_factor (A momentum)      → report/data/quant_a_mom.json
 #   3. equity_factor (A mean-reversion) → report/data/quant_a_mr.json
 #   4. options (QQQ Bull Call Spread)  → report/data/options.json
-#   5. zhuang (吃货期扫描)              → report/data/zhuang.json
+#   [DEPRECATED 2026-06-14] zhuang 子策略已弃用，详见 memory/zhuang_deprecated_2026-06.md
 #   5.5 panic dashboard (capitulation 反向情绪辅人工 T)
 #                                      → report/data/panic_dashboard.json
 #                                      → report/panic_dashboard_<date>.html
@@ -121,17 +121,19 @@ if [ "$REPORT_ONLY" = false ]; then
     echo ""
   fi
 
-  # ── 5. zhuang ─────────────────────────────────────────────────────────────
-  # --capital 400000：部署计划 zhuang 占总资金 40%（示例总资金 100 万）。
-  # 闭环：Step1 风控盯市(advisory) → Step2 扫候选 → Step3 Phase-A 自动建仓写 zhuang_trades。
-  echo "▶ [zhuang] 建仓闭环..."
-  if (cd "$REPO_ROOT" && "$PYTHON" scripts/daily/daily_zhuang.py --top 15 --min-score 45 --capital 400000 \
-        > "$LOG_DIR/${DATE}_zhuang.log" 2>&1); then
-    echo "  ✅ zhuang 完成"
-  else
-    echo "  ⚠  zhuang 失败（继续，日志: $LOG_DIR/${DATE}_zhuang.log）"
-  fi
-  echo ""
+  # ── 5. zhuang [DEPRECATED 2026-06-14] ─────────────────────────────────────
+  # 违反 4 根支柱框架的支柱 1 (基本面) + 支柱 2 (趋势)，已弃用。
+  # 详见 memory/project_north_star.md + memory/zhuang_deprecated_2026-06.md。
+  # 代码与 DB 表保留作历史归档；如需重启反注释下方块并把 config/zhuang.yaml
+  # markets.a_share.enabled 改回 true。
+  # echo "▶ [zhuang] 建仓闭环..."
+  # if (cd "$REPO_ROOT" && "$PYTHON" scripts/daily/daily_zhuang.py --top 15 --min-score 45 --capital 400000 \
+  #       > "$LOG_DIR/${DATE}_zhuang.log" 2>&1); then
+  #   echo "  ✅ zhuang 完成"
+  # else
+  #   echo "  ⚠  zhuang 失败（继续，日志: $LOG_DIR/${DATE}_zhuang.log）"
+  # fi
+  # echo ""
 
   # ── 5.5 panic dashboard (capitulation 辅人工 T) ──────────────────────────
   # 见 [[capitulation_strategy_falsified_2026-06]] 第 16 条证伪后替代方案.

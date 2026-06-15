@@ -32,7 +32,9 @@ class TestMarketsConfig:
 
     def test_a_share_market_fields(self, zhuang_config):
         a = zhuang_config["markets"]["a_share"]
-        assert a["enabled"] is True
+        # zhuang 2026-06-14 弃用 (违反北极星支柱 1+2): markets.a_share.enabled=False
+        # 重启需走 [[zhuang_deprecated_2026-06]] 5 步硬卡; 改 True 前先更新 spec
+        assert a["enabled"] is False
         assert a["data_provider"] == "baostock"
         assert a["benchmark"] == "sh.000905"
         assert a["fees"]["stamp_tax"] == 0.001

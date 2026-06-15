@@ -1,3 +1,22 @@
+# =============================================================================
+# [DEPRECATED 2026-06-14] zhuang 子策略已弃用 — 不在 4 根支柱硬框架内
+# =============================================================================
+# 决策依据：违反支柱 1 (基本面选标的)+ 支柱 2 (技术面只做趋势)。
+# zhuang 是 distribution/accumulation 微结构策略，与硬框架两条支柱结构性正交。
+# 详见 memory/project_north_star.md + memory/zhuang_deprecated_2026-06.md
+#
+# 弃用方式：
+#   1. config disable (本文件 markets.a_share.enabled=false)
+#   2. deploy/run_daily.sh 已注释 zhuang 调用块
+#   3. config/intraday.yaml zhuang_distribution.enabled=false
+#   4. src/quant_system/strategies/zhuang/ 包代码保留（archive）
+#   5. DB 表 zhuang_trades / ledger 保留（历史回溯）
+#   6. v5 组合 zhuang 15-25% 权重暂留现金缓冲，不重新分配
+#
+# 重启路径：把 markets.a_share.enabled 改回 true + 反注释 run_daily.sh 即可恢复。
+# 但重启前必须先确认 4 根支柱框架已演化包含 zhuang，或者承认例外（PM 决策）。
+# =============================================================================
+#
 # zhuang_system — 庄股跟庄策略配置
 # 策略逻辑：识别吃货期（主力积累阶段），在低位共振建仓，拉升期持仓，5日止盈/止损退出
 #
@@ -21,7 +40,7 @@ universe:
 # data_provider / benchmark / fees 是市场特有字段, 顶层 backtest.* 中的同名值作兜底.
 markets:
   a_share:
-    enabled: true
+    enabled: false                       # [DEPRECATED 2026-06-14] 见文件顶部 deprecation header
     data_provider: baostock              # A 股: baostock 全量历史 + 总股本×收盘价市值
     benchmark: sh.000905                 # 中证500 (小盘股基准, 比沪深300更贴近庄股)
     fees:

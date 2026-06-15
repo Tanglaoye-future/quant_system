@@ -58,7 +58,62 @@ breakout:
 #   持仓 zhuang 股盘中今日大涨 (≥ 4%) + 量比放大 (≥ 2.0) →
 #   庄家可能进入派发期，推送 "考虑减仓" (非自动平仓, Backstop #4)
 zhuang_distribution:
-  enabled: true                        # 默认开
+  enabled: false                       # [DEPRECATED 2026-06-14] zhuang 子策略弃用，告警逻辑随同关闭
   change_pct_min: 0.04                 # 今日涨幅下限 (小数, 0.04 = 4%)
   vol_ratio_min: 2.0                   # 量比下限；缺失保守降级仍发 alert
   strategies: ["zhuang"]               # 只对 strategy_name 在此列表内的持仓评估
+
+# 持仓中日内做 T 信号 (spec docs/specs/intraday_t_execution_a_share.md)
+# 北极星支柱 3 后半段 — A 股 advisory only, PR1-5 不下单 (Backstop #4)
+# 6 条不变量见 spec §14; 24 case 测试 tests/intraday/test_t_signals.py
+#
+# 默认 enabled: false → 零行为差异 (即使 daily 跑也不发 T 信号)
+# 启用步骤:
+#   1. 设 TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID
+#   2. 改 t_signals.enabled: true
+#   3. nohup venv/bin/python scripts/intraday/intraday_t_signals.py --loop &
+t_signals:
+  enabled: false                       # 默认 OFF
+  strategies: ["equity_factor"]        # 白名单: 不含 zhuang/mean_reversion
+  markets: ["a_share"]                 # PR1 only A 股; HK/US 不在 scope
+  trading_window:
+    start: "09:30"
+    lunch_start: "11:30"
+    lunch_end: "13:00"
+    end: "15:00"
+    skip_first_minutes: 5              # 跳开盘集合竞价噪声
+  poll_interval_minutes: 5
+
+  # §3.1 价格网格 base
+  grid:
+    sell_unrealized_pct_min: 0.05      # 浮盈 ≥ 5% 触发 SELL
+    buy_unrealized_pct_min: 0.02       # 浮盈 ∈ [2%,5%) 触发 BUY (必须当日已有 SELL)
+    no_t_unrealized_pct_max: -0.03     # 浮亏 ≤ -3% 全面禁用 T
+    qty_ratio_base: 0.5
+
+  # §3.2 VWAP 偏离 boost
+  vwap:
+    enabled: true
+    sell_premium_pct: 0.02             # 价 > VWAP × 1.02 → SELL qty +0.2
+    buy_discount_pct: 0.015            # 价 < VWAP × 0.985 → BUY qty +0.2
+    qty_ratio_boost: 0.2
+
+  # §3.3 量价 anti-distribution
+  vol_price:
+    enabled: true
+    sell_suppress_change_pct: 0.04     # day_change ≥ 4% + vol_ratio ≥ 2 → SELL qty ×0.7
+    sell_suppress_vol_ratio: 2.0
+    sell_suppress_factor: 0.7
+    buy_boost_change_pct: -0.02        # day_change ≤ -2% + vol_ratio ≤ 0.7 → BUY qty ×1.3
+    buy_boost_vol_ratio: 0.7
+    buy_boost_factor: 1.3
+
+  # 不变量 #2 — qty clamp
+  qty_ratio_clamp:
+    min: 0.2                            # 永不卖光底仓 (留 ≥ 30%)
+    max: 0.7                            # 永不超 70% 调仓
+
+  # 不变量 #1 — 频率上限 (A 股合规当日净持仓量不变)
+  frequency:
+    max_sells_per_day: 1
+    max_buys_per_day: 1
