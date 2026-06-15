@@ -2,11 +2,11 @@
 """L5 of docs/specs/self_learning_pipeline.md — retrospective 报表脚手架.
 
 读 PG 的 closed trades (journal_trades + zhuang_trades) 含 L2-L4 采集的
-entry_features / exit_features, 输出 winner-vs-loser 分布差 + 17 条证伪
+entry_features / exit_features, 输出 winner-vs-loser 分布差 + 18 条证伪
 cross-check + 严格小样本警告.
 
 设计原则 (5 条 Backstop 全适用):
-1. 17 条证伪 + 四层 efficient set 硬墙 — candidate 撞墙强 SOFT-FALSIFY
+1. 18 条证伪 + 四层 efficient set 硬墙 — candidate 撞墙强 SOFT-FALSIFY
 2. 双窗口 4y+8y Sharpe 同向才落 yaml — 报表 footer 强制写
 3. N < min_sample 强 warn + 拒输出分布差结论
 4. PM 决策权 — 程序产出报告, 不自动改 alpha
@@ -34,7 +34,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 
-# ── 17 条证伪 manifest (L5 stub — match 逻辑骨架, L5.1 完整 implement) ─────────
+# ── 18 条证伪 manifest (L5 stub — match 逻辑骨架, L5.1 完整 implement) ─────────
 
 FALSIFIED_PATTERNS: list[dict[str, Any]] = [
     # 数据源死亡 (不投 backtest)
@@ -164,6 +164,14 @@ FALSIFIED_PATTERNS: list[dict[str, Any]] = [
         "severity": "DEAD",
         "note": "4y +0.082 / 8y -0.052; AMBIGUOUS verdict ≡ SOFT-FALSIFY",
     },
+    # TP runner / ATR trail sweep (HK, windowed paradox 第 7 类)
+    {
+        "name": "tp_runner_atr_sweep_hk",
+        "keywords": ["atr_target_mult", "atr_stop_mult", "tp_runner", "trail_widen"],
+        "doc_ref": "tp_runner_sweep_falsified_2026-06",
+        "severity": "SOFT-FALSIFY",
+        "note": "HK 12 变体双窗口 0 PASS; 4y stop=3.0 +0.095 Sharpe / DD -7pp 但 8y -0.131 异号; time_stop 留 alpha 假设反证",
+    },
 ]
 
 
@@ -217,7 +225,7 @@ def mann_whitney_u_p(a: list[float], b: list[float]) -> Optional[float]:
 # ── Falsified manifest cross-check ────────────────────────────────────────────
 
 def cross_check_falsified(candidate_name: str) -> Optional[dict[str, Any]]:
-    """candidate feature name 撞 17 条证伪墙 → 返 manifest entry; 否则 None.
+    """candidate feature name 撞 18 条证伪墙 → 返 manifest entry; 否则 None.
 
     L5 当前仅 keyword substring match (lowercase). L5.1 升级为 regex + 阈值。
     """
