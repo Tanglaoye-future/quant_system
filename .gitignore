@@ -40,7 +40,10 @@ data/quant.duckdb
 data/quant.duckdb.wal
 data/baseline_signals.txt
 data/prefetch_failed.txt
+data/prefetch_hk_failed.txt
+data/prefetch_us_failed.txt
 data/prefetch_progress.txt
+data/us_prices_all/
 data/today_candidates.txt
 data/scan_*.csv
 data/cross_market_audit_logs/
