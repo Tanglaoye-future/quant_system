@@ -286,6 +286,15 @@ class AlertsSent(Base):
     多次只发一次（按 dedup unique index）；跨日重置（同事件第二天再发一次）。
 
     用户授权 2026-06-07：Telegram 通道 / 15 min 频率 / 4 阈值。
+
+    alert_type 在册值 (String(32) 无 enum 约束, 仅文档):
+      proximity / break_ 类 (intraday_risk_check):
+        - stop_loss_proximity / take_profit_proximity
+        - break_stop_loss / break_ma60
+        - portfolio_unrealized_floor / portfolio_peak_drawdown
+        - daily_screen_breakout / zhuang_distribution_warning (zhuang 已弃用)
+      T 信号类 (intraday_t_signals, [[docs/specs/intraday_t_execution_a_share.md]]):
+        - t_signal_sell / t_signal_buy
     """
 
     __tablename__ = "alerts_sent"

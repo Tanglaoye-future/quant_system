@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { ReportSummary, MarketsResponse, MatrixResponse, PanicData } from '../types';
-import { getSummary, getMarkets, getMatrix, getPanic } from '../api/client';
+import type { ReportSummary, MarketsResponse, MatrixResponse, PanicData, TSignalsPayload } from '../types';
+import { getSummary, getMarkets, getMatrix, getPanic, getTSignals } from '../api/client';
 
 interface UseReportDataOptions {
   /** 自动 poll 频率 (ms). 默认 60_000 (60s). 传 0 或负数 → 不 poll. */
@@ -12,6 +12,7 @@ export default function useReportData({ pollIntervalMs = 60_000 }: UseReportData
   const [markets, setMarkets] = useState<MarketsResponse | null>(null);
   const [matrix, setMatrix] = useState<MatrixResponse | null>(null);
   const [panicData, setPanicData] = useState<PanicData | null>(null);
+  const [tSignals, setTSignals] = useState<TSignalsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string>('');
@@ -25,13 +26,14 @@ export default function useReportData({ pollIntervalMs = 60_000 }: UseReportData
     try {
       setLoading(true);
       setError(null);
-      const [result, mkts, mtx, panic] = await Promise.all([
-        getSummary(), getMarkets(), getMatrix(), getPanic(),
+      const [result, mkts, mtx, panic, tsig] = await Promise.all([
+        getSummary(), getMarkets(), getMatrix(), getPanic(), getTSignals(),
       ]);
       setData(result);
       setMarkets(mkts);
       setMatrix(mtx);
       setPanicData(panic);
+      setTSignals(tsig);
       setUpdatedAt(new Date().toLocaleTimeString('zh-CN', { hour12: false }));
     } catch (e) {
       setError((e as Error).message);
@@ -89,5 +91,5 @@ export default function useReportData({ pollIntervalMs = 60_000 }: UseReportData
     };
   }, [fetchData, pollIntervalMs]);
 
-  return { data, markets, matrix, panicData, loading, error, updatedAt, refresh: fetchData };
+  return { data, markets, matrix, panicData, tSignals, loading, error, updatedAt, refresh: fetchData };
 }

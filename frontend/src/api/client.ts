@@ -38,6 +38,10 @@ export function getMatrix() {
   return fetchJSON<import('../types').MatrixResponse>('/matrix');
 }
 
+export function getTSignals() {
+  return fetchJSON<import('../types').TSignalsPayload>('/report/t_signals');
+}
+
 // Daily 运行控制 ─────────────────────────────────────────────────────────
 export interface DailyStatus {
   status: 'idle' | 'running' | 'success' | 'failed';

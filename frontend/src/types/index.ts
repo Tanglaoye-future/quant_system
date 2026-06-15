@@ -142,6 +142,27 @@ export interface ReportSummary {
   zhuang: ZhuangData;
 }
 
+// T 信号 (spec docs/specs/intraday_t_execution_a_share.md)
+export interface TSignalEvent {
+  asof_ts: string | null;
+  asof_date: string | null;
+  strategy_name: string;
+  symbol: string | null;
+  alert_type: 't_signal_sell' | 't_signal_buy' | string;
+  side: 'SELL' | 'BUY' | null;
+  suggested_price: number | null;
+  qty_ratio: number | null;
+  confidence: 'high' | 'medium' | 'low' | null;
+  reason: string | null;
+  delivered: boolean;
+}
+
+export interface TSignalsPayload {
+  asof_today: string;
+  today: TSignalEvent[];
+  history: TSignalEvent[];
+}
+
 export interface ColumnDef<T> {
   key: string;
   header: string;

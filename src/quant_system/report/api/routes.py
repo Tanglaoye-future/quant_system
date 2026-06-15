@@ -150,6 +150,54 @@ def get_panic():
     return payload
 
 
+# ── T 信号 dashboard (spec docs/specs/intraday_t_execution_a_share.md PR5) ──
+#
+# 从 alerts_sent 表读今日 t_signal_sell / t_signal_buy 事件 + 最近 5 天上下文。
+# 默认 yaml disabled → 表中 0 行 → 前端 0 条 (零行为差异 Backstop)。
+
+@router.get("/t_signals")
+def get_t_signals():
+    """今日 T 信号 + 最近 5 天历史. 用于 dashboard TSignalCard."""
+    from datetime import date, timedelta
+    from sqlalchemy import select
+    from quant_system.db import AlertsSent
+
+    payload: dict = {"today": [], "history": []}
+    try:
+        today = date.today()
+        five_days_ago = today - timedelta(days=5)
+        with session_scope() as session:
+            rows = session.scalars(
+                select(AlertsSent)
+                .where(AlertsSent.asof_date >= five_days_ago)
+                .where(AlertsSent.alert_type.in_(["t_signal_sell", "t_signal_buy"]))
+                .order_by(AlertsSent.asof_ts.desc())
+            ).all()
+            for r in rows:
+                p = r.payload or {}
+                row = {
+                    "asof_ts": r.asof_ts.isoformat() if r.asof_ts else None,
+                    "asof_date": r.asof_date.isoformat() if r.asof_date else None,
+                    "strategy_name": r.strategy_name,
+                    "symbol": r.symbol,
+                    "alert_type": r.alert_type,
+                    "side": p.get("side"),
+                    "suggested_price": p.get("suggested_price"),
+                    "qty_ratio": p.get("qty_ratio"),
+                    "confidence": p.get("confidence"),
+                    "reason": p.get("reason"),
+                    "delivered": r.delivered,
+                }
+                if r.asof_date == today:
+                    payload["today"].append(row)
+                else:
+                    payload["history"].append(row)
+    except Exception as exc:
+        logger.warning("get_t_signals DB read failed: %s", exc)
+    payload["asof_today"] = date.today().isoformat()
+    return payload
+
+
 # ── Dynamic strategy-market matrix (Phase 2: registry-backed) ──────────
 
 @router.get("/matrix")
