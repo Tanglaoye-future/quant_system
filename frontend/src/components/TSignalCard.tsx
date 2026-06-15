@@ -1,4 +1,4 @@
-import { TSignalEvent, TSignalsPayload } from '../types';
+import type { TSignalEvent, TSignalsPayload } from '../types';
 import GlassCard from './GlassCard';
 
 // 持仓中日内做 T 信号 dashboard 卡片 (spec docs/specs/intraday_t_execution_a_share.md PR5)
