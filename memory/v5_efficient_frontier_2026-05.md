@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> **[SUPERSEDED 2026-06-15]** zhuang 弃用 ([[zhuang-deprecated-2026-06]]) + 用户决定加入加密 10% → v5 框架全失效。新 efficient frontier 见 [[v7-efficient-frontier-2026-06]] (HK50/A_mom20/A_mr0/QQQ10/GLD10/IBIT10)，下方 v5 内容仅历史归档。本 memory 5 条证伪 (v6 grid/regime/+IBIT/+TLT/+CSI1000) 中的 IBIT/TLT/CSI1000 部分对 v7 仍有参考价值（v7 选 IBIT 与彼时 IBIT 5/10% 证伪表面矛盾 — 但用户在 v7 是固定加密 10% 不入 grid，避免了同款证伪）。
+
 ## 5 条组合层优化路径全证伪
 
 | 路径 | v5 base | 改后 | Δ Sharpe | 状态 |

@@ -4,6 +4,8 @@ description: 8 年回测后的实盘部署蓝图；6 账户配资（HK + A_mom +
 type: project
 ---
 
+> **[SUPERSEDED 2026-06-15]** zhuang 弃用 ([[zhuang-deprecated-2026-06]]) + 加密入局 → v5 6-asset 框架失效。新 v7 6-asset 部署计划见 [[deployment-plan-v7-2026-06]] (HK50/A_mom20/A_mr0/QQQ10/GLD10/IBIT10)，下方 v5 内容仅历史归档。季度再平衡触发条件 + 跨境汇款流程等运维细节仍可参考。
+
 ## 资金配置（基础资金 = 100%，v5 2026-05-28 — grid search + 稳健性验证后落地）
 
 | 账户 | 占比 | 标的 | 策略 |
