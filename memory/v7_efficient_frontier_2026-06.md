@@ -67,7 +67,7 @@ metadata:
 
 ## Top1 选定：HK50 / A_mom20 / A_mr0 / QQQ10 / GLD10 / BTC10
 
-### 双窗口 metrics
+### 双窗口 metrics (grid 假设 HK 本地 T+0)
 
 | 维度 | 4y | 8y |
 |---|---:|---:|
@@ -76,6 +76,18 @@ metadata:
 | Max DD | -12.52% | -14.78% |
 | Ann Vol | 9.35% | 9.71% |
 | Total Return | +88% | +180% |
+
+### ⚠️ 港股通 T+1 实际期望（用户用东方财富港股通账户）
+
+港股通强制 T+1 settlement → HK_mom 单资产 Δ-0.06 Sharpe 双窗口同向 ([[hk_t0_recalibration_2026-06]] T+1 baseline 数据)。组合层稀释（HK 50% 权重）：
+
+| 维度 | 4y T+0 (grid) | 4y T+1 港股通估算 | 8y T+0 (grid) | 8y T+1 港股通估算 |
+|---|---:|---:|---:|---:|
+| Sharpe | +1.842 | **≈ +1.81** | +1.455 | **≈ +1.42** |
+| Δ 损失 | — | -0.03 | — | -0.03 |
+
+**仍然 dominate 用户原提议** (HK35/A20/Amr10/Q15) baseline 1.676/1.447。HK 50% 在港股通框架下仍是最优。
+**不改 hk_share.yaml settlement_mode** (反映 HK 市场本身)，执行通道损失只在 [[deployment-plan-v7-2026-06]] 披露。
 
 ### 配比决策依据
 
