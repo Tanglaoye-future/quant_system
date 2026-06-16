@@ -25,6 +25,10 @@ class UniverseFilterConfig:
     min_years_to_maturity: float = 0.5
     min_rating: Optional[str] = None
     exclude_exit_statuses: tuple[str, ...] = ("已公告强赎", "公告要强赎")
+    # nuance 3 (PR4 smoke 实测): 负溢价债 (转股价值 > 债价) 通常是强赎尾盘 / 退市边界,
+    # 双低公式 close+premium 下会自然落到顶部 (入场 #1 = 127090 prem=-11.58%).
+    # 默认 -5% 软底, 灵敏度测试候选 -3% / -5% / -10% / 不过滤 (None).
+    min_conversion_premium: Optional[float] = -5.0
 
 
 _RATING_ORDER = {"AAA": 4, "AA+": 3, "AA": 2, "AA-": 1}
@@ -67,6 +71,16 @@ def filter_universe(
     mask = merged["close"] >= config.min_close
     stats["dropped_low_close"] = int((~mask).sum())
     merged = merged[mask].copy()
+
+    # 2b. 负溢价软底 (nuance 3): None=不过滤
+    if config.min_conversion_premium is not None:
+        prem = pd.to_numeric(merged["conversion_premium_rate"], errors="coerce")
+        # NaN premium 保留 (数据缺失保守 — 与 scale_remain 同语义)
+        mask = prem.isna() | (prem >= config.min_conversion_premium)
+        stats["dropped_negative_premium"] = int((~mask).sum())
+        merged = merged[mask].copy()
+    else:
+        stats["dropped_negative_premium"] = 0
 
     # 3. 剩余规模: NaN 保留 (数据缺失保守)
     scale = pd.to_numeric(merged["scale_remain"], errors="coerce")

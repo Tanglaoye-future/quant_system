@@ -26,28 +26,49 @@ def main() -> int:
     import json as _json
     _metrics_path = run_dir / "metrics.json"
     _market = "a_share"
+    _strategy = "equity_factor"
     if _metrics_path.exists():
         try:
-            _market = _json.loads(_metrics_path.read_text(encoding="utf-8")).get("market", "a_share")
+            _meta = _json.loads(_metrics_path.read_text(encoding="utf-8"))
+            _market = _meta.get("market", "a_share")
+            _strategy = _meta.get("strategy", "equity_factor")
         except Exception:
             pass
-    _has_universe_filter = (_market == "a_share")
 
-    required = {
-        "metrics.json": None,
-        **({"universe_filter_stats_sample.json": None,
-            "universe_filtered_sample.csv": ["code"]} if _has_universe_filter else {}),
-        "equity.csv": None,
-        "positions.csv": None,
-        "entry_candidates.csv": [
-            "screen_date", "factor_rank", "symbol", "factor_score",
-            "queued_for_buy",
-        ],
-        "ranking.csv": ["screen_date", "rank", "symbol", "score"],
-        "exit_events.csv": ["decision_date", "symbol", "reason", "event", "exit_layer"],
-        "exit_reason_summary.json": None,
-    }
-    optional = {"trades.csv": ["symbol", "exit_reason"]}
+    if _strategy == "cb_double_low":
+        # CB schema: bond_code 替代 symbol; rebalance_date 替代 screen_date;
+        # daily_panel_coverage (nuance 1) 必备审计.
+        required = {
+            "metrics.json": None,
+            "equity.csv": None,
+            "positions.csv": None,
+            "closed_trades.csv": ["bond_code", "exit_reason"],
+            "daily_panel_coverage.csv": ["date", "asked_n", "available_n", "pct"],
+            "rebalance_funnel.csv": None,
+            "entry_candidates.csv": [
+                "rebalance_date", "rank", "bond_code", "dual_low_score",
+            ],
+            "exit_events.csv": ["decision_date", "bond_code", "exit_reason"],
+            "exit_reason_summary.json": None,
+        }
+        optional = {}
+    else:
+        _has_universe_filter = (_market == "a_share")
+        required = {
+            "metrics.json": None,
+            **({"universe_filter_stats_sample.json": None,
+                "universe_filtered_sample.csv": ["code"]} if _has_universe_filter else {}),
+            "equity.csv": None,
+            "positions.csv": None,
+            "entry_candidates.csv": [
+                "screen_date", "factor_rank", "symbol", "factor_score",
+                "queued_for_buy",
+            ],
+            "ranking.csv": ["screen_date", "rank", "symbol", "score"],
+            "exit_events.csv": ["decision_date", "symbol", "reason", "event", "exit_layer"],
+            "exit_reason_summary.json": None,
+        }
+        optional = {"trades.csv": ["symbol", "exit_reason"]}
 
     errors: list[str] = []
 
@@ -74,12 +95,20 @@ def main() -> int:
                 if not isinstance(obj, (dict, list)):
                     errors.append(f"{name}: JSON root type invalid")
                 elif name == "exit_reason_summary.json" and isinstance(obj, dict):
-                    for k in (
-                        "closed_trades_by_exit_reason",
-                        "exit_events_by_reason",
-                        "closed_trades_by_exit_layer",
-                        "exit_events_by_exit_layer",
-                    ):
+                    # CB schema 不含 exit_layer (双低出场分类是 reason 单层)
+                    if _strategy == "cb_double_low":
+                        required_keys = (
+                            "closed_trades_by_exit_reason",
+                            "exit_events_by_reason",
+                        )
+                    else:
+                        required_keys = (
+                            "closed_trades_by_exit_reason",
+                            "exit_events_by_reason",
+                            "closed_trades_by_exit_layer",
+                            "exit_events_by_exit_layer",
+                        )
+                    for k in required_keys:
                         if k not in obj:
                             errors.append(f"{name}: missing key {k!r}")
                         elif not isinstance(obj[k], dict):

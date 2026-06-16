@@ -159,6 +159,42 @@ def test_filter_drops_near_maturity(
     assert "100004" not in codes, "100004 last_trading 2026-08-01 距 asof 06-16 < 0.5 年"
 
 
+def test_filter_drops_negative_premium_below_threshold(
+    sample_universe, sample_panel_today, sample_redemption
+):
+    """nuance 3 — premium=-11.58% (兴瑞转债式) 必须被默认 min_premium=-5% 砍掉.
+
+    入场 #1 是负溢价债通常是强赎尾盘 / 退市边界, 双低 close+premium 公式下会自然
+    落到顶部. 设软底 -5% 防污染入场.
+    """
+    universe = sample_universe.copy()
+    panel = sample_panel_today.copy()
+    # 把 100001 改成深负溢价
+    panel.loc[panel["bond_code"] == "100001", "conversion_premium_rate"] = -12.0
+    filtered, stats = filter_universe(
+        universe, panel, sample_redemption,
+        asof=date(2026, 6, 16),
+        config=UniverseFilterConfig(min_conversion_premium=-5.0),
+    )
+    codes = set(filtered["bond_code"])
+    assert "100001" not in codes, "premium=-12% < -5% 必须排除"
+    assert stats["dropped_negative_premium"] >= 1
+
+
+def test_filter_keeps_premium_when_none(
+    sample_universe, sample_panel_today, sample_redemption
+):
+    """min_conversion_premium=None 即关闭过滤."""
+    panel = sample_panel_today.copy()
+    panel.loc[panel["bond_code"] == "100001", "conversion_premium_rate"] = -12.0
+    filtered, stats = filter_universe(
+        sample_universe, panel, sample_redemption,
+        asof=date(2026, 6, 16),
+        config=UniverseFilterConfig(min_conversion_premium=None),
+    )
+    assert stats["dropped_negative_premium"] == 0
+
+
 def test_filter_stats_count_total(
     sample_universe, sample_panel_today, sample_redemption
 ):
@@ -178,6 +214,7 @@ def test_filter_stats_count_total(
         "dropped_low_scale",
         "dropped_near_maturity",
         "dropped_low_rating",
+        "dropped_negative_premium",
     ]:
         assert key in stats, f"stats 缺字段 {key}"
     assert stats["initial"] == 5
