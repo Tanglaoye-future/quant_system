@@ -1,23 +1,34 @@
-"""CBDataLoader — 可转债数据接口契约 (PR2 红灯阶段 stub).
+"""CBDataLoader — 可转债数据接口 (PR3 实现).
 
-本 PR 仅落契约 (类常量 + 方法签名), 所有方法 raise NotImplementedError.
-tests/cb_double_low/test_loader.py 用 unittest.mock 替换 akshare 端点,
-PR2 阶段预期全部失败 (红灯), PR3 完整实现后转绿.
+封装 akshare 4 端点 (probe PASS, 见 memory/cb_data_probe_2026-06.md)：
+- bond_zh_cov()                       → universe 池 (含退市债)
+- bond_zh_cov_value_analysis(symbol)  → 个券日级面板 (价格 + 4 溢价率字段)
+- bond_cb_redeem_jsl()                → 强赎事件
+- bond_zh_hs_cov_spot()               → 实时 spot (实盘 daily)
 
-契约源: docs/specs/convertible_bond_sleeve.md §3
-Probe 依据: memory/cb_data_probe_2026-06.md
+上层模块 (strategy / backtest / daily) 不直接 import akshare, 全部收敛到这里.
+日级面板 DuckDB cache 表 cb_panel PRIMARY KEY (date, bond_code).
+
+字段映射 (akshare 中文 → 内部英文 schema): 见各方法内 _RENAME 字典.
 """
 from __future__ import annotations
 
+import threading
 from datetime import date
 from pathlib import Path
 from typing import Optional
 
+import akshare as ak
 import pandas as pd
+
+try:
+    import duckdb
+except ImportError:  # pragma: no cover
+    duckdb = None  # type: ignore
 
 
 class CBDataLoader:
-    """可转债数据 loader 契约."""
+    """可转债数据 loader. cache_dir 下放 cb_cache.duckdb 单文件 cache."""
 
     UNIVERSE_COLUMNS = (
         "bond_code",
@@ -57,13 +68,125 @@ class CBDataLoader:
         "amount",
     )
 
+    # ── 字段映射 (akshare 中文 → 英文 schema) ───────────────────────────
+
+    _UNIVERSE_RENAME = {
+        "债券代码": "bond_code",
+        "债券简称": "bond_name",
+        "正股代码": "stock_code",
+        "正股简称": "stock_name",
+        "上市时间": "listing_date",
+        "发行规模": "scale_remain",  # bond_zh_cov 字段是发行规模; 剩余规模另查 redeem
+        "信用评级": "credit_rating",
+    }
+    _PANEL_RENAME = {
+        "日期": "date",
+        "收盘价": "close",
+        "纯债价值": "pure_bond_value",
+        "转股价值": "conversion_value",
+        "纯债溢价率": "pure_bond_premium_rate",
+        "转股溢价率": "conversion_premium_rate",
+    }
+    _REDEMPTION_RENAME = {
+        "代码": "bond_code",
+        "名称": "bond_name",
+        "最后交易日": "last_trading_date",
+        "到期日": "maturity_date",
+        "强赎价": "redemption_price",
+        "强赎状态": "status",
+    }
+    _SPOT_RENAME = {
+        "code": "bond_code",
+        "name": "bond_name",
+        "trade": "close",
+        "changepercent": "change_pct",
+        "volume": "volume",
+        "amount": "amount",
+    }
+
     def __init__(self, cache_dir: Path, refresh_days: int = 1) -> None:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.refresh_days = int(refresh_days)
+        self._db_path = self.cache_dir / "cb_cache.duckdb"
+        self._lock = threading.RLock()
+        self._con: "duckdb.DuckDBPyConnection | None" = None  # type: ignore
+
+    # ── DuckDB ──────────────────────────────────────────────────────────
+
+    def _connect(self) -> "duckdb.DuckDBPyConnection":  # type: ignore
+        if duckdb is None:
+            raise ImportError("duckdb 未安装。pip install duckdb")
+        if self._con is None:
+            self._con = duckdb.connect(str(self._db_path))
+            self._con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS cb_panel (
+                    date DATE NOT NULL,
+                    bond_code VARCHAR NOT NULL,
+                    close DOUBLE,
+                    pure_bond_value DOUBLE,
+                    conversion_value DOUBLE,
+                    pure_bond_premium_rate DOUBLE,
+                    conversion_premium_rate DOUBLE,
+                    PRIMARY KEY (date, bond_code)
+                )
+                """
+            )
+        return self._con
+
+    def close(self) -> None:
+        with self._lock:
+            if self._con is not None:
+                self._con.close()
+                self._con = None
+
+    # ── 1. universe ─────────────────────────────────────────────────────
 
     def load_universe(self, asof: Optional[date] = None) -> pd.DataFrame:
-        raise NotImplementedError("PR3 — bond_zh_cov + bond_cb_redeem_jsl merge")
+        """全市场可转债池 (含退市). asof 排除未来上市债 + 标 exit_status."""
+        raw = ak.bond_zh_cov()
+        df = raw.rename(columns=self._UNIVERSE_RENAME).copy()
+        df["bond_code"] = df["bond_code"].astype(str)
+        df["listing_date"] = pd.to_datetime(df["listing_date"], errors="coerce")
+        # asof 过滤: 未来上市 + NaT 一并排除 (NaT 即"未上市/招标中")
+        if asof is not None:
+            asof_ts = pd.Timestamp(asof)
+            df = df[df["listing_date"].notna() & (df["listing_date"] <= asof_ts)].copy()
+        # 合并强赎/退市状态
+        try:
+            redeem_raw = ak.bond_cb_redeem_jsl()
+            redeem = redeem_raw.rename(columns={"代码": "bond_code", "强赎状态": "_redeem_status"})
+            redeem["bond_code"] = redeem["bond_code"].astype(str)
+            df = df.merge(
+                redeem[["bond_code", "_redeem_status"]],
+                on="bond_code",
+                how="left",
+            )
+        except Exception:
+            df["_redeem_status"] = pd.NA
+        # redeem 表里 "强赎状态" 可能是 NaN (未在 redeem 表) 也可能是 "" (在表但状态空).
+        # 两者都视为 active. 修于 2026-06-15 mini-backfill 发现 247/1012 空字符串.
+        df["exit_status"] = (
+            df["_redeem_status"]
+            .fillna("active")
+            .astype(str)
+            .replace("", "active")
+        )
+        # 占位列 (PR4+ 补)
+        if "delisting_date" not in df.columns:
+            df["delisting_date"] = pd.NaT
+        if "stock_code" not in df.columns:
+            df["stock_code"] = ""
+        if "stock_name" not in df.columns:
+            df["stock_name"] = ""
+        if "credit_rating" not in df.columns:
+            df["credit_rating"] = ""
+        if "scale_remain" not in df.columns:
+            df["scale_remain"] = pd.NA
+        return df[list(self.UNIVERSE_COLUMNS)].reset_index(drop=True)
+
+    # ── 2. panel (DuckDB cached) ────────────────────────────────────────
 
     def load_panel(
         self,
@@ -71,15 +194,94 @@ class CBDataLoader:
         end: date,
         codes: Optional[list[str]] = None,
     ) -> pd.DataFrame:
-        raise NotImplementedError(
-            "PR3 — bond_zh_cov_value_analysis + DuckDB cache (cb_panel)"
-        )
+        """日级面板 (date, bond_code, close + 2 价值 + 2 溢价率).
+
+        Cache 策略: 每个 code 在 cb_panel 表内若 [start, end] 范围有任意行
+        视为已 cache (不重 fetch). 完全 missing 的 code 走 akshare 拉全历史,
+        UPSERT 写 cache, 再 SELECT 切片.
+        """
+        if codes is None:
+            raise NotImplementedError(
+                "PR4: codes=None 全市场 panel 待 load_universe 集成"
+            )
+        start_ts = pd.Timestamp(start)
+        end_ts = pd.Timestamp(end)
+        con = self._connect()
+        # 检查每个 code 在 [start, end] 范围 cache 命中
+        missing: list[str] = []
+        with self._lock:
+            for code in codes:
+                code_str = str(code)
+                row = con.execute(
+                    "SELECT COUNT(*) FROM cb_panel "
+                    "WHERE bond_code = ? AND date BETWEEN ? AND ?",
+                    [code_str, start_ts.date(), end_ts.date()],
+                ).fetchone()
+                if row is None or row[0] == 0:
+                    missing.append(code_str)
+            # 拉缺失
+            for code in missing:
+                raw = ak.bond_zh_cov_value_analysis(symbol=code)
+                if raw is None or len(raw) == 0:
+                    continue
+                df = raw.rename(columns=self._PANEL_RENAME).copy()
+                df["date"] = pd.to_datetime(df["date"], errors="coerce")
+                df = df.dropna(subset=["date"]).copy()
+                df["bond_code"] = code
+                df = df[list(self.PANEL_COLUMNS)]
+                con.register("_cb_tmp", df)
+                con.execute(
+                    """
+                    INSERT INTO cb_panel
+                    SELECT date::DATE, bond_code, close, pure_bond_value,
+                           conversion_value, pure_bond_premium_rate,
+                           conversion_premium_rate
+                    FROM _cb_tmp
+                    ON CONFLICT (date, bond_code) DO UPDATE SET
+                        close = EXCLUDED.close,
+                        pure_bond_value = EXCLUDED.pure_bond_value,
+                        conversion_value = EXCLUDED.conversion_value,
+                        pure_bond_premium_rate = EXCLUDED.pure_bond_premium_rate,
+                        conversion_premium_rate = EXCLUDED.conversion_premium_rate
+                    """
+                )
+                con.unregister("_cb_tmp")
+            # SELECT 切片
+            placeholders = ",".join(["?"] * len(codes))
+            out = con.execute(
+                f"SELECT date, bond_code, close, pure_bond_value, conversion_value, "
+                f"pure_bond_premium_rate, conversion_premium_rate "
+                f"FROM cb_panel "
+                f"WHERE bond_code IN ({placeholders}) AND date BETWEEN ? AND ? "
+                f"ORDER BY date, bond_code",
+                [*[str(c) for c in codes], start_ts.date(), end_ts.date()],
+            ).fetchdf()
+        out["date"] = pd.to_datetime(out["date"])
+        return out
+
+    # ── 3. redemption events ────────────────────────────────────────────
 
     def load_redemption_events(self, asof: Optional[date] = None) -> pd.DataFrame:
-        raise NotImplementedError("PR3 — bond_cb_redeem_jsl + asof filter")
+        """强赎事件. announcement_date akshare 不直接给, PR4+ 接入 (本 PR NaT 占位)."""
+        raw = ak.bond_cb_redeem_jsl()
+        df = raw.rename(columns=self._REDEMPTION_RENAME).copy()
+        df["bond_code"] = df["bond_code"].astype(str)
+        df["last_trading_date"] = pd.to_datetime(df["last_trading_date"], errors="coerce")
+        df["maturity_date"] = pd.to_datetime(df["maturity_date"], errors="coerce")
+        # PR3 占位: announcement_date 字段未在 akshare 直接暴露, 置 NaT
+        # asof 过滤仅对 notna 的行生效 (此处全 NaT -> 不过滤, 安全)
+        df["announcement_date"] = pd.NaT
+        if asof is not None:
+            asof_ts = pd.Timestamp(asof)
+            mask_known = df["announcement_date"].notna()
+            df = df[(~mask_known) | (df["announcement_date"] <= asof_ts)].copy()
+        return df[list(self.REDEMPTION_COLUMNS)].reset_index(drop=True)
+
+    # ── 4. spot ─────────────────────────────────────────────────────────
 
     def get_spot_today(self) -> pd.DataFrame:
-        raise NotImplementedError("PR3 — bond_zh_hs_cov_spot")
-
-    def close(self) -> None:
-        pass
+        """实时全市场 CB spot. 实盘 daily ranking 入口."""
+        raw = ak.bond_zh_hs_cov_spot()
+        df = raw.rename(columns=self._SPOT_RENAME).copy()
+        df["bond_code"] = df["bond_code"].astype(str)
+        return df[list(self.SPOT_COLUMNS)].reset_index(drop=True)
