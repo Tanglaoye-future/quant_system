@@ -3,7 +3,7 @@ import Layout from './components/Layout';
 import DashboardPage from './pages/DashboardPage';
 
 export default function App() {
-  const { data, markets, matrix, panicData, tSignals, loading, error, updatedAt, refresh } = useReportData();
+  const { data, markets, matrix, panicData, tSignals, cbData, passiveData, loading, error, updatedAt, refresh } = useReportData();
   // ZHUANG_DEPRECATED 2026-06-14: zhuang 已弃用，date fallback 会拉到 stale (2026-06-09)
   // const date = data?.quant?.date || data?.options?.date || data?.zhuang?.date || '';
   const date = data?.quant?.date || data?.options?.date || '';
@@ -25,7 +25,7 @@ export default function App() {
         </div>
       )}
 
-      {data && markets && <DashboardPage data={data} markets={markets} matrix={matrix} panicData={panicData} tSignals={tSignals} />}
+      {data && markets && <DashboardPage data={data} markets={markets} matrix={matrix} panicData={panicData} tSignals={tSignals} cbData={cbData} passiveData={passiveData} />}
     </Layout>
   );
 }

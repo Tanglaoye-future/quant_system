@@ -43,6 +43,14 @@ export function getTSignals() {
   return fetchJSON<import('../types').TSignalsPayload>('/report/t_signals');
 }
 
+export function getCB() {
+  return fetchJSON<import('../types').CBData>('/report/cb');
+}
+
+export function getPassive() {
+  return fetchJSON<import('../types').PassiveData>('/report/passive');
+}
+
 // Daily 运行控制 ─────────────────────────────────────────────────────────
 export interface DailyStatus {
   status: 'idle' | 'running' | 'success' | 'failed';

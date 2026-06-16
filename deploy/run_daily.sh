@@ -163,6 +163,19 @@ if [ "$REPORT_ONLY" = false ]; then
     echo ""
   fi
 
+  # ── 5.7 passive holdings (QQQ / GLD / BTC 被动持仓 spot, 2026-06-16) ─────
+  # v7 配比里 QQQ 10% / GLD 10% / BTC 10% 三档被动 ETF/资产, 不需 signal,
+  # 只需 PM 看到 spot + 1d 涨跌 复核仓位是否要 rebalance.
+  # 失败 warn 继续不影响主报告.
+  echo "▶ [passive] QQQ/GLD/BTC 现价拉取..."
+  if (cd "$REPO_ROOT" && "$PYTHON" scripts/reporting/daily_passive_holdings.py \
+        > "$LOG_DIR/${DATE}_passive.log" 2>&1); then
+    echo "  ✅ passive 完成 → report/data/passive_holdings.json"
+  else
+    echo "  ⚠  passive 失败（继续，日志: $LOG_DIR/${DATE}_passive.log）"
+  fi
+  echo ""
+
   # ── 5.5 panic dashboard (capitulation 辅人工 T) ──────────────────────────
   # 见 [[capitulation_strategy_falsified_2026-06]] 第 16 条证伪后替代方案.
   # 默认 --quick 跳大盘 news 节省 5-10s; 默认仅 HS300 扫 (不开 csi1000 因 1000 ticker daily fetch 过重).

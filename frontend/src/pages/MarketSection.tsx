@@ -1,4 +1,4 @@
-import type { MarketGroup, QuantData, ZhuangData, OptionsData } from '../types';
+import type { MarketGroup, QuantData, ZhuangData, OptionsData, CBData } from '../types';
 import StrategyCard from '../components/StrategyCard';
 
 interface Props {
@@ -7,10 +7,11 @@ interface Props {
   quantData?: QuantData;
   zhuangData?: ZhuangData;
   optionsData?: OptionsData;
+  cbData?: CBData | null;
 }
 
 /** 将 strategy_name 映射到 QuantData 的 _source label，用于数据匹配 */
-export default function MarketSection({ market, showAll = true, quantData, zhuangData, optionsData }: Props) {
+export default function MarketSection({ market, showAll = true, quantData, zhuangData, optionsData, cbData }: Props) {
   const activeCells = market.cells.filter(c => c.status === 'active' && c.has_data);
   const otherCells = market.cells.filter(c => !(c.status === 'active' && c.has_data));
 
@@ -23,6 +24,7 @@ export default function MarketSection({ market, showAll = true, quantData, zhuan
           quantData={quantData}
           zhuangData={zhuangData}
           optionsData={optionsData}
+          cbData={cbData ?? undefined}
         />
       ))}
 

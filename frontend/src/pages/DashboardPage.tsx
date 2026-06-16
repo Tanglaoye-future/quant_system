@@ -3,12 +3,13 @@ import SystemStatusBar from '../components/SystemStatusBar';
 import TradeActionsBar from '../components/TradeActionsBar';
 import TSignalCard from '../components/TSignalCard';
 import TabNav from '../components/TabNav';
+import PassiveCard from '../components/PassiveCard';
 import MarketSection from './MarketSection';
 import AShareSection from './AShareSection';
 import USSection from './USSection';
 import HKSection from './HKSection';
 import PanicSection from './PanicSection';
-import type { ReportSummary, MarketsResponse, MatrixResponse, PanicData, TSignalsPayload } from '../types';
+import type { ReportSummary, MarketsResponse, MatrixResponse, PanicData, TSignalsPayload, CBData, PassiveData } from '../types';
 
 interface Props {
   data: ReportSummary;
@@ -16,9 +17,11 @@ interface Props {
   matrix: MatrixResponse | null;
   panicData: PanicData | null;
   tSignals: TSignalsPayload | null;
+  cbData: CBData | null;
+  passiveData: PassiveData | null;
 }
 
-export default function DashboardPage({ data, markets, matrix, panicData, tSignals }: Props) {
+export default function DashboardPage({ data, markets, matrix, panicData, tSignals, cbData, passiveData }: Props) {
   const [activeTab, setActiveTab] = useState('A 股');
   const hasTSignals = tSignals && (tSignals.today.length > 0 || tSignals.history.length > 0);
 
@@ -43,7 +46,14 @@ export default function DashboardPage({ data, markets, matrix, panicData, tSigna
               quantData={data.quant}
               zhuangData={data.zhuang}
               optionsData={data.options}
+              cbData={cbData}
             />
+            {/* 美股 tab 下挂被动持仓 card (QQQ/GLD/BTC, 2026-06-16) */}
+            {m.market_name === 'us_share' && passiveData && (
+              <div style={{ marginTop: 16 }}>
+                <PassiveCard data={passiveData} />
+              </div>
+            )}
           </div>
         ))}
         <div className={activeTab === panicLabel ? '' : 'hidden'}>

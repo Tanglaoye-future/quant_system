@@ -121,6 +121,18 @@ def get_zhuang():
     return _db_or_json(repositories.zhuang_payload, lambda: _read_json("zhuang"))
 
 
+@router.get("/cb")
+def get_cb():
+    """CB 双低 advisory (PR7 2026-06-16). advisory_only → 不入 DB, 直接读 JSON."""
+    return _read_json("quant_cb")
+
+
+@router.get("/passive")
+def get_passive():
+    """v7 配比里的被动持仓 (QQQ / GLD / BTC) spot snapshot. 不入 DB, 直接读 JSON."""
+    return _read_json("passive_holdings")
+
+
 @router.get("/summary")
 def get_summary():
     return {

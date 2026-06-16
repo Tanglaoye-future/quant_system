@@ -34,11 +34,13 @@ _STRATEGY_LABELS: dict[str, str] = {
     "equity_momentum": "中线 momentum", "equity_hk_momentum": "中线 momentum (HK)",
     "equity_us_momentum": "中线 momentum (US)", "equity_mean_reversion": "中线 mean-reversion",
     "options_bull_call_spread": "期权 Bull Call Spread", "zhuang": "庄股跟庄",
+    "cb_double_low": "CB 双低 advisory",
 }
 _STRATEGY_KIND: dict[str, str] = {
     "equity_momentum": "bottomup_timing", "equity_hk_momentum": "bottomup_timing",
     "equity_us_momentum": "bottomup_timing", "equity_mean_reversion": "mean_reversion",
     "options_bull_call_spread": "bull_call_spread", "zhuang": "zhuang",
+    "cb_double_low": "cb_double_low",
 }
 
 
@@ -133,6 +135,19 @@ def _discover_from_config() -> dict[tuple[str, str], dict[str, Any]]:
             "enabled": False, "kind": "mean_reversion",
         }
 
+    # cb_double_low — inline config (config/cb_double_low.yaml), 跟 zhuang 一样不走 split.
+    # PR7 2026-06-16: advisory only, A 股 universe.
+    try:
+        with open(PROJECT_ROOT / "config" / "cb_double_low.yaml", encoding="utf-8") as f:
+            cb_cfg = yaml.safe_load(f) or {}
+        daily_node = cb_cfg.get("daily") or {}
+        cells[("cb_double_low", "a_share")] = {
+            "enabled": bool(daily_node.get("enabled")),
+            "kind": "cb_double_low",
+        }
+    except Exception:
+        pass
+
     return cells
 
 
@@ -166,6 +181,11 @@ def _discover_from_filesystem() -> dict[tuple[str, str], dict[str, Any]]:
         if f.stem == "zhuang":
             sname = sname or "zhuang"
             market = "a_share"
+
+        # cb_double_low (PR7 2026-06-16): quant_cb.json
+        if f.stem == "quant_cb":
+            sname = sname or "cb_double_low"
+            market = market or "a_share"
 
         # quant_{market}_{kind}.json → 通过 kind 反查 strategy_name
         if not sname and f.stem.startswith("quant_"):
@@ -202,7 +222,11 @@ def _discover_from_filesystem() -> dict[tuple[str, str], dict[str, Any]]:
             "date": payload.get("date", ""),
             "signals_count": len(payload.get("signals") or []),
             "positions_count": len(payload.get("positions") or []),
-            "candidates_count": payload.get("candidates_count", 0),
+            "candidates_count": (
+                payload.get("candidates_count")
+                or len(payload.get("entries_top") or [])  # CB advisory: entries_top 当候选计数
+                or 0
+            ),
             "market_gate": payload.get("market_gate"),
             "ivr": payload.get("ivr"),
             "iv_mode": payload.get("iv_mode", ""),
@@ -211,6 +235,10 @@ def _discover_from_filesystem() -> dict[tuple[str, str], dict[str, Any]]:
             "qqq_rsi": payload.get("qqq_rsi"),
             "qqq_bullish": payload.get("qqq_bullish"),
             "reason": payload.get("reason", ""),
+            # CB-specific fields (sname == "cb_double_low")
+            "cb_target_pct": (payload.get("config") or {}).get("target_pct"),
+            "cb_universe_active": (payload.get("universe") or {}).get("active"),
+            "cb_warn_redeem_count": len(payload.get("warn_redeem_near") or []),
         }
 
     return cells
@@ -478,6 +506,12 @@ def resolve_matrix() -> tuple[list[StrategyCell], list[MarketGroup]]:
     data_cells = _discover_from_db()
     if data_cells is None:
         data_cells = _discover_from_filesystem()
+    else:
+        # CB_ADVISORY_MERGE 2026-06-16: advisory_only 策略 (e.g. cb_double_low) 不入 DB,
+        # 但确实在跑 + 产 JSON. DB 不含的 key 用 filesystem 兜底, 避免前端 has_data=False.
+        fs_cells = _discover_from_filesystem()
+        for k, v in fs_cells.items():
+            data_cells.setdefault(k, v)
     decls = _load_declarations()
     cells = _merge_status(cfg_cells, data_cells, decls)
     groups = _group_and_sort(cells)

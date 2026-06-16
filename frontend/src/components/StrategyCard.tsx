@@ -1,4 +1,4 @@
-import type { CellResponse, QuantData, ZhuangData, OptionsData, QuantSignal, QuantPosition } from '../types';
+import type { CellResponse, QuantData, ZhuangData, OptionsData, QuantSignal, QuantPosition, CBData } from '../types';
 import CellStatusBadge from './CellStatusBadge';
 import GlassCard from './GlassCard';
 import MetricCard from './MetricCard';
@@ -22,10 +22,11 @@ interface Props {
   quantData?: QuantData;
   zhuangData?: ZhuangData;
   optionsData?: OptionsData;
+  cbData?: CBData;
 }
 
 // ZHUANG_DEPRECATED 2026-06-14: zhuangData 形参保留以兼容 caller, 内部 _zhuangData unused.
-export default function StrategyCard({ cell, showPlaceholder = true, quantData, zhuangData: _zhuangData, optionsData }: Props) {
+export default function StrategyCard({ cell, showPlaceholder = true, quantData, zhuangData: _zhuangData, optionsData, cbData }: Props) {
   const { strategy_name, strategy_label, strategy_kind, status, has_data, blocker_reason, metrics } = cell;
   const isActive = status === 'active' && has_data;
 
@@ -211,6 +212,63 @@ export default function StrategyCard({ cell, showPlaceholder = true, quantData, 
                 当前 BCS 持仓
               </div>
               <OptionsPositionTable spreads={optionsData.spreads ?? []} />
+            </div>
+          )}
+        </>
+      )}
+
+      {/* CB 双低 advisory (PR7 2026-06-16): 不出买入信号, 只列今日双低 top + 强赎警告 */}
+      {isActive && strategy_kind === 'cb_double_low' && (
+        <>
+          <div style={{
+            marginBottom: 12, padding: '8px 12px', borderRadius: 6,
+            background: '#fff8e1', border: '1px solid #ffd54f',
+            fontSize: 12, color: '#7c5b00', lineHeight: 1.5,
+          }}>
+            <strong>advisory only</strong> — 不接 journal / portfolio_history.
+            PM 月初人工 rebalance 参考. v7 配比 CB sleeve {((cbData?.config?.target_pct ?? 0) * 100).toFixed(0)}% (从 {cbData?.config?.source || '?'} 抽).
+          </div>
+          <MetricGrid>
+            <MetricCard label="今日候选" value={cbData?.entries_top?.length ?? 0} sub={`top ${cbData?.config?.n_entry ?? '—'}`} colorClass={(cbData?.entries_top?.length ?? 0) > 0 ? 'text-[#0071e3]' : ''} />
+            <MetricCard label="可投 universe" value={cbData?.universe?.active ?? '—'} sub={`${cbData?.universe?.total ?? '—'} 全集`} />
+            <MetricCard label="强赎预警" value={cbData?.warn_redeem_near?.length ?? 0} sub="近期触发强赎" colorClass={(cbData?.warn_redeem_near?.length ?? 0) > 0 ? 'text-[#ff9f0a]' : ''} />
+            <MetricCard label="数据日期" value={cbData?.date || '—'} sub={`panel: ${cbData?.asof_panel || '—'}`} />
+          </MetricGrid>
+          {cbData?.entries_top && cbData.entries_top.length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: 'var(--color-text)' }}>
+                今日双低 TOP {cbData.entries_top.length}
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-[#e5e5ea] text-[#86868b]">
+                      <th className="text-left py-2 px-2 font-medium">#</th>
+                      <th className="text-left py-2 px-2 font-medium">代码</th>
+                      <th className="text-left py-2 px-2 font-medium">名称</th>
+                      <th className="text-right py-2 px-2 font-medium">现价</th>
+                      <th className="text-right py-2 px-2 font-medium">转股溢价率</th>
+                      <th className="text-right py-2 px-2 font-medium">双低分</th>
+                      <th className="text-center py-2 px-2 font-medium">强赎</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cbData.entries_top.slice(0, 20).map((e) => (
+                      <tr key={e.bond_code} className="border-b border-[#f0f0f2]">
+                        <td className="py-1.5 px-2 text-[#86868b]">{e.rank}</td>
+                        <td className="py-1.5 px-2 font-mono font-semibold">{e.bond_code}</td>
+                        <td className="py-1.5 px-2">{e.bond_name}</td>
+                        <td className="py-1.5 px-2 text-right font-mono">{e.close.toFixed(2)}</td>
+                        <td className="py-1.5 px-2 text-right">{e.conversion_premium_rate.toFixed(2)}%</td>
+                        <td className="py-1.5 px-2 text-right font-semibold">{e.dual_low_score.toFixed(2)}</td>
+                        <td className="py-1.5 px-2 text-center">
+                          {e.warn_redeem_near ? <span className="text-[#ff9f0a]">⚠</span> : ''}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </>

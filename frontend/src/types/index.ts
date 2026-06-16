@@ -355,3 +355,57 @@ export interface HealthResponse {
     zhuang: boolean;
   };
 }
+
+// ── CB 双低 advisory (PR7 2026-06-16) ────────────────────────────────
+export interface CBEntry {
+  rank: number;
+  bond_code: string;
+  bond_name: string;
+  close: number;
+  conversion_premium_rate: number;
+  dual_low_score: number;
+  warn_redeem_near: boolean;
+}
+
+export interface CBData {
+  date?: string;
+  asof_panel?: string;
+  strategy?: string;
+  market?: string;
+  advisory_only?: boolean;
+  config?: {
+    n_entry: number;
+    exit_dual_low_threshold: number;
+    stop_loss_close: number;
+    min_conversion_premium: number;
+    target_pct: number;
+    source: string;
+  };
+  universe?: {
+    total: number;
+    active: number;
+    panel_coverage: number;
+    panel_coverage_pct: number;
+  };
+  entries_top?: CBEntry[];
+  warn_redeem_near?: string[];
+  _missing?: boolean;
+}
+
+// ── Passive holdings (QQQ / GLD / BTC, 2026-06-16) ──────────────────
+export interface PassiveHolding {
+  symbol: string;
+  label: string;
+  target_pct: number;
+  spot: number | null;
+  prev_close: number | null;
+  change_pct: number | null;
+  as_of_date: string | null;
+}
+
+export interface PassiveData {
+  asof?: string;
+  holdings: PassiveHolding[];
+  _missing?: boolean;
+}
+
