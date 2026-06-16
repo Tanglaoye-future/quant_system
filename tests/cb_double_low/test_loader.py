@@ -128,6 +128,34 @@ def test_load_panel_returns_long_format_with_4_premium_fields(loader: CBDataLoad
     assert "conversion_premium_rate" in df.columns
 
 
+def test_load_panel_skips_codes_that_raise_in_akshare(loader: CBDataLoader) -> None:
+    """Regression — 2026-06-16 --n 0 全市场 backfill 跑到 ~920/946 只时挂在 akshare 内部:
+    pd.DataFrame(data_json["result"]["data"]) NoneType (akshare 内部 TypeError, 不只是 return None).
+    必须 try/except 整个 ak 调用, 跳过该 code 继续, 不能让一只挂掉的债阻塞全市场 cache.
+    """
+    fake_va_ok = pd.DataFrame(
+        {
+            "日期": pd.to_datetime(["2024-01-02"]),
+            "收盘价": [105.0], "纯债价值": [85.0], "转股价值": [98.0],
+            "纯债溢价率": [23.5], "转股溢价率": [7.1],
+        }
+    )
+
+    def fake_va(symbol: str):
+        if symbol == "BROKEN":
+            raise TypeError("'NoneType' object is not subscriptable")
+        return fake_va_ok
+
+    with patch("akshare.bond_zh_cov_value_analysis", side_effect=fake_va):
+        # 不应抛错; BROKEN 跳过, GOOD 正常返回
+        df = loader.load_panel(
+            start=date(2024, 1, 1), end=date(2024, 1, 31),
+            codes=["BROKEN", "GOOD"],
+        )
+    assert "GOOD" in set(df["bond_code"].astype(str)), "好 code 必须返回"
+    assert "BROKEN" not in set(df["bond_code"].astype(str)), "挂掉 code 必须跳过"
+
+
 def test_load_panel_caches_to_duckdb(loader: CBDataLoader) -> None:
     """第二次调用同 (date, code) 切片不应再触发 akshare（DuckDB cache PASS）."""
     fake_va = pd.DataFrame(

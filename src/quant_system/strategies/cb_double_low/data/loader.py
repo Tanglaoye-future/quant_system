@@ -219,9 +219,14 @@ class CBDataLoader:
                 ).fetchone()
                 if row is None or row[0] == 0:
                     missing.append(code_str)
-            # 拉缺失
+            # 拉缺失. akshare 端点对部分债 (新挂牌/特殊状态/退市边界) 内部解析失败抛 TypeError,
+            # 不只是 return None — 必须 try/except 整个调用. Regression: 2026-06-16 --n 0 backfill
+            # 跑到 ~920/946 只挂在 ak 内部 pd.DataFrame(data_json["result"]["data"]) NoneType.
             for code in missing:
-                raw = ak.bond_zh_cov_value_analysis(symbol=code)
+                try:
+                    raw = ak.bond_zh_cov_value_analysis(symbol=code)
+                except (TypeError, KeyError, AttributeError, ValueError):
+                    continue
                 if raw is None or len(raw) == 0:
                     continue
                 df = raw.rename(columns=self._PANEL_RENAME).copy()
