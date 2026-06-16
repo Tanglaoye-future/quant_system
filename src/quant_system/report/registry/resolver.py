@@ -125,10 +125,12 @@ def _discover_from_config() -> dict[tuple[str, str], dict[str, Any]]:
     except Exception:
         pass
 
-    # equity_mean_reversion — 无独立 strategy yaml; 从 daily_equity kind 推断
+    # equity_mean_reversion — 无独立 strategy yaml; 从 daily_equity kind 推断.
+    # A_MR_RETIRED 2026-06-16: v7 配比 A_mr 0% (不投), daily 跳过, 前端隐藏.
+    # 代码保留, 重启时 enabled 改 True + 取消 run_daily.sh 里 A_mean_reversion 行的注释.
     if ("equity_momentum", "a_share") in cells:
         cells[("equity_mean_reversion", "a_share")] = {
-            "enabled": True, "kind": "mean_reversion",
+            "enabled": False, "kind": "mean_reversion",
         }
 
     return cells

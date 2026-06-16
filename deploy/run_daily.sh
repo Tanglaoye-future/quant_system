@@ -105,25 +105,31 @@ run_equity_named() {
 
 if [ "$REPORT_ONLY" = false ]; then
 
-  # ── 1-3. equity_factor 三个子策略 ─────────────────────────────────────────
+  # ── 1-2. equity_factor 子策略 ─────────────────────────────────────────────
   run_equity_named "equity_hk_momentum" "HK_momentum"
   run_equity_named "equity_momentum"    "A_momentum"
-  run_equity "a_share"  "mean_reversion" "A_mean_reversion"
+  # ── 3. A_mean_reversion [RETIRED 2026-06-16] ──────────────────────────────
+  # v7 配比 A_mr 0% (不投), daily 不再跑. 重启取消下行注释 + resolver.py 里 enabled True.
+  # run_equity "a_share"  "mean_reversion" "A_mean_reversion"
 
-  # ── 4. options ────────────────────────────────────────────────────────────
-  if [ "$SKIP_OPTIONS" = false ]; then
-    echo "▶ [options] QQQ 期权信号扫描..."
-    if (cd "$REPO_ROOT" && "$PYTHON" scripts/daily/daily_options.py --no-ibkr \
-          > "$LOG_DIR/${DATE}_options.log" 2>&1); then
-      echo "  ✅ options 完成"
-    else
-      echo "  ⚠  options 失败（继续，日志: $LOG_DIR/${DATE}_options.log）"
-    fi
-    echo ""
-  else
-    echo "▶ [options] 已跳过 (--no-options)"
-    echo ""
-  fi
+  # ── 4. options [RETIRED 2026-06-16] ───────────────────────────────────────
+  # PM 把美股仓位 (v7 配比 QQQ 10%) 改为被动持有 QQQ ETF, BCS 期权策略下线.
+  # 代码 + yaml + IBKR 工具链全保留, --no-options 默认即可; 如需重启:
+  #   1) config/strategies/options_bull_call_spread.yaml 的 enabled 改回 true
+  #   2) 取消下方块的注释
+  # if [ "$SKIP_OPTIONS" = false ]; then
+  #   echo "▶ [options] QQQ 期权信号扫描..."
+  #   if (cd "$REPO_ROOT" && "$PYTHON" scripts/daily/daily_options.py --no-ibkr \
+  #         > "$LOG_DIR/${DATE}_options.log" 2>&1); then
+  #     echo "  ✅ options 完成"
+  #   else
+  #     echo "  ⚠  options 失败（继续，日志: $LOG_DIR/${DATE}_options.log）"
+  #   fi
+  #   echo ""
+  # else
+  #   echo "▶ [options] 已跳过 (--no-options)"
+  #   echo ""
+  # fi
 
   # ── 5. zhuang [DEPRECATED 2026-06-14] ─────────────────────────────────────
   # 违反 4 根支柱框架的支柱 1 (基本面) + 支柱 2 (趋势)，已弃用。

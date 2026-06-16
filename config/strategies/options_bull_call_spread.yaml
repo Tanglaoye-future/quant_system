@@ -9,7 +9,8 @@ kind: bull_call_spread
 
 deployments:
   - market: us_qqq
-    enabled: true
+    enabled: false   # OPTIONS_BCS_RETIRED 2026-06-16: PM 把 QQQ 仓位改为被动持有, BCS 期权策略下线.
+                     # 代码与 yaml 保留作历史归档; 重启时改 true + 取消 run_daily.sh 里 options 块注释.
 
 # --- 算法层 ---
 
