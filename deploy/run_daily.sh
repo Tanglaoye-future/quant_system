@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # run_daily.sh — quant_system 日报联合运行脚本（monorepo 版）
 #
-# 跑 5 个子策略 + 1 个辅助工具：
+# 跑 6 个子策略 + 1 个辅助工具：
 #   1. equity_factor (HK)              → report/data/quant_hk.json
 #   2. equity_factor (A momentum)      → report/data/quant_a_mom.json
 #   3. equity_factor (A mean-reversion) → report/data/quant_a_mr.json
@@ -10,6 +10,7 @@
 #   5.5 panic dashboard (capitulation 反向情绪辅人工 T)
 #                                      → report/data/panic_dashboard.json
 #                                      → report/panic_dashboard_<date>.html
+#   6. cb_double_low (CB 双低 advisory) → report/data/quant_cb.json (2026-06-16 PR7)
 #
 # 最后由 quant_system.report.builder 合成 HTML 日报。
 #
@@ -17,6 +18,7 @@
 #   ./deploy/run_daily.sh              # 全部运行
 #   ./deploy/run_daily.sh --no-options # 跳过期权（无 IBKR 时使用）
 #   ./deploy/run_daily.sh --no-dashboard # 跳过 panic dashboard (默认开启)
+#   ./deploy/run_daily.sh --no-cb      # 跳过 CB 双低 advisory
 #   ./deploy/run_daily.sh --report-only
 #
 # 调度：macOS launchd 每个工作日 16:30 执行
@@ -32,11 +34,13 @@ DATE=$(date +%Y-%m-%d)
 
 SKIP_OPTIONS=false
 SKIP_DASHBOARD=false
+SKIP_CB=false
 REPORT_ONLY=false
 for arg in "$@"; do
   case $arg in
     --no-options)    SKIP_OPTIONS=true ;;
     --no-dashboard)  SKIP_DASHBOARD=true ;;
+    --no-cb)         SKIP_CB=true ;;
     --report-only)   REPORT_ONLY=true ;;
   esac
 done
@@ -134,6 +138,24 @@ if [ "$REPORT_ONLY" = false ]; then
   #   echo "  ⚠  zhuang 失败（继续，日志: $LOG_DIR/${DATE}_zhuang.log）"
   # fi
   # echo ""
+
+  # ── 6. cb_double_low (CB 双低 sleeve advisory, 2026-06-16 PR7) ──────────
+  # Spec: docs/specs/convertible_bond_sleeve.md
+  # 决策: [[cb_double_low_pr6_v7_overlay_2026-06]] Option 1 (CB 5% 从 A_mom 抽)
+  # advisory only - PM 月初人工 rebalance 参考; 不接 journal/portfolio_history.
+  if [ "$SKIP_CB" = false ]; then
+    echo "▶ [cb_double_low] CB 双低 advisory..."
+    if (cd "$REPO_ROOT" && "$PYTHON" scripts/daily/daily_cb.py \
+          > "$LOG_DIR/${DATE}_cb.log" 2>&1); then
+      echo "  ✅ CB 完成 → report/data/quant_cb.json"
+    else
+      echo "  ⚠  CB 失败（继续，日志: $LOG_DIR/${DATE}_cb.log）"
+    fi
+    echo ""
+  else
+    echo "▶ [cb_double_low] 已跳过 (--no-cb)"
+    echo ""
+  fi
 
   # ── 5.5 panic dashboard (capitulation 辅人工 T) ──────────────────────────
   # 见 [[capitulation_strategy_falsified_2026-06]] 第 16 条证伪后替代方案.

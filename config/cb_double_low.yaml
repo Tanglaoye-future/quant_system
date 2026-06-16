@@ -1,0 +1,71 @@
+# config/cb_double_low.yaml — CB 双低 sleeve 子策略包 (PR7 落地, 2026-06-16)
+#
+# 决策来源:
+#   - PR5: solo 双窗口 PASS (4y/6y Sharpe +0.839 / +1.419)
+#         [[cb_double_low_pr5_4y6y_2026-06]]
+#   - PR6: v7+CB 组合层叠加 STRONG PASS (4 候选 dominate baseline)
+#         [[cb_double_low_pr6_v7_overlay_2026-06]]
+#   - PM 决策 (2026-06-16): Option 1 起步 — A_mom→CB 5%
+#
+# 实盘验证 ≥ 90 天 + ≥ 30 笔 closed 前不撬 (Backstop #3).
+# CB 流动性差, 容量 < 100M AUM 无障碍.
+
+# ---------------- 数据层 ----------------
+data:
+  cache_dir: ./data/cache/cb_double_low
+  refresh_days: 1
+  # value_analysis 早期 2019-2020 起; 8y 真实可行起点 = 2020-01-01 (6y window)
+  history_start: "2020-01-01"
+
+# ---------------- 策略层 ----------------
+strategy:
+  n_entry: 20                       # 月度入场前 N 只双低
+  n_hold_buffer: 1.5                # 持仓时 rank < N * 1.5 (= 30) 仍保留, 否则换仓
+  exit_dual_low_threshold: 180.0    # nuance 2: 2024+ score 整体抬升, 默认 180 (vs spec 原 150)
+  stop_loss_close: 85.0             # 个券止损线 (债现价 < 85)
+  weight_scheme: equal              # 等权 1/N (PR8+ 可加 score-weighted / inverse-vol)
+  rebalance_freq: monthly           # 月度再平衡 (每月第一个 trading day)
+  # nuance 3: 负溢价债 (转股价值 > 债价) 通常是强赎尾盘 / 退市边界, 软底 -5%.
+  min_conversion_premium: -5.0
+
+# ---------------- universe filter ----------------
+filter:
+  min_close: 80.0                   # 债现价 < 80 排除 (深度违约风险)
+  min_scale_remain_yi: 1.0          # 剩余规模 < 1 亿排除 (流动性); NaN 数据缺失保守保留
+  min_years_to_maturity: 0.5        # 剩余年限 < 0.5 年排除 (换仓)
+  min_rating: null                  # 可选评级卡 (AAA/AA+/AA/AA-); null=不卡, 灵敏度测试候选
+
+# ---------------- 账户/费用 ----------------
+account:
+  initial_capital: 1000000.0        # 假设账户单位 (实盘按 v7 比例换算)
+  commission: 0.0001                # CB 万分之 1 (券商低标准)
+  slippage: 0.0005                  # 单边 5bp
+
+# ---------------- portfolio 配比 (Option 1) ----------------
+portfolio:
+  target_pct: 0.05                  # CB sleeve 在 v7 组合内占 5% (Option 1)
+  source: A_mom                     # 配比来源: 从 A_mom 抽 5pp
+  # v7 baseline (含 CB 5% 后):
+  #   HK 50% / A_mom 15% / A_mr 0% / QQQ 10% / GLD 10% / BTC 10% / CB 5%
+  # 实盘 ≥ 90 天 + ≥ 30 笔 closed 后, 若 STRONG 验证可考虑 ramp 到 10% / 15%.
+  # 决策依据: [[cb_double_low_pr6_v7_overlay_2026-06]]
+
+# ---------------- daily 调度开关 ----------------
+daily:
+  enabled: true                     # PR7 默认 ON (advisory only, 不动实盘 journal)
+  advisory_only: true               # 不接 journal / portfolio_history (留后续 PR)
+  output_top_n: 20                  # 输出今日双低 top N 作 advisory
+  alert_on_force_exit: true         # 已知强赎 / 止损 / score 越线 → 日报 ⚠ 提示
+
+# ---------------- 北极星支柱 cross-check ----------------
+# 见 [[project_north_star]] (2026-06-15 扩展):
+#   支柱 1 (基本面或债性条款): ✅ 转股溢价率 + 纯债溢价率 + 剩余规模 + 评级
+#   支柱 2 (趋势择时): ✅ risk-parity 类豁免 (CB 低波动 + 债底保护)
+#   支柱 3 (实时风控): ⏳ 复用 schema (本 PR 暂未接, advisory only)
+#   支柱 4 (trade retrospective): ⏳ closed_trades 管道 (本 PR 暂未接)
+#
+# Backstop:
+#   - 实盘 ≥ 90 天 + ≥ 30 笔 closed 前不撬 n_entry / exit_threshold / sizing
+#   - 容量 < 100M AUM (本 sleeve 5% 占比 < 5M 安全)
+#   - 不引入 binary 杠杆 / 融资融券
+#   - 不接付费数据
