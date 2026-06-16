@@ -280,8 +280,9 @@ export default function PanicSection({ data }: { data: PanicData }) {
       )}
 
       {/* ⑤ Sleeve overlap */}
+      {/* PANIC_DASHBOARD_TRIM 2026-06-16: 去掉 "重叠 Rebound" 列 (rebound 已停, 恒空); 标题去掉 rebound 字眼. */}
       <GlassCard>
-        <SectionTitle num="⑤" title="Sleeve 重叠 · panic/rebound vs 活跃策略" />
+        <SectionTitle num="⑤" title="Sleeve 重叠 · 活跃策略 ∩ panic 候选" />
         {overlaps.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
@@ -290,7 +291,6 @@ export default function PanicSection({ data }: { data: PanicData }) {
                   <th className="text-left py-2 px-2 text-[#86868b] font-medium">Sleeve</th>
                   <th className="text-left py-2 px-2 text-[#86868b] font-medium">候选数</th>
                   <th className="text-left py-2 px-2 text-[#86868b] font-medium">重叠 Panic</th>
-                  <th className="text-left py-2 px-2 text-[#86868b] font-medium">重叠 Rebound</th>
                 </tr>
               </thead>
               <tbody>
@@ -299,7 +299,6 @@ export default function PanicSection({ data }: { data: PanicData }) {
                     <td className="py-2 px-2 font-semibold">{o.sleeve}</td>
                     <td className="py-2 px-2">{o.candidates.length}</td>
                     <td className="py-2 px-2"><OverlapBadge codes={o.overlap_with_panic} /></td>
-                    <td className="py-2 px-2"><OverlapBadge codes={o.overlap_with_rebound} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -390,14 +389,16 @@ export default function PanicSection({ data }: { data: PanicData }) {
                   <MiniBar value={h.panic_count} max={maxPanicInHistory} />
                   <span className={`w-16 text-right font-semibold ${h.panic_count >= 5 ? 'text-[#ff453a]' : h.panic_count >= 2 ? 'text-[#ff9f0a]' : 'text-[#30d158]'}`}>
                     {h.panic_count} panic
-                    {h.rebound_count > 0 && <span className="ml-1 text-[#30d158]">{h.rebound_count}↑</span>}
+                    {/* PANIC_DASHBOARD_TRIM 2026-06-16: rebound_count 后端已停, 恒 0, 角标清掉. */}
+                    {/* {h.rebound_count > 0 && <span className="ml-1 text-[#30d158]">{h.rebound_count}↑</span>} */}
                   </span>
                 </div>
               ))}
             </div>
             <div className="text-[11px] text-[#86868b] mt-2 flex justify-between">
               <span>最早: {history[0]?.date || '—'}</span>
-              <span>今日: {history[history.length - 1]?.panic_count || 0} panic · {history[history.length - 1]?.rebound_count || 0} rebound</span>
+              {/* PANIC_DASHBOARD_TRIM 2026-06-16: 去掉 rebound 字段, 改单维 panic 计数. */}
+              <span>今日: {history[history.length - 1]?.panic_count || 0} panic</span>
             </div>
           </div>
         ) : (
