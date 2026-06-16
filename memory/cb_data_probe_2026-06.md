@@ -62,6 +62,35 @@ A 股 sleeve 在 v7 4 支柱框架下饱和（18 条证伪）后，用户问"还
 - Survivorship bias 验证（两只退市债）：~3 min
 - 总：~8 min
 
+## v1.1 — 2026-06-16 PR4 strategy 端到端 smoke 实测 3 个 nuance（PR5/PR6 必须处理）
+
+PR4 落地后 `scripts/research/cb_target_today.py --n 200` 真 universe 跑 `compute_target_portfolio`，pipeline 全跑通但暴露 3 个 spec 隐含假设与 2026 实况不符：
+
+### Nuance 1 — asof 当日 panel 覆盖率仅 59%（118/200 只）
+
+200 只 active 头部样本里，仅 118 只在 asof=2026-06-15 有 panel 数据。原因可能是停牌 / 即将退市 / akshare 当日缺口。**PR5 backtester 每个交易日都会撞**：覆盖率 < X% 是否 skip 当天？
+- 推荐 best-effort + log warning（CB 流动性本身就差，硬卡 skip 会大量丢交易日）
+- backtester 必须 emit `panel_coverage` 序列到 M0 artifact，用于事后审计
+
+### Nuance 2 — 双低 score 中位 138（远高于 spec 假设的 sweet spot 100-105）
+
+2024 后 CB 估值整体抬升。入场 20 只里 **19/20 的 score > 150（spec 默认 `exit_dual_low_threshold=150`）**，意味 cold start 第一天的入场池立刻触发卖出。
+- spec 150 阈值基于 2018-2021 历史拟合，2024+ 校准失效
+- **PR6 双窗口 backtest 必须做 exit_threshold sweep**（候选：150 / 170 / 190 / 相对值 `top_N_median + 30`）
+- 入场 score 分布参考：min=129.68 / max=180.26 / 头 20 只 median ≈ 173
+
+### Nuance 3 — 入场 #1 可能是折价转债（负溢价 -11.58%）
+
+`dual_low_score = close + premium` 公式下，负溢价（转股价值 > 债价）会自然落到顶部。但负溢价债往往是已公告强赎 / 即将退市的尾盘行情。
+- 当前 127090 兴瑞转债 active 但 premium=-11.58% 需要 verify（可能 redeem 表延迟标）
+- **PR5 backtester 建议加 `premium_rate >= -5%` 软底**（避免折价债主导入场），candidate 落 yaml `min_conversion_premium`
+
+### 全市场 backfill 实测时间
+
+- 200 只混合（含老券）cold backfill 14 天 panel：**69.3s (0.35s/只)** vs 10 只新债 0.07s/只 — 5x 偏差源是 sample 含老券（行数 1183 vs 49）
+- 全市场 946 只外推真实 cold ≈ **5-7 min**（vs spec 8.5 min，合理范围）
+- DuckDB cache 第二次 < 0.005s/只 (221x speedup)
+
 ## 链接
 
 - 立项 spec：[[convertible-bond-sleeve]]

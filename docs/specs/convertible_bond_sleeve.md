@@ -101,8 +101,27 @@ tests/cb_double_low/        # 单元测试
 | PR3 | DataLoader 实现（PR2 测试 PASS）+ M0 全市场 backfill 脚本 | + `scripts/research/cb_backfill.py` | pytest 绿 + duckdb 1022 行 panel 写入 |
 | PR4 | universe/filter + strategy（双低评分 + N=20 入场）+ 单元测试 | `universe/filter.py`, `engine/strategy.py`, `tests/cb_double_low/test_strategy.py` | pytest 绿 |
 | PR5 | engine/backtest.py + M0 artifact contract + 4y backtest 一次 | + `data/backtest/cb_double_low_a_share_2022-01-01_2026-05-25/` | M0 audit PASS |
-| PR6 | 8y backtest + 双窗口同向决策 + 组合层叠加 v7 grid | + memory 记录 backtest 结果 | 双窗口 PASS 才进 PR7 |
+| PR6 | 8y backtest + 双窗口同向决策 + exit_threshold sweep + 组合层叠加 v7 grid | + memory 记录 backtest 结果 | 双窗口 PASS 才进 PR7 |
 | PR7 | yaml 落地 + daily 入口 + launchd 调度 | `config/cb_double_low.yaml`, `scripts/daily/daily_cb.py`, `deploy/run_daily.sh` | 实盘 advisory only |
+
+### PR5 设计补丁（2026-06-16 PR4 smoke 实测后追加）
+
+详见 [[cb_data_probe_2026-06]] v1.1。backtester 必须把以下 3 个 nuance 内化：
+
+1. **Panel 覆盖率每日不齐**（实测 asof=2026-06-15 头 200 只仅 59% 有数据）
+   - 策略：best-effort（用可得数据继续），不硬卡 skip 当天
+   - artifact 要求：M0 输出 `daily_panel_coverage.csv`（date, asked_n, available_n, pct），供事后审计
+   - 异常阈值（advisory）：覆盖率 < 30% 时 log warning，不阻塞 backtest
+
+2. **exit_dual_low_threshold=150 已过时**（2024+ 入场 score 多数已 > 150）
+   - PR5 默认值改 `exit_dual_low_threshold=180`（实测头 20 只 median 173 + 7 buffer），yaml 留可配
+   - PR6 sweep candidate: 150 / 170 / 180 / 190 / 200 / `top_N_median + 30`（相对值）
+   - 双窗口（4y/8y）同向 PASS 才能落 yaml
+
+3. **负溢价债污染入场**（127090 兴瑞转债 prem=-11.58% 排第一）
+   - PR5 新增 filter 项 `min_conversion_premium`，默认 -5%（负溢价 < -5% 排除）
+   - 落到 `UniverseFilterConfig`，配套 stats key `dropped_negative_premium`
+   - 灵敏度测试候选：-3% / -5% / -10% / 不过滤
 
 ## 不做（Backstop 严守）
 
