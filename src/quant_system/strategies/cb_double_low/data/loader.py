@@ -13,7 +13,9 @@
 """
 from __future__ import annotations
 
+import sys
 import threading
+import time
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -222,11 +224,39 @@ class CBDataLoader:
             # 拉缺失. akshare 端点对部分债 (新挂牌/特殊状态/退市边界) 内部解析失败抛 TypeError,
             # 不只是 return None — 必须 try/except 整个调用. Regression: 2026-06-16 --n 0 backfill
             # 跑到 ~920/946 只挂在 ak 内部 pd.DataFrame(data_json["result"]["data"]) NoneType.
+            #
+            # 2026-06-16 17:00 launchd run: 单 code 触发 curl_cffi Timeout 141s, 拖死整个
+            # panel (走 sys.exit). 加 2 层防护:
+            #   1. 数据解析异常 (TypeError/KeyError/...) → 立即 skip (旧逻辑)
+            #   2. 网络异常 (Timeout/CurlError/ConnectionError/...) → 2 次短退避重试
+            #   3. 任何漏网异常 (Exception) → skip + 计数, 不抛 (loop tolerance)
+            # 统计计数 ok / fail_parse / fail_net, 收尾打印.
+            stats = {"ok": 0, "fail_parse": 0, "fail_net": 0}
             for code in missing:
-                try:
-                    raw = ak.bond_zh_cov_value_analysis(symbol=code)
-                except (TypeError, KeyError, AttributeError, ValueError):
-                    continue
+                raw = None
+                for attempt in range(3):  # 1 + 2 重试
+                    try:
+                        raw = ak.bond_zh_cov_value_analysis(symbol=code)
+                        stats["ok"] += 1
+                        break
+                    except (TypeError, KeyError, AttributeError, ValueError):
+                        # 解析失败 = 该 code akshare 数据形态异常, 不重试
+                        stats["fail_parse"] += 1
+                        raw = None
+                        break
+                    except Exception as e:  # noqa: BLE001  网络层全捕, 防 daily 整体挂
+                        # curl_cffi Timeout / CurlError / ConnectionError / 远程 500 等
+                        if attempt < 2:
+                            time.sleep(1.5 * (attempt + 1))  # 1.5s, 3s
+                            continue
+                        # 第 3 次仍挂 = skip
+                        stats["fail_net"] += 1
+                        print(
+                            f"  [cb_panel] {code} 网络异常 3 次重试均失败 "
+                            f"({type(e).__name__}): skip",
+                            file=sys.stderr,
+                        )
+                        raw = None
                 if raw is None or len(raw) == 0:
                     continue
                 df = raw.rename(columns=self._PANEL_RENAME).copy()
@@ -251,6 +281,13 @@ class CBDataLoader:
                     """
                 )
                 con.unregister("_cb_tmp")
+            # 收尾打印 missing 拉取统计 (仅当真有 missing 时, 避免 noop log)
+            if missing:
+                print(
+                    f"  [cb_panel] missing={len(missing)} ok={stats['ok']} "
+                    f"fail_parse={stats['fail_parse']} fail_net={stats['fail_net']}",
+                    flush=True,
+                )
             # SELECT 切片
             placeholders = ",".join(["?"] * len(codes))
             out = con.execute(
