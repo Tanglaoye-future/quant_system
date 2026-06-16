@@ -14,16 +14,26 @@ metadata:
 
 ## 4 根支柱
 
-### 支柱 1 — 基本面选标的
+### 支柱 1 — 基本面或债性条款选标的（2026-06-15 扩展）
 
-策略入场的核心 alpha 来源必须包含基本面因子（PE/PB/ROE/revenue_growth/fcf_yield/ROIC/...）。
-**例外**：纯指数标的（QQQ/GLD 等）不在选股层，可不带基本面但必须服务于组合层分散。
+策略入场的核心 alpha 来源必须包含**基本面因子或债性条款指标**：
+- **基本面因子**（股票类）：PE/PB/ROE/revenue_growth/fcf_yield/ROIC/...
+- **债性条款指标**（可转债类）：转股溢价率/纯债溢价率/剩余期限/剩余规模/信用评级/...
 
-### 支柱 2 — 技术面价格择时，只做趋势
+**例外**：纯指数标的（QQQ/GLD/IBIT 等）不在选股层，可不带基本面/债性但必须服务于组合层分散。
 
-入场时机由趋势技术信号决定（regime gate 指数>MA + momentum_3m + breakout + RSI band）。
+**扩展驱动**：2026-06-15 用户审计 A 股 sleeve 收益率上限，CB 双低是当前唯一通过 4 支柱 cross-check + 数据 probe + survivorship 验证的新方向。详见 [[convertible-bond-sleeve]] spec。
+
+### 支柱 2 — 技术面价格择时，只做趋势（risk-parity 类资产可豁免，2026-06-15 扩展）
+
+**默认**：入场时机由趋势技术信号决定（regime gate 指数>MA + momentum_3m + breakout + RSI band）。
 **禁止**：反趋势（mean reversion 仅作 hedge 不作 alpha）、distribution/accumulation 微结构（庄股类）、capitulation 反向情绪类。
 **已证伪**：A_mr v2 (4 路径全死) / capitulation 4 重证伪 / 庄股结构性正交 — 详见各 falsified memory。
+
+**豁免**（2026-06-15 扩展）：**risk-parity 类低波动资产**（CB 双低 / 高息债 / 货币基金类）**可豁免趋势择时**，原因是债底保护下"低估均值回归"不撞"反趋势作 alpha"红线。豁免必须满足：
+- 资产 vol 低于股票 sleeve 30%
+- 有明确的下行底（债底 / 强赎价 / 回售价）
+- 不引入"等回调反弹"逻辑（distribution/accumulation 仍禁止）
 
 ### 支柱 3 — 持仓中日内做 T+0 + 实时风控
 
@@ -57,6 +67,7 @@ closed trade 必须采集 entry_features + exit_features → winner-vs-loser 报
 | equity_factor HK (equity_hk_momentum) | ✅ | ✅ | ✅ | ❌ | ✅ | 全对齐主腿 |
 | equity_factor US (equity_sp500_momentum) | ⚠️ weights=0 | ✅ | ✅ | ❌ | ✅ | 基本面 alpha 实测无效，技术面对齐 |
 | options BCS (QQQ Bull Call Spread) | n/a 指数 | ⚠️ 方向性看多≈趋势 | ⚠️ 风控 schema 不同 | ❌ | ❌ exit schema 不同 | 边缘对齐，组合层分散价值 |
+| **cb_double_low（spec 阶段）** | ✅ 债性条款（扩展后） | ✅ 豁免（扩展后） | ⏳ M5 复用 schema | ⏳ T+0 推迟 | ⏳ closed_trades 复用 | **2026-06-15 立项**，见 [[convertible-bond-sleeve]] |
 | ~~zhuang~~ | ❌ | ❌ | n/a | n/a | n/a | **2026-06-14 弃用**，见 [[zhuang-deprecated-2026-06]] |
 
 ---

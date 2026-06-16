@@ -1,6 +1,7 @@
 # Memory Index
 
-- 🌟 **[项目北极星 — 4 根支柱硬框架](project_north_star.md)** ⭐⭐⭐ — 2026-06-14 确立；最高级约束；每次 session 启动 + 每次 yaml/策略/架构改动前必须 cross-check；撞框架外的需求默认拒绝。支柱 1 基本面选 / 2 趋势择时 / 3 日内做T+实时风控 / 4 每笔回溯总结
+- 🌟 **[项目北极星 — 4 根支柱硬框架](project_north_star.md)** ⭐⭐⭐ — 2026-06-14 确立 / 2026-06-15 扩展（支柱 1 加债性条款 + 支柱 2 risk-parity 豁免）；最高级约束；每次 session 启动 + 每次 yaml/策略/架构改动前必须 cross-check；撞框架外的需求默认拒绝
+- 🎯 **[2026-06-15 CB 双低 sleeve 立项 + 数据 probe PASS](cb_data_probe_2026-06.md)** ⭐⭐ — A 股 sleeve v7 饱和后唯一通过 4 支柱 cross-check + 数据 probe + survivorship 验证的新方向；akshare 4 端点完整 + 含退市债 + 容量 < 100M AUM 无障碍；与已死 hsgt/zt_pool/LHB 全不同；spec [[convertible-bond-sleeve]]；5-10% 试水占比，PR1-7 拆分
 - 🎯 **[2026-06-15 V7 Efficient Frontier (zhuang 出 / 加密入)](v7_efficient_frontier_2026-06.md)** ⭐⭐⭐ — Top1 落地 HK50/A_mom20/A_mr0/QQQ10/GLD10/IBIT10；4y Sharpe **+1.842** / 8y **+1.455** / DD -12.5%/-14.8%；5 个 Pareto 双窗口同向 PASS 全 dominate 用户原提议；supersede v5 全系列；后续不调权重除非 grid 重做
 - 🎯 **[2026-06-15 V7 实盘部署计划](deployment_plan_v7_2026-06.md)** ⭐⭐⭐ — 3 账户 (HK 券商 + A 股 + IBKR)；阶段性 W0-W5 持仓上限路径；季度再平衡 ±5pp 触发；HK 账户开通是最大 blocker；reverse fallback v7b (HK 0%) 备用
 - **[zhuang 子策略 2026-06-14 弃用](zhuang_deprecated_2026-06.md)** ⭐ — 违反支柱 1+2，config disable + 代码归档保留；组合 15-25% 权重暂留现金缓冲；现有持仓走完原 exit 自然出场；重启需先扩框架 5 步硬卡
