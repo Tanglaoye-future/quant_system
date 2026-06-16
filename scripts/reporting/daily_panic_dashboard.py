@@ -283,9 +283,9 @@ def lhb_frequency_top(lhb_raw: pd.DataFrame, top_n: int = 10) -> list[LHBFrequen
 class SectorRow:
     sector_type: str       # 行业 / 概念
     name: str
-    pct_change: float
+    pct_change: float           # 小数 (0.038 = 3.8%), 与 panic.drop_pct 等单位对齐
     representative_stock: str
-    representative_pct: float | None = None
+    representative_pct: float | None = None   # 小数, 同上
 
 
 def fetch_sector_rankings(top_n: int = 5) -> dict[str, list[SectorRow]]:
@@ -316,21 +316,22 @@ def fetch_sector_rankings(top_n: int = 5) -> dict[str, list[SectorRow]]:
             continue
         df["涨跌幅"] = pd.to_numeric(df["涨跌幅"], errors="coerce")
         df = df.dropna(subset=["涨跌幅"]).sort_values("涨跌幅", ascending=False)
+        # akshare 涨跌幅 / 个股-涨跌幅 单位 = 百分数 (3.83 = 3.83%), /100 转小数与 JSON 其他字段对齐
         for _, r in df.head(top_n).iterrows():
             out[key_top].append(SectorRow(
                 sector_type=indicator,
                 name=str(r.get("板块", "")),
-                pct_change=float(r["涨跌幅"]),
+                pct_change=float(r["涨跌幅"]) / 100.0,
                 representative_stock=str(r.get("股票名称", "")),
-                representative_pct=float(r["个股-涨跌幅"]) if "个股-涨跌幅" in r and pd.notna(r["个股-涨跌幅"]) else None,
+                representative_pct=(float(r["个股-涨跌幅"]) / 100.0) if "个股-涨跌幅" in r and pd.notna(r["个股-涨跌幅"]) else None,
             ))
         for _, r in df.tail(top_n).iloc[::-1].iterrows():
             out[key_bot].append(SectorRow(
                 sector_type=indicator,
                 name=str(r.get("板块", "")),
-                pct_change=float(r["涨跌幅"]),
+                pct_change=float(r["涨跌幅"]) / 100.0,
                 representative_stock=str(r.get("股票名称", "")),
-                representative_pct=float(r["个股-涨跌幅"]) if "个股-涨跌幅" in r and pd.notna(r["个股-涨跌幅"]) else None,
+                representative_pct=(float(r["个股-涨跌幅"]) / 100.0) if "个股-涨跌幅" in r and pd.notna(r["个股-涨跌幅"]) else None,
             ))
     return out
 
