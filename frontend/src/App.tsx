@@ -4,7 +4,9 @@ import DashboardPage from './pages/DashboardPage';
 
 export default function App() {
   const { data, markets, matrix, panicData, tSignals, loading, error, updatedAt, refresh } = useReportData();
-  const date = data?.quant?.date || data?.options?.date || data?.zhuang?.date || '';
+  // ZHUANG_DEPRECATED 2026-06-14: zhuang 已弃用，date fallback 会拉到 stale (2026-06-09)
+  // const date = data?.quant?.date || data?.options?.date || data?.zhuang?.date || '';
+  const date = data?.quant?.date || data?.options?.date || '';
 
   return (
     <Layout date={date} updatedAt={updatedAt} onRefresh={refresh} loading={loading}>

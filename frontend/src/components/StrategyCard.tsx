@@ -5,7 +5,8 @@ import MetricCard from './MetricCard';
 import MetricGrid from './MetricGrid';
 import DataTable from './DataTable';
 import OptionsPositionTable from './OptionsPositionTable';
-import { signalColumns, positionColumns, zhuangColumns, zhuangPositionColumns } from './tableColumns';
+// ZHUANG_DEPRECATED 2026-06-14: zhuangColumns/zhuangPositionColumns 已不消费.
+import { signalColumns, positionColumns /*, zhuangColumns, zhuangPositionColumns */ } from './tableColumns';
 
 /** _source label → strategy_name 映射, 用于从 quant 合并数据中提取对应策略的信号/持仓 */
 const SOURCE_TO_STRATEGY: Record<string, string> = {
@@ -23,7 +24,8 @@ interface Props {
   optionsData?: OptionsData;
 }
 
-export default function StrategyCard({ cell, showPlaceholder = true, quantData, zhuangData, optionsData }: Props) {
+// ZHUANG_DEPRECATED 2026-06-14: zhuangData 形参保留以兼容 caller, 内部 _zhuangData unused.
+export default function StrategyCard({ cell, showPlaceholder = true, quantData, zhuangData: _zhuangData, optionsData }: Props) {
   const { strategy_name, strategy_label, strategy_kind, status, has_data, blocker_reason, metrics } = cell;
   const isActive = status === 'active' && has_data;
 
@@ -32,8 +34,9 @@ export default function StrategyCard({ cell, showPlaceholder = true, quantData, 
   // ── 提取该策略对应的详细数据 ──────────────────────────────────────
   let signals: QuantSignal[] = [];
   let positions: QuantPosition[] = [];
-  let zhuangCandidates = zhuangData?.top_candidates ?? [];
-  const zhuangPositions = zhuangData?.positions ?? [];
+  // ZHUANG_DEPRECATED 2026-06-14:
+  // let zhuangCandidates = _zhuangData?.top_candidates ?? [];
+  // const zhuangPositions = _zhuangData?.positions ?? [];
 
   let portfolioAlerts: string[] = [];
   if (quantData && (strategy_kind === 'bottomup_timing' || strategy_kind === 'mean_reversion')) {
@@ -65,9 +68,11 @@ export default function StrategyCard({ cell, showPlaceholder = true, quantData, 
       </div>
 
       {/* ── active: metrics + data tables ── */}
+      {/* ZHUANG_DEPRECATED 2026-06-14: 整段 zhuang_kind 分支注释; 后端不再生产 zhuang.json (2026-06-09 stale). */}
+      {/*
       {isActive && strategy_kind === 'zhuang' && (
         <>
-          {(zhuangData?.portfolio_alerts ?? []).length > 0 && (
+          {(_zhuangData?.portfolio_alerts ?? []).length > 0 && (
             <div style={{
               marginBottom: 12,
               padding: '10px 14px',
@@ -79,24 +84,24 @@ export default function StrategyCard({ cell, showPlaceholder = true, quantData, 
               lineHeight: 1.6,
             }}>
               <div style={{ fontWeight: 600, marginBottom: 4 }}>⚠ 组合层告警</div>
-              {(zhuangData?.portfolio_alerts ?? []).map((a, i) => (
+              {(_zhuangData?.portfolio_alerts ?? []).map((a, i) => (
                 <div key={i}>· {a}</div>
               ))}
             </div>
           )}
-          {zhuangData?.portfolio_summary?.drawdown_from_peak_pct != null && (
+          {_zhuangData?.portfolio_summary?.drawdown_from_peak_pct != null && (
             <div style={{
               marginBottom: 12, fontSize: 12, color: 'var(--color-text-secondary)',
             }}>
-              组合层回撤 {(zhuangData.portfolio_summary.drawdown_from_peak_pct * 100).toFixed(2)}%
-              （peak ¥{Math.round(zhuangData.portfolio_summary.peak_market_value ?? 0).toLocaleString()}）
+              组合层回撤 {(_zhuangData.portfolio_summary.drawdown_from_peak_pct * 100).toFixed(2)}%
+              （peak ¥{Math.round(_zhuangData.portfolio_summary.peak_market_value ?? 0).toLocaleString()}）
             </div>
           )}
           <MetricGrid>
             <MetricCard label="当前持仓" value={zhuangPositions.length} sub="最大 6 仓" />
             <MetricCard label="候选数" value={zhuangCandidates.length} sub="score≥45" />
             <MetricCard label="最高分" value={zhuangCandidates[0]?.total?.toFixed(1) ?? '—'} sub="入场门槛 65" />
-            <MetricCard label="市场趋势" value={zhuangData?.market_trend ? '金叉' : '未达'} sub="CSI500 MA60" />
+            <MetricCard label="市场趋势" value={_zhuangData?.market_trend ? '金叉' : '未达'} sub="CSI500 MA60" />
           </MetricGrid>
           {zhuangPositions.length > 0 && (
             <div style={{ marginTop: 14 }}>
@@ -116,6 +121,7 @@ export default function StrategyCard({ cell, showPlaceholder = true, quantData, 
           )}
         </>
       )}
+      */}
 
       {isActive && (strategy_kind === 'bottomup_timing' || strategy_kind === 'mean_reversion') && (
         <>

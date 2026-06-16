@@ -185,6 +185,9 @@ class UniverseFilter:
 
         base = pd.DataFrame(rows)
         if base.empty:
+            # 全市场都拿不到 bar（极端：缓存/数据源全挂）时，返回带 code/name 列的空表，
+            # 避免 caller 做 ["code"] 取列时 KeyError。
+            empty_out = pd.DataFrame({"code": pd.Series(dtype=str), "name": pd.Series(dtype=str)})
             stats = {
                 "asof": asof_str,
                 "input_n": int(len(df)),
@@ -195,7 +198,7 @@ class UniverseFilter:
                 "config": asdict(cfg),
                 "rule_counts": {},
             }
-            return base, stats
+            return empty_out, stats
 
         # --- 规则：上市天数 / 停牌 / 涨跌停 ---
         base["pass_listed_days"] = base["listed_days"] >= cfg.min_listed_days

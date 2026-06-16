@@ -6,10 +6,11 @@ export default function TradeActionsBar({ data }: { data: ReportSummary }) {
   const buySignals = (data.quant?.signals || []).length;
 
   const eqPos = data.quant?.positions || [];
-  const zhPos = data.zhuang?.positions || [];
+  // ZHUANG_DEPRECATED 2026-06-14: zhuang positions 已不再更新
+  // const zhPos = data.zhuang?.positions || [];
   const all = [
     ...eqPos.map((p) => ({ code: p.code, action: p.action })),
-    ...zhPos.map((p) => ({ code: p.code, action: p.action })),
+    // ...zhPos.map((p) => ({ code: p.code, action: p.action })),
   ];
   const isSell = (a: string) => a === 'EXIT' || a === '卖出';
   const isNew = (a: string) => a === '建仓';

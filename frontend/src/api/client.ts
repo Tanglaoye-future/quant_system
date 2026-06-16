@@ -22,6 +22,7 @@ export function getOptions() {
   return fetchJSON<import('../types').OptionsData>('/report/options');
 }
 
+// ZHUANG_DEPRECATED 2026-06-14: zhuang 后端不再更新 (last date=2026-06-09); 函数保留以兼容 type, 不再被前端调用.
 export function getZhuang() {
   return fetchJSON<import('../types').ZhuangData>('/report/zhuang');
 }
