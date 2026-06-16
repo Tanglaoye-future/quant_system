@@ -1,6 +1,7 @@
 # Memory Index
 
 - 🌟 **[项目北极星 — 4 根支柱硬框架](project_north_star.md)** ⭐⭐⭐ — 2026-06-14 确立 / 2026-06-15 扩展（支柱 1 加债性条款 + 支柱 2 risk-parity 豁免）；最高级约束；每次 session 启动 + 每次 yaml/策略/架构改动前必须 cross-check；撞框架外的需求默认拒绝
+- 🎯 **[2026-06-16 Session — CB 双低 PR1-7 全闭环 oneshot](session_2026_06_16_cb_pr1_7_oneshot.md)** ⭐⭐⭐ — single-session 9 commit 14 hr 完成立项→spec→loader→strategy→backtester→双窗口 PASS→v7 组合层 STRONG PASS→yaml+daily 落地; harness-first 真 stub 红→实现绿教科书示例; 3 个 PR4 smoke nuance 立即反哺 PR5+6 设计; 实盘观察期 ≥ 90 天前不撬阈值; 7-01 PM 首次 rebalance; 下个 session cold-start 入口
 - 🎯 **[2026-06-16 CB 双低 PR7 — yaml + daily 落地 (advisory only)](cb_double_low_pr7_yaml_daily_2026-06.md)** ⭐⭐⭐ — Option 1 落 yaml (CB 5% 从 A_mom 抽); config/cb_double_low.yaml + scripts/daily/daily_cb.py + run_daily.sh --no-cb 全部 ✅; v7 实盘配比 HK 50/A_mom 15/QQQ 10/GLD 10/BTC 10/CB 5; advisory only 不接 journal; PR1-7 闭环 8 commit 14 hr; 实盘 ≥ 90 天 + ≥ 30 笔前不撬阈值
 - 🎯 **[2026-06-16 CB 双低 PR6 — v7 组合层叠加 STRONG PASS (4 候选 dominate)](cb_double_low_pr6_v7_overlay_2026-06.md)** ⭐⭐⭐ — Top1 A_mom→CB 15% 4Y Sharpe +2.009 / 6Y +2.086 (Δ+0.131 / +0.281); BTC→CB 5% 极强但撬 v7 backstop; CB 与 A_mr -0.156 (hedge 价值) / BTC GLD QQQ ≈ 0; 推荐 Option 1 起步 CB 5% (A_mom 抽); PR7 准入清单已列, 待用户在 3 个选项选定
 - 🎯 **[2026-06-16 CB 双低 PR5 — 4y/6y 双窗口同向 PASS (Sharpe +0.839 / +1.419)](cb_double_low_pr5_4y6y_2026-06.md)** ⭐⭐⭐ — 首个有数据支撑的"未来 alpha"方向自 v7 + 18 条证伪后; 6y CAGR 25.13% / DD -14.87%; vs v7 6 资产 8y Sharpe 1.455 几乎持平 + DD 更友善; M0 audit PASS; PR6 必做 8y 完整 + sweep + v7 组合层叠加验证
