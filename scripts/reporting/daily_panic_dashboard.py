@@ -288,11 +288,38 @@ class SectorRow:
     representative_pct: float | None = None   # 小数, 同上
 
 
+def _worst_stock_in_sector(label: str) -> tuple[str, float] | None:
+    """对 BOT 板块, 调 stock_sector_detail 取成分股 changepercent 最低 (= 真领跌股).
+
+    避开 push2.eastmoney.com 代理拦截 (新浪源).
+    单次 ~0.2-0.5s; 10 个 BOT 板块约 +3-5s.
+    失败返回 None, 调用方回退 sector_spot 的板块龙头.
+    """
+    try:
+        det = ak.stock_sector_detail(sector=label)
+    except Exception as e:
+        print(f"[sector_detail] {label} ERROR: {type(e).__name__}: {e}", file=sys.stderr)
+        return None
+    if det is None or det.empty or "changepercent" not in det.columns:
+        return None
+    det = det.copy()
+    det["changepercent"] = pd.to_numeric(det["changepercent"], errors="coerce")
+    det = det.dropna(subset=["changepercent"])
+    if det.empty:
+        return None
+    worst = det.sort_values("changepercent").iloc[0]
+    return str(worst.get("name", "")), float(worst["changepercent"])
+
+
 def fetch_sector_rankings(top_n: int = 5) -> dict[str, list[SectorRow]]:
-    """同花顺接口 stock_sector_spot 拉 行业 / 概念 板块, 各取 top_n / bottom_n.
+    """新浪接口 stock_sector_spot 拉 行业 / 概念 板块, 各取 top_n / bottom_n.
 
     返回: {'industry_top': [...], 'industry_bot': [...], 'concept_top': [...], 'concept_bot': [...]}
     避开 push2.eastmoney.com 代理拦截问题.
+
+    TOP 板块: 代表股 = 板块龙头 (sector_spot 的 "股票名称", 即板块内涨幅最高那只).
+    BOT 板块: 代表股 = 板块内**真领跌股** (drill 一次 stock_sector_detail, 取 changepercent 最低).
+              原 "股票名称" 字段对 BOT 是 "跌得最少 / 反而涨那只", 语义反人类.
     """
     out: dict[str, list[SectorRow]] = {
         "industry_top": [], "industry_bot": [],
@@ -326,12 +353,20 @@ def fetch_sector_rankings(top_n: int = 5) -> dict[str, list[SectorRow]]:
                 representative_pct=(float(r["个股-涨跌幅"]) / 100.0) if "个股-涨跌幅" in r and pd.notna(r["个股-涨跌幅"]) else None,
             ))
         for _, r in df.tail(top_n).iloc[::-1].iterrows():
+            label = str(r.get("label", ""))
+            worst = _worst_stock_in_sector(label) if label else None
+            if worst is not None:
+                rep_name, rep_pct = worst[0], worst[1] / 100.0
+            else:
+                # fallback: sector_spot 的板块龙头 (语义不准, 但比空好)
+                rep_name = str(r.get("股票名称", ""))
+                rep_pct = (float(r["个股-涨跌幅"]) / 100.0) if "个股-涨跌幅" in r and pd.notna(r["个股-涨跌幅"]) else None
             out[key_bot].append(SectorRow(
                 sector_type=indicator,
                 name=str(r.get("板块", "")),
                 pct_change=float(r["涨跌幅"]) / 100.0,
-                representative_stock=str(r.get("股票名称", "")),
-                representative_pct=(float(r["个股-涨跌幅"]) / 100.0) if "个股-涨跌幅" in r and pd.notna(r["个股-涨跌幅"]) else None,
+                representative_stock=rep_name,
+                representative_pct=rep_pct,
             ))
     return out
 
