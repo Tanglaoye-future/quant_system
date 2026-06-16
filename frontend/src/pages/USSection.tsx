@@ -87,7 +87,8 @@ export default function USSection({ data }: { data: OptionsData }) {
         )}
       </StrategySection>
 
-      {/* 美股中线 momentum — 已归档 */}
+      {/* INACTIVE_STRATEGIES_HIDE 2026-06-16: 美股中线 momentum 已归档 (Sharpe 0.2), 不再展示. */}
+      {/*
       <GlassCard className="mb-4 opacity-60">
         <div className="flex items-center justify-between mb-3">
           <div className="text-sm font-semibold text-[#aeaeb2]">中线 momentum</div>
@@ -95,6 +96,7 @@ export default function USSection({ data }: { data: OptionsData }) {
         </div>
         <div className="text-xs text-[#aeaeb2]">美股主动策略已关闭（Sharpe 仅 0.2），由被动 QQQ 替代。</div>
       </GlassCard>
+      */}
     </section>
   );
 }
