@@ -3,13 +3,14 @@ import MetricGrid from '../components/MetricGrid';
 import MetricCard from '../components/MetricCard';
 import DataTable from '../components/DataTable';
 import StatusBadge from '../components/StatusBadge';
+// PANIC_DASHBOARD_TRIM 2026-06-16: ReboundCandidate / LHBRow / LHBFrequencyRow 类型仅 commented section 用.
 import type {
   ColumnDef,
   PanicData,
   PanicCandidate,
-  ReboundCandidate,
-  LHBRow,
-  LHBFrequencyRow,
+  // ReboundCandidate,
+  // LHBRow,
+  // LHBFrequencyRow,
   SectorRow,
   SleeveOverlap,
   HistoryEntry,
@@ -62,6 +63,8 @@ const panicColumns: Column<PanicCandidate>[] = [
   },
 ];
 
+// PANIC_DASHBOARD_TRIM 2026-06-16: section ②③⑦ 永久空 (akshare 数据死 / 反包率 3.4%), columns 注释保留.
+/*
 const reboundColumns: Column<ReboundCandidate>[] = [
   { key: 'code', header: '代码', render: (r) => <span className="font-semibold">{r.code}</span> },
   {
@@ -105,6 +108,7 @@ const lhbFreqColumns: Column<LHBFrequencyRow>[] = [
   },
   { key: 'last_date', header: '最后上榜', render: (r) => r.last_date },
 ];
+*/
 
 const sectorColumns: Column<SectorRow>[] = [
   { key: 'name', header: '板块', render: (r) => <span className="font-semibold">{r.name}</span> },
@@ -160,16 +164,16 @@ function MiniBar({ value, max }: { value: number; max: number }) {
 
 export default function PanicSection({ data }: { data: PanicData }) {
   const panic = data.panic || [];
-  const rebound = data.rebound || [];
-  const lhb = data.lhb || [];
-  const sentiment = data.sentiment || [];
+  // PANIC_DASHBOARD_TRIM 2026-06-16: rebound / lhb / sentiment / lhbFreq 后端已停采集 (永久 []).
+  // const rebound = data.rebound || [];
+  // const lhb = data.lhb || [];
+  // const sentiment = data.sentiment || [];
+  // const lhbFreq = data.lhb_frequency || [];
   const overlaps = data.sleeve_overlap || [];
   const sectors = data.sectors || { industry_top: [], industry_bot: [], concept_top: [], concept_bot: [] };
-  const lhbFreq = data.lhb_frequency || [];
   const history = data.history || [];
 
-  const hasAnyData = panic.length > 0 || rebound.length > 0 || lhb.length > 0
-    || sentiment.length > 0 || overlaps.length > 0 || lhbFreq.length > 0
+  const hasAnyData = panic.length > 0 || overlaps.length > 0
     || sectors.industry_top.length > 0 || sectors.concept_top.length > 0
     || history.length > 0;
 
@@ -207,64 +211,73 @@ export default function PanicSection({ data }: { data: PanicData }) {
         )}
       </GlassCard>
 
-      {/* ② Rebound candidates */}
-      <GlassCard>
-        <SectionTitle num="②" title="反包候选 · 前日 panic + 今日高开" />
-        {rebound.length > 0 ? (
-          <DataTable columns={reboundColumns} data={rebound} emptyText="" />
-        ) : (
-          <EmptyState text="今日无反包候选" />
-        )}
-      </GlassCard>
+      {/* PANIC_DASHBOARD_TRIM 2026-06-16: section ②③④ 后端已停采集 (akshare 数据死 / 反包率 3.4% 太低). */}
+      {/* 原 JSX 完整保留在 {false && (...)} 里，可直接改回 {true && ...} 恢复. */}
+      {false && (
+        <>
+          {/* ② Rebound candidates */}
+          <GlassCard>
+            <SectionTitle num="②" title="反包候选 · 前日 panic + 今日高开" />
+            {/* @ts-ignore — rebound/reboundColumns 已注释 */}
+            {(data.rebound || []).length > 0 ? (
+              // @ts-ignore
+              <DataTable columns={[] as any} data={data.rebound || []} emptyText="" />
+            ) : (
+              <EmptyState text="今日无反包候选" />
+            )}
+          </GlassCard>
 
-      {/* ③ LHB 机构净买 TOP 20 */}
-      <GlassCard>
-        <SectionTitle num="③" title="LHB 机构净买 TOP 20" />
-        {lhb.length > 0 ? (
-          <>
-            <MetricGrid>
-              <MetricCard label="上榜数" value={lhb.length} sub="近 5 个交易日" />
-              <MetricCard label="最大净买" value={fmtYuan(Math.max(...lhb.map((r) => r.jg_net_buy_yuan)))} sub="" colorClass="text-[#30d158]" />
-            </MetricGrid>
-            <DataTable columns={lhbColumns} data={lhb} emptyText="" />
-          </>
-        ) : (
-          <EmptyState text="今日无 LHB 数据" />
-        )}
-      </GlassCard>
-
-      {/* ④ Market sentiment */}
-      <GlassCard>
-        <SectionTitle num="④" title="大盘情绪 · 关键词扫描" />
-        {sentiment.length > 0 ? (
-          <div className="space-y-3">
-            {sentiment.map((s) => (
-              <div key={s.source} className="bg-[#f5f5f7] rounded-xl p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold text-[#1d1d1f]">{s.source}</span>
-                  <span className={`text-xs font-bold ${s.score < -0.2 ? 'text-[#ff453a]' : s.score > 0.2 ? 'text-[#30d158]' : 'text-[#86868b]'}`}>
-                    净情绪 {(s.score * 100).toFixed(0)}%
-                  </span>
-                </div>
+          {/* ③ LHB 机构净买 TOP 20 */}
+          <GlassCard>
+            <SectionTitle num="③" title="LHB 机构净买 TOP 20" />
+            {(data.lhb || []).length > 0 ? (
+              <>
                 <MetricGrid>
-                  <MetricCard label="扫描条数" value={s.n_items} sub="" />
-                  <MetricCard label="看多" value={s.n_bull} sub="" colorClass="text-[#30d158]" />
-                  <MetricCard label="看空" value={s.n_bear} sub="" colorClass="text-[#ff453a]" />
-                  <MetricCard label="情绪分" value={(s.score).toFixed(3)} sub="(bull-bear)/total" colorClass={s.score < 0 ? 'text-[#ff453a]' : 'text-[#30d158]'} />
+                  <MetricCard label="上榜数" value={(data.lhb || []).length} sub="近 5 个交易日" />
+                  <MetricCard label="最大净买" value={fmtYuan(Math.max(...(data.lhb || []).map((r) => r.jg_net_buy_yuan)))} sub="" colorClass="text-[#30d158]" />
                 </MetricGrid>
-                {s.samples_bull.length > 0 && (
-                  <div className="mt-1 text-[11px] text-[#30d158]">多: {s.samples_bull.slice(0, 5).join(', ')}</div>
-                )}
-                {s.samples_bear.length > 0 && (
-                  <div className="mt-0.5 text-[11px] text-[#ff453a]">空: {s.samples_bear.slice(0, 5).join(', ')}</div>
-                )}
+                {/* @ts-ignore — lhbColumns 已注释 */}
+                <DataTable columns={[] as any} data={data.lhb || []} emptyText="" />
+              </>
+            ) : (
+              <EmptyState text="今日无 LHB 数据" />
+            )}
+          </GlassCard>
+
+          {/* ④ Market sentiment */}
+          <GlassCard>
+            <SectionTitle num="④" title="大盘情绪 · 关键词扫描" />
+            {(data.sentiment || []).length > 0 ? (
+              <div className="space-y-3">
+                {(data.sentiment || []).map((s) => (
+                  <div key={s.source} className="bg-[#f5f5f7] rounded-xl p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold text-[#1d1d1f]">{s.source}</span>
+                      <span className={`text-xs font-bold ${s.score < -0.2 ? 'text-[#ff453a]' : s.score > 0.2 ? 'text-[#30d158]' : 'text-[#86868b]'}`}>
+                        净情绪 {(s.score * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <MetricGrid>
+                      <MetricCard label="扫描条数" value={s.n_items} sub="" />
+                      <MetricCard label="看多" value={s.n_bull} sub="" colorClass="text-[#30d158]" />
+                      <MetricCard label="看空" value={s.n_bear} sub="" colorClass="text-[#ff453a]" />
+                      <MetricCard label="情绪分" value={(s.score).toFixed(3)} sub="(bull-bear)/total" colorClass={s.score < 0 ? 'text-[#ff453a]' : 'text-[#30d158]'} />
+                    </MetricGrid>
+                    {s.samples_bull.length > 0 && (
+                      <div className="mt-1 text-[11px] text-[#30d158]">多: {s.samples_bull.slice(0, 5).join(', ')}</div>
+                    )}
+                    {s.samples_bear.length > 0 && (
+                      <div className="mt-0.5 text-[11px] text-[#ff453a]">空: {s.samples_bear.slice(0, 5).join(', ')}</div>
+                    )}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        ) : (
-          <EmptyState text="无情绪数据（--quick 模式跳过 news fetch）" />
-        )}
-      </GlassCard>
+            ) : (
+              <EmptyState text="无情绪数据（--quick 模式跳过 news fetch）" />
+            )}
+          </GlassCard>
+        </>
+      )}
 
       {/* ⑤ Sleeve overlap */}
       <GlassCard>
@@ -346,21 +359,24 @@ export default function PanicSection({ data }: { data: PanicData }) {
         )}
       </GlassCard>
 
-      {/* ⑦ LHB frequency */}
-      <GlassCard>
-        <SectionTitle num="⑦" title="LHB 高频上榜 · 近 30 天 ≥2 次" />
-        {lhbFreq.length > 0 ? (
-          <>
-            <MetricGrid>
-              <MetricCard label="高频股数" value={lhbFreq.length} sub="上榜 ≥2 次" />
-              <MetricCard label="最高频次" value={Math.max(...lhbFreq.map((r) => r.appearances))} sub="" colorClass={Math.max(...lhbFreq.map((r) => r.appearances)) >= 5 ? 'text-[#ff453a]' : 'text-[#ff9f0a]'} />
-            </MetricGrid>
-            <DataTable columns={lhbFreqColumns} data={lhbFreq} emptyText="" />
-          </>
-        ) : (
-          <EmptyState text="无高频上榜股（近 30 天无 ≥2 次上榜）" />
-        )}
-      </GlassCard>
+      {/* PANIC_DASHBOARD_TRIM 2026-06-16: ⑦ LHB 高频已停 (依赖 lhb_raw, akshare 30 日封死). */}
+      {false && (
+        <GlassCard>
+          <SectionTitle num="⑦" title="LHB 高频上榜 · 近 30 天 ≥2 次" />
+          {(data.lhb_frequency || []).length > 0 ? (
+            <>
+              <MetricGrid>
+                <MetricCard label="高频股数" value={(data.lhb_frequency || []).length} sub="上榜 ≥2 次" />
+                <MetricCard label="最高频次" value={Math.max(...(data.lhb_frequency || []).map((r) => r.appearances))} sub="" colorClass={Math.max(...(data.lhb_frequency || []).map((r) => r.appearances)) >= 5 ? 'text-[#ff453a]' : 'text-[#ff9f0a]'} />
+              </MetricGrid>
+              {/* @ts-ignore — lhbFreqColumns 已注释 */}
+              <DataTable columns={[] as any} data={data.lhb_frequency || []} emptyText="" />
+            </>
+          ) : (
+            <EmptyState text="无高频上榜股（近 30 天无 ≥2 次上榜）" />
+          )}
+        </GlassCard>
+      )}
 
       {/* ⑧ History trend */}
       <GlassCard>

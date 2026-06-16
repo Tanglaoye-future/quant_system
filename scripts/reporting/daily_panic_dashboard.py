@@ -830,17 +830,28 @@ def main():
     n_total = sum(len(v) for v in codes_by_uni.values())
     print(f"  hs300={len(codes_by_uni['hs300'])}  csi1000={len(codes_by_uni['csi1000'])}  total={n_total}")
 
-    print("[2/8] panic + 反包 scan...")
-    panic, rebound = scan_panic_and_rebound(loader, codes_by_uni, target)
-    print(f"  panic={len(panic)}  rebound={len(rebound)}")
+    # PANIC_DASHBOARD_TRIM 2026-06-16: 4 个 section 永久空 (akshare 数据死 / 反包率 3.4% 太低), 跳过采集.
+    # 详见 [[capitulation_strategy_falsified_2026-06]] §2 + 用户决策 (2026-06-16).
+    # 保留 panic / sleeve_overlap / sectors / history; 关掉 rebound / lhb / sentiment / lhb_freq.
 
-    print("[3/8] LHB 机构净买...")
-    lhb, lhb_raw = fetch_lhb_top(target)
-    print(f"  lhb top={len(lhb)}, raw={len(lhb_raw)}")
+    print("[2/8] panic scan... (rebound 已停; 反包率 3.4% 无统计意义)")
+    panic, _rebound = scan_panic_and_rebound(loader, codes_by_uni, target)
+    rebound: list = []  # PANIC_DASHBOARD_TRIM 2026-06-16: 永久空, 不渲染
+    print(f"  panic={len(panic)}")
 
-    print("[4/8] 大盘情绪...")
-    sentiment = fetch_market_sentiment(target, quick=args.quick)
-    print(f"  sources={len(sentiment)}")
+    # PANIC_DASHBOARD_TRIM 2026-06-16: LHB / sentiment / lhb_freq akshare 30 日 / news 死, 跳过采集.
+    # print("[3/8] LHB 机构净买...")
+    # lhb, lhb_raw = fetch_lhb_top(target)
+    # print(f"  lhb top={len(lhb)}, raw={len(lhb_raw)}")
+    lhb: list = []
+    lhb_raw: list = []
+    print("[3/8] LHB 机构净买 SKIP (akshare 30 日封死)")
+
+    # print("[4/8] 大盘情绪...")
+    # sentiment = fetch_market_sentiment(target, quick=args.quick)
+    # print(f"  sources={len(sentiment)}")
+    sentiment: list = []
+    print("[4/8] 大盘情绪 SKIP (akshare news 死)")
 
     print("[5/8] sleeve overlap...")
     overlaps = compute_sleeve_overlap(
@@ -855,12 +866,14 @@ def main():
     print(f"  industry top/bot={len(sectors['industry_top'])}/{len(sectors['industry_bot'])}  "
           f"concept top/bot={len(sectors['concept_top'])}/{len(sectors['concept_bot'])}")
 
-    print("[7/8] LHB 高频上榜...")
-    lhb_freq = lhb_frequency_top(lhb_raw, top_n=10)
-    print(f"  high-freq codes={len(lhb_freq)}")
+    # print("[7/8] LHB 高频上榜...")
+    # lhb_freq = lhb_frequency_top(lhb_raw, top_n=10)
+    # print(f"  high-freq codes={len(lhb_freq)}")
+    lhb_freq: list = []
+    print("[7/8] LHB 高频 SKIP (依赖 lhb_raw)")
 
     print("[8/8] panic 历史趋势 update...")
-    lhb_top_jg_buy = float(lhb[0].jg_net_buy_yuan) if lhb else 0.0
+    lhb_top_jg_buy = 0.0  # PANIC_DASHBOARD_TRIM 2026-06-16: lhb 已停, 历史此列恒 0
     history = update_panic_history(target, len(panic), len(rebound), lhb_top_jg_buy)
     print(f"  history entries (last {HISTORY_KEEP_DAYS}d): {len(history)}")
 
