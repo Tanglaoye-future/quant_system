@@ -54,6 +54,21 @@ breakout:
   watchlist_max_age_days: 5            # asof_date 超过 N 自然日视 stale，noop
   strategies: ["equity_factor"]        # PR2 仅 equity_factor；zhuang 留 PR3
 
+# PR10 (2026-06-17): CB 双低 sleeve 实时风控
+#   持仓 CB 个券 close < 85 → cb_break_stop_loss (债底击穿, critical)
+#   持仓 CB 个券 last_trading_date 在 30 天内 → cb_redeem_imminent (强赎临近, critical)
+#   评估 → AlertEvent → alerts_sent 去重 → Telegram 推送 (与 equity 同管道)
+#
+#   不做 dual_low_score>180 实时告警 — 慢信号已被 PR9 daily rebalance signal 覆盖,
+#   实时拉 conversion_premium_rate 成本 (panel value_analysis 每 code 1 次 API) 不划算.
+#
+#   CB 不做 T+0 — 北极星 risk-parity 豁免 (Backstop #4), 告警仅 "考虑减仓" advisory.
+cb_double_low:
+  enabled: true                        # 与 intraday_alerts.enabled 同步开关
+  poll_interval_minutes: 15            # CB 低波 + 月度 rebalance, 不需要 equity 的 5 min 节奏
+  redeem_within_days: 30               # 强赎临近窗口 (天数)
+  # stop_loss_close 不在此处定义, 从 config/cb_double_low.yaml strategy.stop_loss_close 读 (单源)
+
 # PR3: zhuang 庄股盘中派发预警
 #   持仓 zhuang 股盘中今日大涨 (≥ 4%) + 量比放大 (≥ 2.0) →
 #   庄家可能进入派发期，推送 "考虑减仓" (非自动平仓, Backstop #4)

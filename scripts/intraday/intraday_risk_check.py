@@ -55,6 +55,16 @@ from quant_system.intraday import (  # noqa: E402
     load_watchlist,
 )
 from quant_system.notify import TelegramSender  # noqa: E402
+from quant_system.strategies.cb_double_low.journal import (  # noqa: E402
+    CB_MARKET,
+    CB_STRATEGY,
+)
+from quant_system.strategies.cb_double_low.risk.intraday import (  # noqa: E402
+    CBIntradayConfig,
+    build_cb_position_snapshots,
+    evaluate_cb_alerts,
+    fetch_cb_realtime_close,
+)
 from quant_system.strategies.equity_factor.journal.journal import Journal  # noqa: E402
 from quant_system.strategies.equity_factor.risk.monitor import compute_peak_drawdown  # noqa: E402
 
@@ -62,6 +72,7 @@ logger = logging.getLogger("intraday")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
 
 _CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "intraday.yaml"
+_CB_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "cb_double_low.yaml"
 _JOURNAL_PATH = Path(__file__).resolve().parents[2] / "data" / "journal.db"
 _WATCHLIST_EQUITY_PATH = (
     Path(__file__).resolve().parents[2] / "data" / "intraday" / "equity_watchlist.json"
@@ -180,6 +191,61 @@ def _load_yaml() -> dict:
     if not _CONFIG_PATH.exists():
         return {}
     return yaml.safe_load(_CONFIG_PATH.read_text(encoding="utf-8")) or {}
+
+
+def _load_cb_strategy_yaml() -> dict:
+    """读 config/cb_double_low.yaml — CBIntradayConfig 复用 strategy.stop_loss_close (单源)."""
+    if not _CB_CONFIG_PATH.exists():
+        return {}
+    return yaml.safe_load(_CB_CONFIG_PATH.read_text(encoding="utf-8")) or {}
+
+
+def _evaluate_cb_risk(journal: Journal, asof: date) -> list[AlertEvent]:
+    """CB sleeve 实时风控 (PR10): 持仓 close<85 + 强赎临近 → AlertEvent list.
+
+    fail-soft: 任一环节 (yaml/journal/spot/redemption) 异常 → 返空 list, 不阻断 equity 评估.
+    spot/redemption 通过 akshare 拉, 网络挂时本周期跳过, 下个周期重试.
+    """
+    try:
+        cb_intraday_raw = (_load_yaml().get("cb_double_low") or {})
+        cb_strat_yaml = _load_cb_strategy_yaml()
+        cb_cfg = CBIntradayConfig.from_yaml_dict(cb_intraday_raw, cb_strat_yaml)
+        if not cb_cfg.enabled:
+            return []
+
+        holdings = journal.list_open(market=CB_MARKET, strategy=CB_STRATEGY)
+        if not holdings:
+            logger.info("CB intraday: no open holdings, skip")
+            return []
+
+        codes = [h["symbol"] for h in holdings]
+        spot_map = fetch_cb_realtime_close(codes)
+        if not spot_map:
+            logger.warning("CB intraday: spot empty (网络/非交易日?), skip")
+            return []
+
+        # redemption: 通过 CBDataLoader 拉 (复用 daily 缓存逻辑)
+        from quant_system.strategies.cb_double_low.data.loader import CBDataLoader
+        cache_dir = (
+            Path(__file__).resolve().parents[2] / "data" / "cache" / "cb_double_low"
+        )
+        loader = CBDataLoader(cache_dir=cache_dir)
+        try:
+            redemption_df = loader.load_redemption_events(asof=asof)
+        except Exception as exc:
+            logger.warning("CB intraday: load_redemption_events failed (%s), 仅评估 stop_loss", exc)
+            redemption_df = None
+        finally:
+            loader.close()
+
+        snaps = build_cb_position_snapshots(holdings, spot_map, redemption_df)
+        cb_events = evaluate_cb_alerts(snaps, asof, cb_cfg)
+        logger.info("CB intraday: %d alerts (holdings=%d spot=%d)",
+                    len(cb_events), len(holdings), len(spot_map))
+        return cb_events
+    except Exception as exc:
+        logger.exception("CB intraday evaluation failed (fail-soft): %s", exc)
+        return []
 
 
 # ── 主流程 ────────────────────────────────────────────────────────────
@@ -423,6 +489,10 @@ def run_once(dry_run: bool = False) -> int:
         logger.info("breakout alerts: %d (watchlist asof=%s, n_cand=%d)",
                     len(br_events), wl.asof_date, len(wl.candidates))
         events.extend(br_events)
+
+    # ── PR10: CB sleeve 实时风控 (close<85 / 强赎临近) ───────────────
+    cb_events = _evaluate_cb_risk(journal, now.date())
+    events.extend(cb_events)
 
     if not events:
         return 0
