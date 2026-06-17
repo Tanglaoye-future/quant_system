@@ -34,9 +34,17 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 from quant_system.strategies.cb_double_low.data.loader import CBDataLoader  # noqa: E402
+from quant_system.strategies.cb_double_low.engine.rebalance import (  # noqa: E402
+    build_rebalance_payload,
+    is_rebalance_day,
+)
 from quant_system.strategies.cb_double_low.engine.strategy import (  # noqa: E402
     CBDoubleLowConfig,
     compute_target_portfolio,
+)
+from quant_system.strategies.cb_double_low.journal import (  # noqa: E402
+    Journal,
+    list_open_cb_holdings,
 )
 from quant_system.strategies.cb_double_low.universe.filter import (  # noqa: E402
     UniverseFilterConfig,
@@ -104,7 +112,7 @@ def main() -> int:
     print(f"{'='*70}")
 
     # 1. universe
-    print(f"\n[1/4] universe (asof={today})...")
+    print(f"\n[1/5] universe (asof={today})...")
     universe = loader.load_universe(asof=today)
     active = universe[universe["exit_status"] == "active"].copy()
     print(f"  total={len(universe)} active={len(active)}")
@@ -112,7 +120,7 @@ def main() -> int:
     # 2. panel: 拉最近 N 天找最新可用 asof
     start = today - timedelta(days=args.lookback_days)
     codes = active["bond_code"].tolist()
-    print(f"\n[2/4] panel [{start} → {today}] cold {len(codes)} 只...")
+    print(f"\n[2/5] panel [{start} → {today}] cold {len(codes)} 只...")
     panel = loader.load_panel(start=start, end=today, codes=codes)
     if len(panel) == 0:
         print("⚠️  panel 全空, 退出 (cache 可能未 backfill).")
@@ -126,13 +134,23 @@ def main() -> int:
     # 3. redemption
     redemption = loader.load_redemption_events(asof=panel_max_date)
 
-    # 4. compute target portfolio (空仓 advisory — PR8+ 接 journal 后填 current_holdings)
-    print(f"\n[3/4] compute_target_portfolio (cold start)...")
+    # 4. 从 journal_trades 反查 CB sleeve 当前持仓 (PR9, 2026-06-17)
+    # advisory_only 期 PM 未下单 → 返回空 list, compute_target_portfolio 走 cold start.
+    # PR9 月初首次 rebalance 后 PM 录 journal_trades → 后续 daily 自动出真 diff.
+    # DB 不可达时 fail-soft: 回退空持仓 (与 PR8 portfolio_history dual-write 同模式).
+    try:
+        current_holdings = list_open_cb_holdings(Journal())
+        print(f"\n[3/5] current_holdings (from journal): {len(current_holdings)} 只")
+    except Exception as e:
+        print(f"\n[3/5] ⚠ journal 反查失败 ({type(e).__name__}: {e}), 回退 current_holdings=[]")
+        current_holdings = []
+
+    print(f"\n[4/5] compute_target_portfolio (holdings={len(current_holdings)})...")
     out = compute_target_portfolio(
         universe=active,
         panel_today=panel_today,
         redemption=redemption,
-        current_holdings=[],
+        current_holdings=current_holdings,
         asof=panel_max_date,
         config=cfg,
     )
@@ -163,7 +181,7 @@ def main() -> int:
         ]["bond_code"].astype(str)
     )
 
-    print(f"\n[4/4] 今日双低 top {top_n}:")
+    print(f"\n[5/5] 今日双低 top {top_n}:")
     print(f"  {'rank':<5} {'code':<8} {'name':<14} {'close':>8} {'prem%':>8} {'score':>8}")
     advisory_entries: list[dict] = []
     for i, row in ranked.iterrows():
@@ -185,13 +203,48 @@ def main() -> int:
             "warn_redeem_near": bool(is_warn),
         })
 
-    # 6. 配比建议
+    # 6. rebalance signal — BUY / SELL / HOLD 三栏 (PR9, 2026-06-17)
+    is_reb = is_rebalance_day(today)
+    rebalance_payload = build_rebalance_payload(
+        portfolio_out=out,
+        ranked=advisory_entries,
+        redeem_active=redeem_active,
+        is_rebalance=is_reb,
+    )
+    mode_hint = "月初执行" if is_reb else "BUY 等月初, SELL urgent 立即"
+    diff = rebalance_payload["diff_summary"]
+    print(f"\n📋 mode={rebalance_payload['mode']} ({mode_hint})")
+    print(f"   HOLD={diff['n_hold']}  SELL={diff['n_sell']} (urgent {diff['n_sell_urgent']})"
+          f"  BUY={diff['n_buy']} (deferred {diff['n_buy_deferred']})")
+
+    if rebalance_payload["sell"]:
+        print("\n🔴 SELL:")
+        for s in rebalance_payload["sell"]:
+            urg = " ⚠URGENT" if s["urgent"] else ""
+            print(f"   {s['bond_code']:<8} reason={s['reason']}{urg}")
+
+    if rebalance_payload["buy"]:
+        print(f"\n🟢 BUY ({'立即' if is_reb else '等月初'}):")
+        for b in rebalance_payload["buy"][:10]:  # 最多展示 10 行
+            name = (b.get("bond_name") or "")[:14]
+            score = b.get("dual_low_score")
+            score_s = f"{score:>8.2f}" if score is not None else "    n/a "
+            print(f"   {b['bond_code']:<8} {name:<14} score={score_s} w={b['weight']*100:.2f}%")
+        if len(rebalance_payload["buy"]) > 10:
+            print(f"   ... 共 {len(rebalance_payload['buy'])} 只, 完整清单见 quant_cb.json")
+
+    if rebalance_payload["hold"]:
+        print(f"\n🟡 HOLD ({len(rebalance_payload['hold'])} 只): "
+              + ", ".join(h["bond_code"] for h in rebalance_payload["hold"][:8])
+              + (" ..." if len(rebalance_payload["hold"]) > 8 else ""))
+
+    # 8. 配比建议
     weight_per = 1.0 / cfg.n_entry if cfg.n_entry > 0 else 0.0
     print(f"\n配比建议 (v7 组合内 CB sleeve {target_pct*100:.0f}%, 等权 1/{cfg.n_entry}):")
     print(f"  CB sleeve 内每只: {weight_per*100:.2f}% (= 总资产 {weight_per*target_pct*100:.3f}%)")
     print(f"  示例 100w 总资产: CB sleeve = {100*target_pct:.1f}w, 每只 ≈ {100*target_pct*weight_per*1000:.0f} 元")
 
-    # 7. 写 report/data/quant_cb.json (前端 + portfolio_history 双写)
+    # 9. 写 report/data/quant_cb.json (前端 + portfolio_history 双写)
     # PR8 (2026-06-16): portfolio_history UPSERT 建立 CB sleeve 净值曲线 baseline.
     # advisory_only 期 PM 还没下单, 空持仓 (n=0/cost=0/mv=0) 也写一行保证曲线连续,
     # PR9 月初 rebalance 接通 journal_trades 后改为从 list_open() 反查算汇总.
@@ -223,6 +276,9 @@ def main() -> int:
             "filter_stats": dict(out["filter_stats"]),
             "entries_top": advisory_entries,
             "warn_redeem_near": sorted(redeem_active),
+            # PR9: rebalance signal — current holdings + BUY/SELL/HOLD 三栏
+            "current_holdings": current_holdings,
+            "rebalance": rebalance_payload,
         }
         json_path = _REPORT_DATA / "quant_cb.json"
         json_path.write_text(

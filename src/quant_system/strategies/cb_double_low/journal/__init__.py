@@ -28,6 +28,7 @@ __all__ = [
     "CB_MARKET",
     "build_cb_entry_features",
     "build_cb_trade_open",
+    "list_open_cb_holdings",
 ]
 
 # CB sleeve 在 journal_trades 中的固定 tag
@@ -126,3 +127,16 @@ def build_cb_trade_open(
         notes=notes if notes is not None else (bond_name or ""),
         entry_features=features,
     )
+
+
+def list_open_cb_holdings(journal: Journal) -> list[str]:
+    """从 journal_trades 反查 CB sleeve 当前未平仓的 bond_code 列表.
+
+    PR9 月度 rebalance signal 入口: daily_cb 跑批前调本函数拿到 current_holdings,
+    传入 compute_target_portfolio 算 BUY/SELL/HOLD diff.
+
+    advisory_only 期 PM 未下单 → 返回空 list, compute_target_portfolio 走 cold start.
+    PR9 月初首次 rebalance 后 PM 录 journal_trades → 后续 daily 自动看到真持仓.
+    """
+    rows = journal.list_open(market=CB_MARKET, strategy=CB_STRATEGY)
+    return [r["symbol"] for r in rows]
