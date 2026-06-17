@@ -131,7 +131,119 @@ def color_class(v, positive_good=True):
     return "pos" if good else "neg"
 
 
-def render(q: dict, o: dict, z: dict, report_date: str) -> str:
+def _render_cb_section(cb: dict) -> str:
+    """CB 双低 sleeve HTML section (PR11, 2026-06-17).
+
+    显示: 配比 / 当月持仓 + advisory BUY/SELL/HOLD diff_summary / top 5 entries / 当月 closed trades.
+    advisory_only 期 (PM 未下单): hold/closed 表为空, 显示"暂无持仓 advisory only".
+    """
+    if cb.get("_missing"):
+        return ""
+    cfg = cb.get("config") or {}
+    universe = cb.get("universe") or {}
+    rebalance = cb.get("rebalance") or {}
+    diff = rebalance.get("diff_summary") or {}
+    entries_top = cb.get("entries_top") or []
+    warn_codes = cb.get("warn_redeem_near") or []
+    holdings = cb.get("current_holdings") or []
+
+    # 顶部 status
+    mode = rebalance.get("mode", "—")
+    mode_badge = "badge-pass" if mode == "rebalance" else "badge-idle"
+    target_pct = cfg.get("target_pct")
+    target_pct_txt = f"{target_pct*100:.0f}%" if target_pct is not None else "—"
+
+    # entries_top 表 (top 5)
+    def _entry_row(i: int, e: dict) -> str:
+        code = e.get("bond_code", "")
+        name = e.get("bond_name", "")
+        close = e.get("close")
+        prem = e.get("conversion_premium_rate")
+        score = e.get("dual_low_score")
+        warn = " ⚠强赎临近" if e.get("warn_redeem_near") else ""
+        return (
+            f"<tr><td>{i+1}</td><td>{code}</td><td>{name}</td>"
+            f"<td>{fmt(close)}</td><td>{pct(prem/100 if prem is not None else None)}</td>"
+            f"<td>{fmt(score)}</td><td>{warn}</td></tr>"
+        )
+    entries_rows = "".join(_entry_row(i, e) for i, e in enumerate(entries_top[:5]))
+    if not entries_rows:
+        entries_rows = "<tr><td colspan='7' style='text-align:center;color:var(--muted)'>暂无候选 (panel 数据滞后或全市场无 sub-180 score)</td></tr>"
+
+    # 当月 closed trades (从 journal_trades query)
+    closed_rows = ""
+    try:
+        from quant_system.strategies.cb_double_low.journal import (
+            Journal as _CBJournal,
+            list_closed_cb_trades,
+        )
+        all_closed = list_closed_cb_trades(_CBJournal())
+        # 当月过滤
+        report_date_str = cb.get("date", "")
+        month_prefix = report_date_str[:7] if report_date_str else ""
+        month_closed = [
+            t for t in all_closed
+            if str(t.get("exit_date", "") or "").startswith(month_prefix)
+        ]
+        def _closed_row(t: dict) -> str:
+            features = t.get("exit_features") or {}
+            cb_layer = features.get("cb_exit_type", "—")
+            return (
+                f"<tr><td>{t.get('symbol','')}</td>"
+                f"<td>{(t.get('notes') or '')[:14]}</td>"
+                f"<td>{t.get('entry_date','—')}</td>"
+                f"<td>{t.get('exit_date','—')}</td>"
+                f"<td>{t.get('hold_days','—')}</td>"
+                f"<td class='{color_class(t.get('pnl_pct'))}'>{pct(t.get('pnl_pct'))}</td>"
+                f"<td>{cb_layer}</td>"
+                f"<td>{t.get('exit_reason','—')}</td></tr>"
+            )
+        if month_closed:
+            closed_rows = "".join(_closed_row(t) for t in month_closed[:20])
+    except Exception:
+        pass  # fail-soft: DB 挂时 closed 表空展示, 不阻断报告
+
+    if not closed_rows:
+        closed_rows = "<tr><td colspan='8' style='text-align:center;color:var(--muted)'>本月暂无 closed trades (advisory_only 期 / 实盘未触发出场)</td></tr>"
+
+    return f"""<div class="section">
+  <div class="section-title"><span class="dot dot-blue"></span>cb_double_low <span class="tag">A 股可转债 · 双低 sleeve</span><span class="badge {mode_badge}" style="margin-left:8px">{mode}</span></div>
+  <div class="card">
+    <div class="card-header"><div class="card-title">月度 advisory · 等权 1/{cfg.get('n_entry','—')}</div><div class="card-sub">v7 占比 {target_pct_txt} (从 {cfg.get('source','—')} 抽) · risk-parity 豁免趋势择时</div></div>
+    <div class="metrics-row">
+      <div class="metric"><div class="metric-label">universe active</div><div class="metric-value">{universe.get('active','—')}</div><div class="metric-sub">panel 覆盖 {universe.get('panel_coverage','—')}</div></div>
+      <div class="metric"><div class="metric-label">当前持仓</div><div class="metric-value">{len(holdings)}</div><div class="metric-sub">advisory_only 期 0 = 正常</div></div>
+      <div class="metric"><div class="metric-label">HOLD / SELL / BUY</div><div class="metric-value">{diff.get('n_hold','0')} / {diff.get('n_sell','0')} / {diff.get('n_buy','0')}</div><div class="metric-sub">urgent SELL {diff.get('n_sell_urgent','0')}</div></div>
+      <div class="metric"><div class="metric-label">强赎临近</div><div class="metric-value {'neg' if warn_codes else ''}">{len(warn_codes)}</div><div class="metric-sub">≤30 天 last_trading_date</div></div>
+    </div>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>#</th><th>代码</th><th>名称</th><th>现价</th><th>溢价率</th><th>score</th><th>标记</th></tr></thead>
+      <tbody>{entries_rows}</tbody>
+    </table>
+    </div>
+    <div style="margin-top:8px;color:var(--muted);font-size:12px">
+      支柱 1 (债性条款) ✅ · 支柱 2 (risk-parity 豁免) ✅ · 支柱 3 (close&lt;85/强赎/score&gt;180 三种 exit + 实时告警) ✅ · 支柱 4 (closed retrospective) ⏳ PR12
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><div class="card-title">当月 closed trades</div><div class="card-sub">CB taxonomy: SCORE_EXIT / STOP_LOSS / FORCE_REDEEM / REBALANCE / DELISTED</div></div>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>代码</th><th>名称</th><th>入场日</th><th>出场日</th><th>持有天</th><th>PnL%</th><th>cb_exit_type</th><th>exit_reason</th></tr></thead>
+      <tbody>{closed_rows}</tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+"""
+
+
+def render(
+    q: dict, o: dict, z: dict, report_date: str, cb: dict | None = None,
+) -> str:
     cross_rows = load_cross_market_summary()
     # ── quant helpers ──────────────────────────────────────────────────────
     q_signals = q.get("signals", [])
@@ -457,6 +569,12 @@ def render(q: dict, o: dict, z: dict, report_date: str) -> str:
 </div>
 
 <!-- CROSS MARKET AUDIT -->"""
+
+    # ── CB 双低 sleeve section (PR11, 2026-06-17) ─────────────────────────
+    # 仅当 quant_cb.json 存在且非 advisory_only 空数据时渲染.
+    cb_section_html = _render_cb_section(cb) if cb else ""
+    html += cb_section_html
+
     if cross_rows:
         html += f"""<div class="section">
   <div class="section-title"><span class="dot dot-blue"></span>cross_market <span class="tag">9-cell 跨市场审计</span><span class="chip chip-pass" style="margin-left:8px">已审计</span></div>
@@ -541,8 +659,9 @@ def main():
     q = load_quant_multi()
     o = load("options")
     z = load("zhuang")
+    cb = load("quant_cb")  # PR11: report/data/quant_cb.json (advisory_only 期空数据自动 fall back _missing)
 
-    html = render(q, o, z, args.date)
+    html = render(q, o, z, args.date, cb=cb)
 
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     out = REPORT_DIR / f"strategy_report_{args.date}.html"

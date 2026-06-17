@@ -29,6 +29,8 @@ __all__ = [
     "build_cb_entry_features",
     "build_cb_trade_open",
     "list_open_cb_holdings",
+    "list_closed_cb_trades",
+    "close_cb_trade",
 ]
 
 # CB sleeve 在 journal_trades 中的固定 tag
@@ -140,3 +142,61 @@ def list_open_cb_holdings(journal: Journal) -> list[str]:
     """
     rows = journal.list_open(market=CB_MARKET, strategy=CB_STRATEGY)
     return [r["symbol"] for r in rows]
+
+
+def list_closed_cb_trades(journal: Journal) -> list[dict[str, Any]]:
+    """list CB sleeve 已平仓行 (PR11, 2026-06-17).
+
+    journal.list_closed() 返回全部 closed (含 equity), 这里 filter CB 命名空间.
+    PR11 前端 CB section + PR12 self_learning_pipeline 用本 API.
+    """
+    return [
+        r for r in journal.list_closed()
+        if r.get("market") == CB_MARKET and r.get("strategy") == CB_STRATEGY
+    ]
+
+
+def close_cb_trade(
+    journal: Journal,
+    trade_id: int,
+    exit_date: Any,
+    exit_price: float,
+    exit_reason: str,
+) -> None:
+    """CB 语义 close_trade — 在 equity-flavor close_trade 之上补 CB 特有 exit_features (PR11).
+
+    journal.close_trade() 内部:
+      - 算 pnl / pnl_pct / hold_days (CB 沿用: pnl = (exit - entry) × size, size=张数 → pnl 即元数)
+      - 写 equity-flavor exit_features (exit_type=OTHER for CB reasons, hold_days_bucket, max_dd, max_profit, asof)
+    本 wrapper:
+      - close_trade() 完成后 update_exit_features() 补 CB 字段:
+          cb_exit_type: CB taxonomy (SCORE_EXIT/STOP_LOSS/FORCE_REDEEM/REBALANCE/DELISTED/OTHER)
+          pnl_yuan: 显式标 (与 equity 单位"元"一致, CB 按张 × 净价)
+          exit_price / exit_reason_raw: 冗余存储, 供 self_learning retrospective 直接读
+
+    PR12 winner-vs-loser 分桶按 cb_exit_type 切片, 不读 equity exit_type (后者对 CB 全 OTHER 无信息量).
+    """
+    from quant_system.strategies.cb_double_low.journal.exit_taxonomy import (
+        cb_exit_layer_from_reason,
+    )
+
+    journal.close_trade(
+        trade_id=trade_id,
+        exit_date=str(exit_date) if not isinstance(exit_date, str) else exit_date,
+        exit_price=float(exit_price),
+        exit_reason=str(exit_reason),
+    )
+
+    # 反查刚 close 的 trade 拿 pnl (close_trade 已算好)
+    closed = [t for t in journal.list_closed() if t["id"] == trade_id]
+    if not closed:
+        raise ValueError(f"trade {trade_id} 不存在或未 close")
+    t = closed[0]
+
+    patch = {
+        "cb_exit_type": cb_exit_layer_from_reason(exit_reason),
+        "exit_reason_raw": str(exit_reason),
+        "exit_price": float(exit_price),
+        "pnl_yuan": float(t["pnl"]) if t.get("pnl") is not None else None,
+    }
+    journal.update_exit_features(trade_id, patch)

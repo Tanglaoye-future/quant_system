@@ -174,6 +174,24 @@ class Journal:
             trade.pending_exit_date = None
             trade.pending_exit_reason = None
 
+    def update_exit_features(
+        self, trade_id: int, patch: dict[str, Any],
+    ) -> None:
+        """合并 patch 进 exit_features JSONB (浅合并, 不删除既有 key).
+
+        PR11 (2026-06-17) — CB sleeve close_cb_trade 用本 API 在 close_trade 写完
+        equity-flavor exit_features 后, 补 CB 特有字段 (cb_exit_type / pnl_yuan / ...).
+        equity 调用方一般不需要 (close_trade 已写 equity 字段); 仅在 self_learning
+        backfill 等场景调用.
+        """
+        with self._scope() as s:
+            trade = s.get(JournalTrade, trade_id)
+            if trade is None:
+                raise ValueError(f"trade {trade_id} 不存在")
+            features = dict(trade.exit_features or {})
+            features.update(patch)
+            trade.exit_features = features
+
     def mark_pending_exit(
         self, trade_id: int, pending_date: str, reason: str,
     ) -> None:
