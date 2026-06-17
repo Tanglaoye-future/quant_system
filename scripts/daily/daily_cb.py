@@ -191,7 +191,11 @@ def main() -> int:
     print(f"  CB sleeve 内每只: {weight_per*100:.2f}% (= 总资产 {weight_per*target_pct*100:.3f}%)")
     print(f"  示例 100w 总资产: CB sleeve = {100*target_pct:.1f}w, 每只 ≈ {100*target_pct*weight_per*1000:.0f} 元")
 
-    # 7. 写 report/data/quant_cb.json (前端 + 双写 placeholder)
+    # 7. 写 report/data/quant_cb.json (前端 + portfolio_history 双写)
+    # PR8 (2026-06-16): portfolio_history UPSERT 建立 CB sleeve 净值曲线 baseline.
+    # advisory_only 期 PM 还没下单, 空持仓 (n=0/cost=0/mv=0) 也写一行保证曲线连续,
+    # PR9 月初 rebalance 接通 journal_trades 后改为从 list_open() 反查算汇总.
+    # strategy_runs / signals 不入 (PR7 选择: advisory 不入 DB, 见 resolver.py:510).
     if not args.no_write:
         _REPORT_DATA.mkdir(parents=True, exist_ok=True)
         payload = {
@@ -226,8 +230,25 @@ def main() -> int:
             encoding="utf-8",
         )
         print(f"\n[report] quant_cb.json → {json_path.relative_to(_REPO_ROOT)}")
+
+        # 8. portfolio_history UPSERT — CB sleeve 净值曲线 baseline
+        # advisory_only 期: 空持仓 (PR9 月初 rebalance 后从 journal_trades 反查填实数)
+        from quant_system.db.ingest import maybe_upsert_portfolio_history
+        from quant_system.strategies.cb_double_low.journal import CB_MARKET, CB_STRATEGY
+        ok = maybe_upsert_portfolio_history(
+            asof=panel_max_date,
+            strategy_name=CB_STRATEGY,
+            market=CB_MARKET,
+            n_positions=0,
+            cost_basis=0.0,
+            market_value=0.0,
+            unrealized_pnl=0.0,
+            unrealized_pnl_pct=0.0,
+        )
+        if ok:
+            print(f"[db] portfolio_history UPSERT ({CB_STRATEGY}/{CB_MARKET}, n=0) ok")
     else:
-        print("\n[--no-write] 跳过 report/data 写入")
+        print("\n[--no-write] 跳过 report/data + portfolio_history 写入")
 
     loader.close()
     print(f"\n{'='*70}\n  CB daily 完成 (advisory only — PM 人工参考是否月初 rebalance)\n{'='*70}")

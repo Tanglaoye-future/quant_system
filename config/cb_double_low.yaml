@@ -61,8 +61,9 @@ daily:
 # 见 [[project_north_star]] (2026-06-15 扩展):
 #   支柱 1 (基本面或债性条款): ✅ 转股溢价率 + 纯债溢价率 + 剩余规模 + 评级
 #   支柱 2 (趋势择时): ✅ risk-parity 类豁免 (CB 低波动 + 债底保护)
-#   支柱 3 (实时风控): ⏳ 复用 schema (本 PR 暂未接, advisory only)
-#   支柱 4 (trade retrospective): ⏳ closed_trades 管道 (本 PR 暂未接)
+#   支柱 3 (实时风控): ⏳ PR8 (2026-06-17) 接通 journal_trades + portfolio_history schema,
+#                       PR10 接 intraday_risk_check (close<85 / score>180 / 强赎 ≤30d 告警)
+#   支柱 4 (trade retrospective): ⏳ PR11 closed_trades 沉淀 + PR12 self_learning_pipeline 接通
 #
 # Backstop:
 #   - 实盘 ≥ 90 天 + ≥ 30 笔 closed 前不撬 n_entry / exit_threshold / sizing
