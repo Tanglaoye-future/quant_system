@@ -1,91 +1,153 @@
 # Memory Index
 
-- 🌟 **[项目北极星 — 4 根支柱硬框架](project_north_star.md)** ⭐⭐⭐ — 2026-06-14 确立 / 2026-06-15 扩展（支柱 1 加债性条款 + 支柱 2 risk-parity 豁免）；最高级约束；每次 session 启动 + 每次 yaml/策略/架构改动前必须 cross-check；撞框架外的需求默认拒绝
-- 🎯 **[2026-06-16 Session — CB 双低 PR1-7 全闭环 oneshot](session_2026_06_16_cb_pr1_7_oneshot.md)** ⭐⭐⭐ — single-session 9 commit 14 hr 完成立项→spec→loader→strategy→backtester→双窗口 PASS→v7 组合层 STRONG PASS→yaml+daily 落地; harness-first 真 stub 红→实现绿教科书示例; 3 个 PR4 smoke nuance 立即反哺 PR5+6 设计; 实盘观察期 ≥ 90 天前不撬阈值; 7-01 PM 首次 rebalance; 下个 session cold-start 入口
-- 🎯 **[2026-06-16 CB 双低 PR7 — yaml + daily 落地 (advisory only)](cb_double_low_pr7_yaml_daily_2026-06.md)** ⭐⭐⭐ — Option 1 落 yaml (CB 5% 从 A_mom 抽); config/cb_double_low.yaml + scripts/daily/daily_cb.py + run_daily.sh --no-cb 全部 ✅; v7 实盘配比 HK 50/A_mom 15/QQQ 10/GLD 10/BTC 10/CB 5; advisory only 不接 journal; PR1-7 闭环 8 commit 14 hr; 实盘 ≥ 90 天 + ≥ 30 笔前不撬阈值
-- 🎯 **[2026-06-16 CB 双低 PR6 — v7 组合层叠加 STRONG PASS (4 候选 dominate)](cb_double_low_pr6_v7_overlay_2026-06.md)** ⭐⭐⭐ — Top1 A_mom→CB 15% 4Y Sharpe +2.009 / 6Y +2.086 (Δ+0.131 / +0.281); BTC→CB 5% 极强但撬 v7 backstop; CB 与 A_mr -0.156 (hedge 价值) / BTC GLD QQQ ≈ 0; 推荐 Option 1 起步 CB 5% (A_mom 抽); PR7 准入清单已列, 待用户在 3 个选项选定
-- 🎯 **[2026-06-16 CB 双低 PR5 — 4y/6y 双窗口同向 PASS (Sharpe +0.839 / +1.419)](cb_double_low_pr5_4y6y_2026-06.md)** ⭐⭐⭐ — 首个有数据支撑的"未来 alpha"方向自 v7 + 18 条证伪后; 6y CAGR 25.13% / DD -14.87%; vs v7 6 资产 8y Sharpe 1.455 几乎持平 + DD 更友善; M0 audit PASS; PR6 必做 8y 完整 + sweep + v7 组合层叠加验证
-- 🎯 **[2026-06-15 CB 双低 sleeve 立项 + 数据 probe PASS](cb_data_probe_2026-06.md)** ⭐⭐ — A 股 sleeve v7 饱和后唯一通过 4 支柱 cross-check + 数据 probe + survivorship 验证的新方向；akshare 4 端点完整 + 含退市债 + 容量 < 100M AUM 无障碍；与已死 hsgt/zt_pool/LHB 全不同；spec [[convertible-bond-sleeve]]；5-10% 试水占比，PR1-7 拆分
-- 🎯 **[2026-06-15 V7 Efficient Frontier (zhuang 出 / 加密入)](v7_efficient_frontier_2026-06.md)** ⭐⭐⭐ — Top1 落地 HK50/A_mom20/A_mr0/QQQ10/GLD10/IBIT10；4y Sharpe **+1.842** / 8y **+1.455** / DD -12.5%/-14.8%；5 个 Pareto 双窗口同向 PASS 全 dominate 用户原提议；supersede v5 全系列；后续不调权重除非 grid 重做
-- 🎯 **[2026-06-15 V7 实盘部署计划](deployment_plan_v7_2026-06.md)** ⭐⭐⭐ — 3 账户 (HK 券商 + A 股 + IBKR)；阶段性 W0-W5 持仓上限路径；季度再平衡 ±5pp 触发；HK 账户开通是最大 blocker；reverse fallback v7b (HK 0%) 备用
-- **[zhuang 子策略 2026-06-14 弃用](zhuang_deprecated_2026-06.md)** ⭐ — 违反支柱 1+2，config disable + 代码归档保留；组合 15-25% 权重暂留现金缓冲；现有持仓走完原 exit 自然出场；重启需先扩框架 5 步硬卡
-- **[2026-06-14 HK TP runner sweep 证伪（第 18 条）](tp_runner_sweep_falsified_2026-06.md)** ⭐ — `atr_target × atr_stop` 12 变体双窗口 0 同向 PASS；4y stop=3.0 显著改善（+0.095 Sharpe / DD -7pp）但 8y 同变体 -0.131 反向恶化；time_stop 留 alpha 假设反证（avg pnl 反降）；TP runner 5×ATR target 全样本 0 触发死代码但不能动；windowed-stop-widening paradox 第 7 类
-- **[2026-06-15 北极星支柱 3 日内做 T 执行层 PR1-5 闭环](intraday_t_execution_pr1_5_2026-06.md)** ⭐ — A 股 advisory only + 3 层综合触发 (价格网格+VWAP+量价) + 25 case 测试全绿 + yaml disabled 默认 noop + API/前端组件接入 + 6 条不变量代码层强制；启用步骤: yaml enabled=true + nohup loop; 实盘验证 ≥ 90 天 + ≥ 30 笔 closed 前不撬阈值; auto-execute / HK/US 扩展明文 out-of-scope
-- **[2026-06-14 HK T+0 recalibration — backtester market-aware settlement](hk_t0_recalibration_2026-06.md)** ⭐ — equity_factor Backtester 历史把 A 股 T+1 全市场套用错配；改 MarketContext.settlement_mode + Backtester.settlement_mode 后 HK 4y Sharpe +0.059 / 8y +0.065 双窗口同向 PASS, Ret +5/+9pp, DD 略改善, alpha 一行未动; A1' 饱和结论需在新 baseline 下重审; US 同款修法可继续
-- **[2026-06-14 US T+0 recal 不对称](us_t0_recalibration_asymmetry_2026-06.md)** ⭐ — SP500 4y +0.153 / 8y +0.031 Sharpe 同向改善但 baseline 仍负不解救; NASDAQ100 4y -0.195 / 8y -0.029 反向恶化 (MAG7 集中度 + 高 RSI 趋势股 → T+0 早出场砍掉强势股); 揭示 T+0 不是普适改善 framework
-- **[2026-06-14 v5 grid HK T+0 重校准](v5_grid_hk_t0_recalibration_2026-06.md)** ⭐ — HK_mom T+0 sleeve +0.065/+0.059 Sharpe 重跑 v5 grid 双窗口；Top1 配比与 T+1 完全 identical (HK 35-40 / Am 10-15 / Amr 10-15 / zh 10-15 / QQQ 10 / GLD 15), portfolio Sharpe 8y +0.010 / 4y +0.087 被稀释; v5 efficient frontier 不被 T+0 改写; HK 25→35-40% 仍是 PM 决策
-- **[仓库迁出 Documents 迁移计划](migration_out_of_documents_plan.md)** — ~/Documents/projects/quant_system → ~/quant_system，消除 TCC 阻塞 launchd/cron；8 步计划待迭代完成后执行
-- **[2026-06-10 v5 T+1 重校准 — efficient frontier 失效](v5_t1_recalibration_2026-06.md)** ⭐ — zhuang T+1 入场后 v5 8y Sharpe 2.231→1.801 (Δ-0.43) / 4y 2.751→2.105 (Δ-0.65); grid 真最优 zhuang 砍到 10-15% + HK 顶到 40% (max_weight cap); zhuang sleeve 仍正 Sharpe (0.30/0.20) 不被砍 0 数据支持; PM 5 选项 + 不自动改 yaml; supersede [[v5_efficient_frontier_2026-05]]
-- **[2026-06-12 zhuang 全维度 sweep (B1-B6) → extreme sizing 落地](zhuang_sweep_2026-06-12.md)** ⭐ — 6 类别 16 变体 3y+8y sweep；唯一有效改进: extreme tiered sizing [70,85]→[2%,5%,10%] 8y Sharpe +0.029 Ret +9.3pp；B4 min_dist=0% 8y 灾难级反转；已落 config/zhuang.yaml
-- **[2026-06-10 zhuang gap-up filter + accumulation_score 双证伪](zhuang_gap_score_precheck_falsified_2026-06.md)** — gap-up 5%+ 是唯一正收益 bin (sum +176.7%)，过滤 gap-up 会砍掉全部 alpha；accumulation_score 缺失率 84% + IQR 1.5 点无判别力；phase 全 A 废变量；zhuang alpha 落在 lottery-ticket 尾部 (20% 交易贡献全部正收益)，入场侧 filter 会破坏结构
-- **[2026-06-08/09 case 600584 zhuang -14.32% 三重 gap](case_2026_06_08_600584_distribution.md)** ⭐ — 实盘 zhuang advisory 出场 6-1 已触发 PM 没卖 + DuckDB cache 4 天 stale 显示 -2.40% 假掩盖真实 -14.32% + daily 输出"已跌穿"与"贴近"无视觉差异; 用户授权"拿住做训练样本"不平; M4 (stop_breach 三级告警) + M5 (cache freshness fall through baostock) 修法
-- **[2026-06-08 实盘反馈 → 7 PR + self-learning pipeline 收尾](session_2026_06_08_self_learning_pipeline.md)** ⭐ — 用户报"实盘亏损"诊断: -0.59% 量级正常, 真问题是 Bug A (VARCHAR 32) + Bug B (alembic dormant) + Bug C (DuckDB stale-flock); 用户 RL framing 校准为"程序产出报告不自动改 alpha"; 5 PR pipeline (L1 JSONB schema / L2 A_mom+HK_mom entry / L3 zhuang entry / L4 exit 内部自动 / L5 retrospective 报表 + 17 falsified manifest); 5 条硬性 backstop 永不撞; 313/313 pytest
-- **[Harness-first + PR 拆分 (2026-06-07 起强制)](feedback_harness_first_pr_split.md)** ⭐ — 改动开始前先写 docs/specs/<topic>.md (schema/测试名/验收 step) 才动代码; 每步独立 PR; 禁止流式 commit 长串直推 main; 06-04/05/06 三连 12 commit 是反面教材
-- **[2026-06-07 PR1 portfolio_history 基建](session_2026_06_07_pr1_portfolio_history.md)** — 新方法论第一个 PR; portfolio_history 表 + UPSERT + 7 case 契约测试; 不算 peak DD (PR2 做); 227/227 pytest; merged
-- **[2026-06-07 PR2 max_drawdown peak DD 全链路](session_2026_06_07_pr2_max_drawdown.md)** — peak DD 计算接入 PortfolioRisk + portfolio_drawdown_pct 阈值 + nested portfolio_summary JSON + 前端展示; 236/236 pytest; 并行 agent worktree 隔离失败 lesson 沉淀
-- **[2026-06-07 PR3 options BCS 持仓字段对齐](session_2026_06_07_pr3_options_positions.md)** — options_positions 独立表 + IBKR leg→BCS spread 聚合 + breach_alerts (DTE<7/loss>50%) + 前端 OptionsPositionTable; 16 case; 252/252 pytest; 复用 PR2 agent 备份手术式 cherry-pick
-- **[2026-06-07 PR4 HK_mom+A_mr 副腿持仓回归](session_2026_06_07_pr4_hk_amr_regression.md)** — 8 case 测试锁定 v1 字段集 (safety margin / take_profit / portfolio_alerts) 在副腿生效 + 三腿 JSON shape 一致；纯测试 PR 零 prod patch；260/260 pytest；agent 备份直接采纳
-- **[2026-06-07 PR5 盘中实时 + Telegram (持仓 v2 收官)](session_2026_06_07_pr5_intraday_telegram.md)** — Step 3 全套: alerts_sent dedup 表 + TelegramSender (env 凭证 0 SDK) + intraday/core.py evaluate_alerts 纯函数 + 主脚本 nohup --loop; 21 case + 281/281 pytest; 默认 OFF + yaml 启用步骤完整; 持仓 v2 5 PR 全部落地
-- **[2026-06-06 zhuang 持仓风控字段与 equity_factor 对齐](session_2026_06_06_zhuang_risk_parity.md)** ⭐ — 持仓表加 entry/current/stop/tp + 距止损 ⚠/距止盈 + portfolio_alerts banner (yaml 默认 OFF 零行为差异); verify_dualwrite 同步 pop alerts 防 06-05 回归; 3 commit
-- **[2026-06-05 dashboard one-click daily + 止盈视图](session_2026_06_05_dashboard_oneclick.md)** — POST /api/daily/run 一键跑 + take_profit/dist_to_target 接入持仓表 + MA60 列去前端 + 顺手修 daily API zombie / verify_dualwrite 假阳；5 commit
-- [视觉异常先要截图](feedback_screenshot_first.md) — 用户报告"弹了个东西/漂位/颜色异常"时先 AskUserQuestion 截图，不要瞎猜系统层根因；本次"黑框"misdiagnose 教训
-- **[2026-06-04 实盘风控 v1 收工](session_2026_06_04_realtime_risk_v1.md)** — 用户首次实盘 (4 只 A_mom) "大幅回撤" 焦虑触发的 audit；safety margin (Step 1) + 组合层 alerts (Step 2) 全链路接入；max DD + 盘中实时 Step 3 推迟；4 commit；default thresholds 已据当日实盘数据落 yaml
-- [前端 single-pane 2026-06](frontend_single_pane_2026-06.md) — Phase 3 消弭 HTML 报告孤岛，panic dashboard 全量接入前端；rebuild_html_report → no-op；后续所有新数据必须走 JSON+API+前端组件
-- **[2026-06-01 收工 + 下个 session backlog](session_2026_06_01_handoff.md)** ⭐ — 新 session cold-start 读此文件；15 条证伪累积 + 五层 efficient set 同构 (含 A 股因子 universe 维度); A2 CSI1000 paradox 软证伪 (06-01 续盘); 下个 alpha 通道仅剩 C ensemble precheck / 新数据源 / 真做空 / 实盘 KPI
-- [A2 CSI1000 L9-B paradox 软证伪 2026-06](a2_csi1000_l9b_paradox_falsified_2026-06.md) — HS300 ROIC×ROE Spearman 全 asof 0.92-0.95, AR YoY 是中国累计申报季节性 artifact; 切 universe 不解耦 → 第 15 条证伪 + 五层 efficient set 升级; paradox precheck 脚本可复用
-- [反向情绪 / capitulation 策略系统化 4 重证伪 2026-06](capitulation_strategy_falsified_2026-06.md) — 用户人工 14% 是盘中 execution alpha 不可系统化; zhuang 信号互斥 + akshare 跌停撬开 4y 死 + 反包样本压扁 + LHB 滞后; 第 16 条 + paradox 第 5 类 (execution-vs-strategy 错配); 替代 = dashboard 辅人工
-- [C ensemble mom3m+mom6m 4y PASS / 8y FAIL 双窗口未同向 2026-06](equity_factor_c_ensemble_falsified_2026-06.md) — AMBIGUOUS 预检查→4y +0.082→8y -0.052; DD 8y 改善 5.3pp 真实但用户严守 Sharpe 双窗口; paradox 第 6 类新增 (窗口依赖); L8D2 仍 efficient set; 第 17 条; AMBIGUOUS verdict 升级 ≡ SOFT-FALSIFY
-- [2026-05-31 收工 + 下个 session backlog](session_2026_05_31_handoff.md) — 9→13 证伪累积 base; 已被 06-01 handoff supersede, 历史归档
+按主题分区。每条 single-line hook (~150 char). ⭐ 标 cold-start 必读. 详细叙事进各 memory 文件本体.
 
+## 🌟 北极星 + 当前焦点 (cold-start 必读)
 
-- [实盘入场诊断 + zhuang 建仓闭环 2026-05](project_live_entry_diagnosis_2026-05.md) — "持仓都在亏"四步诊断;entry_score=0 已查清(非bug,纯择时突破);真问题=实盘只上A_mom腿,已补 zhuang 建仓闭环(独立 zhuang_trades ledger)
-- [2026-05-28 Session 记录](session_2026_05_28.md) — 确立"组合层优化 >> 单策略迭代"方法论；落 L9-A + P1 权重 grid(1.86→2.22) + P2 capacity + P1+ 稳健性落 v5 + P3 A_mr/Options 基线
-- [2026-05-27 Session 记录](session_2026_05_27.md) — HK daily 参数 bug 修复 + US fundamentals via yfinance 接入 + SP500 多 universe 基建 (4y FAIL 证伪换 universe 路径) + launchd 调度 TCC 阻塞决策手动跑
-- [2026-05-25 Session 记录](session_2026_05_25_phase1_complete.md) — Phase 1 A/B/C/D 全完成 + 12-cell 回测矩阵 + 前后端动态解耦 + 大厂规范确立
-- [quant_system project overview](project_quant_system.md) — Repo structure, key modules, scripts, and design principles for the Chinese A-share & HK quant trading system
-- [quant_system M0–M终 milestones and audit standards](project_quant_milestones.md) — Mandatory M-node definitions, M0 artifact contracts, universal audit checklist, anti-patterns, and key commands; apply to every code change in this repo
-- [A 股中线策略优化计划](strategy_optimization_plan.md) — 2026-05 周计划：3 级优先级任务、回测对照表、当前进度；每次会话开始必读
-- [HK 策略 2026-05 优化记录](hk_optimization_2026-05.md) — v1→v10 迭代结果、关键洞察（HK 价值因子反 alpha、on-regime hedge 优于熊市对冲）、未完成方向
-- [A 股从 HK 移植实验（E 阶段）](a_share_e_transfer_2026-05.md) — L1/L2 不可移植（市场结构 + 数据现实差异），L3 hedge 可移植 +0.05 Sharpe，+fcf_yield +0.02
-- [双 universe 组合分析 2026-05](multi_universe_2026-05.md) — HK + A 股相关性≈0，50/50 组合 Sharpe 0.85 / DD -7.9%（实施仅需双账户拆分，零引擎改造）
-- [三 universe 组合分析 2026-05](three_universe_2026-05.md) — 加被动 QQQ 替代失败的 us_share 主动策略，45/35/20 配比 Sharpe **1.014** / DD -9.1%（突破对冲基金门槛）
-- [四 universe 组合分析 2026-05](four_universe_2026-05.md) — 加 GLD 黄金，35/30/15/20 配比 Sharpe **1.198** / DD -8.88%（TLT/GBTC 因负 Sharpe 与高 vol 被排除）
-- [多策略叠加 + Vol targeting 2026-05](multistrat_2026-05.md) — A 股 mean-reversion 子策略 + 杠杆分析；5-asset 25/25/15/15/20 Sharpe **1.225** / DD -7.94%；杠杆不改 Sharpe
-- [实盘部署计划 2026-05](deployment_plan_2026-05.md) — 5-asset 多策略配置（HK 25% / A_mom 25% / A_mr 15% / QQQ 15% / GLD 20%）；季度再平衡；风控阈值；KPI 监控
-- [部署检查清单 2026-05](deploy_checklist_2026-05.md) — Step 0-6 操作指南；launchd 自动化调度；首月 KPI；紧急停盘流程
-- [Zhuang 叠加分析 2026-05](zhuang_overlay_2026-05.md) — 外部 zhuang_system 与 5-asset 组合相关性近零/负，10% 配比 Sharpe 1.30 → 1.35、DD -7.94% → -7.01%
-- [Zhuang 策略优化记录 2026-05](zhuang_optimization_2026-05.md) — zhuang 子策略 v1→L5 完整迭代，Sharpe 0.944→1.806；L1-E 入场 + L4 出场收紧 + L5 score 加权 + 6-asset overlay；全部落地 config
-- [Zhuang L1/L2/L3 实验明细 2026-05](zhuang_l1_l2_l3_experiments_2026-05.md) — entry filter / accumulation weight / exit rule 三层实验全记录
-- [Zhuang L4 出场规则实验 2026-05](zhuang_l4_experiments_2026-05.md) — 单变量+组合+6y 全跑完；combo4 (mh10+tp10+atr15+dt60+ms03) 6y Sharpe 1.39→1.63 已落地 config.yaml
-- [DuckDB 数据层迁移 2026-05](duckdb_migration_2026-05.md) — 三策略统一日线存储到 data/quant.duckdb；loader DB-first + CSV fallback；L4-combo4 验证零回归
-- [Zhuang L4-combo4 后 6-asset overlay 2026-05](zhuang_overlay_combo4_2026-05.md) — 新 zhuang 单资产 Sharpe 2.35；25% 权重把组合 Sharpe 1.91→2.21，DD -7.6%→-5.1%；推荐实盘 zhuang 20-25%
-- [Zhuang L5 仓位 sizing 2026-05](zhuang_l5_experiments_2026-05.md) — score 分级仓位 (3%/5%/8%) 6y Sharpe 1.63→1.81，收益 +48%→+76%；已落地 config
-- [Equity_factor L7 实盘修复 2026-05](equity_factor_l7_2026-05.md) — 用户套牢→Pullback 入场全失败→C3 出场优化（regime_exit+partial_exit+collar）4y Sharpe +174%/DD 改善 5pp
-- [前后端分离 + Apple 风格前端改造 2026-05](frontend_backend_refactor_2026-05.md) — FastAPI + React/Vite/Tailwind Apple 风格报告系统；自动开平仓闭环；3 个 daily 脚本自动串联 HTML 报告
-- [策略-市场解耦改造 2026-05](strategy_market_decouple_2026-05.md) — equity_factor 内 strategies/ + markets/ 拆分；--strategy 主索引；MarketContext 抽象；顺手修 daily 漏 merge L7-C3 的回归 bug
-- [Equity_factor L8 因子层优化 2026-05](equity_factor_l8_2026-05.md) — fcf_yield 实测 4y/8y 双窗口负贡献；L8D2 fcf=0 落地，4y Sharpe 0.579→0.675、8y 0.063→0.195；DD 恶化 2.7pp trade-off；loader 加 90 天公告窗口 + 8 个 unit test
-- [本仓 venv 命名约定](feedback_venv_naming.md) — 必须用 venv/ 不能 .venv/；macOS UF_HIDDEN + Python 3.14 site.py 会让 dot-prefixed venv 下所有 .pth 失效，editable install 完全废
-- [用户协作风格](feedback_user_collab_style.md) — "按顺序做完" 自主推进；yaml/实盘改动前 AskUserQuestion；双窗口验证才落 yaml；idle 主动提建议；commit 按逻辑单元打包
-- [Options Phase 1-A 解耦 2026-05](options_decouple_2026-05.md) — options 包按 equity_factor 模板拆 strategies/+markets/；underlying/vol_proxy/exchange/currency 参数化；hk_hsi 占位为 Phase 1-E 双部署铺路
-- [Equity_factor Phase 1-B 多部署 2026-05](equity_factor_multi_deploy_2026-05.md) — 取消"一市多策略"抛错；raw["deployments"][sname][mname] 二维索引；equity_momentum 列 3 市场 (hk/us 默认 disabled) 解锁 cross-market 命令行
-- [Zhuang Phase 1-C market dispatch 2026-05](zhuang_market_dispatch_2026-05.md) — ZhuangDataLoader+Backtester 加 market 参数；config 新增 markets 子字典；hk_small 占位 NotImplementedError 等 Phase 1-D 接入；8 个 sweep scripts 零改动
-- [Zhuang Phase 1-D HK 调研 2026-05](zhuang_hk_research_2026-05.md) — HK provider 接入因数据源全 blocked (akshare 网络 / yfinance 缺换手+市值历史) + 算法对 HK 庄股先验存疑，退回"先调研"；hk_small 架构占位保留
-- [HK daily 参数修复 + US fundamentals 接入 2026-05](us_fundamentals_yfinance_2026-05.md) — run_daily.sh HK 用错参数 bug 修复；yfinance 93/93 ticker fundamentals cache 全落地；US 4y baseline Sharpe -0.22 不变（yaml 权重故意 0），待决策 quality sweep / 换 universe / 维持
-- [SP500 负结果 2026-05](sp500_negative_2026-05.md) — 工程完整 (503 ticker prefetch + loader 多 universe 支持 + 新策略 yaml)，4y Sharpe -0.18 / 胜率 37.5% FAIL；换 universe 不能救美股 momentum，问题在策略本身
-- [Equity_factor L9-A regime-aware partial_exit 2026-05](equity_factor_l9_partial_regime_2026-05.md) — 牛市 (HS300>MA) 跳过 partial 走全平；4y ma200 Sharpe 0.844 vs base 0.659，8y ma200 0.363 vs base 0.277；已落 yaml (commit 64b5274)
-- [组合层 P1 权重 + P2 zhuang capacity 2026-05](portfolio_p1_p2_weights_capacity_2026-05.md) — 6-asset grid search 当前 1.86→最优 2.22 Sharpe (zhuang 40/A_mom 降 20→10)；zhuang capacity ≤30M AUM 下 40% 配比保留 96% Sharpe；P1+ 稳健性 2022 熊市 v4 -0.62→v5 +0.47；已落 v5 deployment_plan
-- [P3 A_mr + Options BCS 基线 2026-05](portfolio_p3_amr_options_baseline_2026-05.md) — A_mr 弱(8y Sharpe~0,纯 hedge 价值)；Options BS 近似 Sharpe 1.2-1.4 高 vol(准-QQQ 替代)；捕获 A_mr DuckDB stale-data + v5 重验证通过
-- [三层解耦 P0-P3+journal — Postgres 统一 2026-05](db_decouple_phase0_2026-05.md) — 单repo强边界；P0基建/P1 repo路由/P2 daily双写+verify/P3软切(后端全读DB)/journal已从SQLite迁入PG(daily_equity 现硬依赖PG)；JSON降级builder输入+冷备；硬切待迁builder
-- [A_mr 重写 + v6 grid 反向洞察 2026-05](a_mr_rebuild_v6_grid_2026-05.md) — SwingReversion(dip+bounce+ATR target) 4y Sharpe -0.27 仍 FAIL；v6 grid 验证砍 A_mr 反而组合 Sharpe -0.10 + 2022 熊市从+0.47翻-0.32 → **A_mr hedge 价值 > solo 价值**，保留 v5
-- [HK AH 溢价 alpha 微研究 2026-05](hk_ah_premium_research_2026-05.md) — 5 只 H+A 双股 8y 测试，z60≥1 lift 均值 +0.32pp 但 std 大（1强1负3弱）→ 按 zhuang_hk_research 模板"先调研不实现"，避免投 1-2 天工程换 +0.05 弱 Sharpe
-- [v6 regime overlay 证伪 2026-05](v6_regime_overlay_2026-05.md) — HS300+HSCHK100 双 MA200 动态权重，全窗口 Sharpe 2.142 < v5 静态 2.231；4 段微优 + 2025-26 反弹 -0.40（rebalance lag）→ **v5 已是 efficient frontier**，未来 alpha 在 strategy 层而非组合层
-- [A_mr v2 证伪 + 4 条路径全死 2026-05](a_mr_v2_falsified_2026-05.md) — v2 (MA200 buffer+slope+grace) 4y Sharpe -0.26 与 v1 持平；sweep 5 case 全 plateau -0.27~-0.34 → 连同 v6 grid/regime 共 4 条 A_mr 优化路径全证伪。**A_mr 是 noise diversification 不是 alpha**，未来不再投 strategy 层；alpha 在新资产/fundamentals/HK 做空
-- [v5 = efficient frontier + 实盘 KPI checklist 2026-05](v5_efficient_frontier_2026-05.md) — +IBIT/+TLT/+CSI1000 三新资产 5/10% 测试全负贡献 (-0.10~-0.87 Sharpe)；**5 条组合层路径全证伪 → v5 是真 efficient frontier**；转入 3 月实盘窗口，月度 KPI + 3 月节点判定 + 季度再平衡 plan 已落
-- [zhuang L6-A accumulation_weights → equal 2026-05](zhuang_l6a_weights_2026-05.md) — 5 维信号权重 6 hypothesis sweep + 6y verify；**equal (0.20×5) 双窗口同向赢 baseline** (3y +0.065 / 6y +0.041 Sharpe)；组合层 v5 +0.018 噪音级 (sleeve vol 3.5% 被稀释)；已落 yaml；放大率经验值 sleeve→组合 ≈ 0.45×
-- [zhuang L7-A position_max_count 证伪 2026-05](zhuang_l7a_falsified_2026-05.md) — 3y 三 case (6/8/10) 同分 Sharpe 1.505；mean concurrent 0.5 / 打满 cap 0.5% 天数 → cap 永不 binding；反向洞察: 真正瓶颈在入场严格度而非仓位上限
-- [zhuang L7-B score 阈值反向证伪 2026-05](zhuang_l7b_falsified_2026-05.md) — score 70→67→65 单调下 (1.505→0.925→0.843)；win rate 51.7%→36.8%；与 L7-A 联合得 **L1-E 是 sleeve sweet spot**，未来 zhuang alpha 必须靠外部信号
-- [zhuang L8 fundamentals gate 软证伪 2026-05](zhuang_l8_fundamentals_falsified_2026-05.md) — winner/loser ROE>0 占比 73% vs 79% 几乎反向；联合 gate 误杀比 47% ≈ 随机；庄股 alpha 与 fundamentals 结构性正交；跳完整 sweep 省 1-2 hr
-- [v5 实盘月度 KPI 报告脚手架 2026-05](monthly_kpi_scaffold_2026-05.md) — `scripts/reporting/monthly_kpi_report.py` + 10 单测 + dry-run；为 2026-06-30 第一次 checkpoint 准备；Phase 2 (60d 滚动 ρ) 待实盘 ≥60 天后补
-- [equity_factor L9-B ROIC/AR YoY 证伪 2026-05](equity_factor_l9b_falsified_2026-05.md) — ROIC -0.096 (与 ROE 重复) + AR YoY -0.031 (行业属性非 alpha) + 联合 -0.019; **L8D2 是 HS300 因子层 efficient set**; 与 zhuang L1-E 同构
-- [A1 北向死 + A1' 南向预检查 2026-06](a1_northbound_dead_southbound_alive_2026-06.md) — A1 北向 2024-08 起官方停更日级披露 (akshare 全接口测试无替代) 永久封死; pivot 到 A1' HK 南向 overlay, 预检查 PROCEED
-- [A1' HK 南向 gate 证伪 2026-06](a1prime_southbound_gate_falsified_2026-06.md) — 4y Sharpe 1.080→1.022 (-0.058), 预检查 mean+37% 是 base rate spurious; widen+gate 互斥; **HK sleeve 当前架构已饱和** → 四层 efficient set 同构升级
+- [项目北极星 — 4 支柱硬框架](project_north_star.md) ⭐⭐⭐ — 2026-06-14 确立 / 06-15 扩展; 每次 yaml/策略/架构改动前必 cross-check; 撞框架外默认拒绝
+- [2026-07-01 CB 首次实盘 rebalance PM 操作手册](cb_double_low_2026_07_01_pm_operations.md) ⭐⭐⭐ — 6 phase 流程 + 5 异常 fallback + 9 月决策点; 7/1-9/30 唯一 reference
+- [Project overview](project_quant_system.md) — repo 结构 + 模块 + 设计原则
+- [M0-M终 milestones + audit](project_quant_milestones.md) — M-node 定义 + 产物契约 + 通用 checklist
+- [策略优化计划 (active)](strategy_optimization_plan.md) — 2026-05 起 3 级优先级任务清单 + 当前进度
+
+## 📊 CB 双低 sleeve (PR1-12 + ETF 支线)
+
+### CB 工程闭环 (PR1-12)
+- [CB 立项 + 数据 probe PASS 2026-06](cb_data_probe_2026-06.md) ⭐⭐ — A 股 v7 饱和后唯一通过 4 支柱 + akshare 4 端点 + 容量 < 100M
+- [CB PR1-7 全闭环 oneshot session](session_2026_06_16_cb_pr1_7_oneshot.md) ⭐⭐⭐ — 单 session 9 commit 14hr 立项→spec→loader→strategy→backtester→双窗口 PASS→v7 STRONG PASS→yaml+daily 落地
+- [CB PR5 — 4y/6y 双窗口同向 PASS](cb_double_low_pr5_4y6y_2026-06.md) ⭐⭐⭐ — Sharpe +0.839/+1.419, CAGR 25.13%, DD -14.87%, 首个有数据支撑新方向自 v7 + 18 证伪后
+- [CB PR6 — v7 组合层叠加 STRONG PASS](cb_double_low_pr6_v7_overlay_2026-06.md) ⭐⭐⭐ — 6 候选 4 dominate; Top1 A_mom→CB 15% Δ+0.13/+0.28; CB 与 A_mr -0.156 hedge
+- [CB PR7 — yaml + daily advisory](cb_double_low_pr7_yaml_daily_2026-06.md) ⭐⭐⭐ — Option 1 CB 5%(A_mom 抽); v7 实盘配比 HK50/A_mom15/QQQ10/GLD10/BTC10/CB5; advisory only 不接 journal
+- [CB PR8 — journal + portfolio_history schema](cb_double_low_pr8_journal_portfolio_2026-06.md) — 复用 journal_trades 共享表(strategy='cb_double_low' + market='cb_a' + entry_features JSONB); 反例: 中途自作主张 ingest_cb 撞 PR7 advisory 不入 DB 决策回滚
+- [CB PR9 — daily rebalance signal](cb_double_low_pr9_rebalance_signal_2026-06.md) — 反查 Journal 输出 BUY/SELL/HOLD 三栏 + rebalance/maintenance mode (day<=5 启发式) + urgent/deferred 对称
+- [CB PR10 — 实时风控接 intraday](cb_double_low_pr10_intraday_risk_2026-06.md) — close<85 + 强赎临近 ≤30d 推 Telegram; 复用 AlertEvent 通道; 不做 dual_low_score 实时 (PR9 daily 已覆盖); 不做 T+0 (risk-parity 豁免)
+- [CB PR11 — closed_trades + cb_exit_taxonomy + HTML section](cb_double_low_pr11_closed_trades_html_2026-06.md) — 6 CB layer (SCORE_EXIT/STOP_LOSS/FORCE_REDEEM/REBALANCE/DELISTED/OTHER) + close_cb_trade wrapper + Journal.update_exit_features 浅合并
+- [CB PR12 — self_learning_pipeline 加 CB sleeve](cb_double_low_pr12_self_learning_2026-06.md) — 修 A_mom 桶吞 CB bug + §5 exit_type sleeve-aware; 5 条 Backstop 严守; 9 月 ≥30 笔触发首次有意义报表
+- [akshare CB panel 单 ticker 网络异常 per-code retry](akshare_cb_panel_timeout_2026-06.md) — load_panel 网络异常 per-code 兜底, 单 ticker 挂不再拖死 panel
+
+### 支线 probe
+- [行业 ETF 轮动 probe 2026-06](etf_industry_rotation_probe_2026-06.md) — 整体 avg |corr_HS300|=0.629 ≥ 0.6 硬否决; 9 只周期+中游科技 corr<0.6 待 9 月 CB retrospective 后重审; 主题/整体 28 行业/跨资产 三路径明确归档
+
+## 💰 V5 / V6 / V7 组合层
+
+- [V7 efficient frontier 2026-06](v7_efficient_frontier_2026-06.md) ⭐⭐⭐ — Top1 HK50/A_mom20/A_mr0/QQQ10/GLD10/IBIT10; 4Y Sharpe +1.842 / 8Y +1.455 / DD -12.5%; supersede v5
+- [V7 实盘部署计划 2026-06](deployment_plan_v7_2026-06.md) ⭐⭐⭐ — 3 账户 + W0-W5 持仓上限路径 + 季度再平衡 ±5pp; HK 账户是 blocker; v7b (HK 0%) reverse fallback
+- [V5 efficient frontier 2026-05](v5_efficient_frontier_2026-05.md) — +IBIT/+TLT/+CSI1000 全负贡献; 5 组合层路径全证伪 → v5 是真 efficient frontier; 已 supersede by v7
+- [V5 T+1 重校准 2026-06](v5_t1_recalibration_2026-06.md) — zhuang T+1 后 v5 8y 2.231→1.801; grid 真最优砍 zhuang 到 10-15%; 5 选项 PM 决策; supersede v5_efficient_frontier
+- [V5 grid HK T+0 重校准 2026-06](v5_grid_hk_t0_recalibration_2026-06.md) — HK T+0 重跑 v5 grid 双窗口 Top1 与 T+1 identical; v5 frontier 不被 T+0 改写
+- [V6 regime overlay 证伪 2026-05](v6_regime_overlay_2026-05.md) — 双 MA200 动态权重全窗口 2.142 < v5 静态 2.231; 4 段微优但 2025-26 反弹 -0.40 rebalance lag; v5 = efficient frontier
+- [P1 权重 + P2 zhuang capacity 2026-05](portfolio_p1_p2_weights_capacity_2026-05.md) — 6-asset grid 1.86→2.22 最优 (zhuang 40 / A_mom 降); P1+ 稳健性 2022 v4→v5 转正
+- [P3 A_mr + Options BCS baseline 2026-05](portfolio_p3_amr_options_baseline_2026-05.md) — A_mr 弱 (纯 hedge 价值); Options BS 近似 Sharpe 1.2-1.4 准-QQQ 替代; A_mr DuckDB stale-data bug 捕获
+- [Multi universe (HK+A) 2026-05](multi_universe_2026-05.md) — HK+A 相关性≈0, 50/50 Sharpe 0.85 / DD -7.9%
+- [Three universe (+QQQ) 2026-05](three_universe_2026-05.md) — 45/35/20 Sharpe 1.014 / DD -9.1%, 突破对冲基金门槛
+- [Four universe (+GLD) 2026-05](four_universe_2026-05.md) — 35/30/15/20 Sharpe 1.198 / DD -8.88%; TLT/GBTC 排除
+- [Multistrat + Vol targeting 2026-05](multistrat_2026-05.md) — +A_mr 5-asset 25/25/15/15/20 Sharpe 1.225; 杠杆不改 Sharpe
+- [实盘部署计划 2026-05](deployment_plan_2026-05.md) — 5-asset 配置 / 季度再平衡 / KPI; 已 supersede by v7
+- [部署 checklist 2026-05](deploy_checklist_2026-05.md) — Step 0-6 + launchd + 首月 KPI + 紧急停盘流程
+
+## 🇨🇳 Equity factor (HK / A 股 / US)
+
+### 主腿迭代
+- [Equity_factor L7 实盘修复 2026-05](equity_factor_l7_2026-05.md) — Pullback 入场全失败 → C3 出场优化 (regime+partial+collar) 4Y Sharpe +174% / DD 改善 5pp
+- [Equity_factor L8 fcf_yield 因子层 2026-05](equity_factor_l8_2026-05.md) — fcf_yield 双窗口负贡献; L8D2 fcf=0 落 yaml 4Y +0.10/8Y +0.13; DD 恶化 2.7pp trade-off
+- [Equity_factor L9-A regime partial_exit 2026-05](equity_factor_l9_partial_regime_2026-05.md) — 牛市跳 partial 全平; 4Y ma200 0.844 / 8Y 0.363; 已落 yaml
+- [Equity_factor multi-deploy 2026-05](equity_factor_multi_deploy_2026-05.md) — equity_momentum 列 3 市场 (hk/us 默认 disabled); cross-market 命令行解锁
+
+### HK
+- [HK 策略 v1-v10 优化 2026-05](hk_optimization_2026-05.md) — HK 价值因子反 alpha + on-regime hedge 优于熊市对冲
+- [HK AH premium alpha 微研究 2026-05](hk_ah_premium_research_2026-05.md) — 5 只 H+A 8Y, z60≥1 lift +0.32pp 但 std 大; 按 zhuang_hk 模板"先调研不实现"
+- [HK T+0 recalibration 2026-06](hk_t0_recalibration_2026-06.md) — Backtester market-aware settlement; HK 4Y Sharpe +0.059 / 8Y +0.065 双窗口同向 PASS; A1' 需在新 baseline 重审
+- [HK TP runner sweep 证伪 2026-06](tp_runner_sweep_falsified_2026-06.md) — 12 变体 0 同向 PASS; 4Y stop=3.0 改善但 8Y 反向; TP 5×ATR 死代码不能动; 第 18 条证伪
+
+### A 股 - mean reversion
+- [A_mr rebuild + v6 grid 反向洞察 2026-05](a_mr_rebuild_v6_grid_2026-05.md) — A_mr hedge 价值 > solo, 砍 A_mr 反而组合恶化; 保留 v5
+- [A_mr v2 证伪 (4 路径全死)](a_mr_v2_falsified_2026-05.md) — v1/v2/v6/regime 全 plateau -0.27~-0.34; A_mr = noise diversification 不是 alpha; 未来不再投 strategy 层
+
+### A 股 - 跨市场
+- [A_share 从 HK 移植 (E)](a_share_e_transfer_2026-05.md) — L1/L2 不可移植; L3 hedge 可移植 +0.05 Sharpe; +fcf_yield +0.02
+- [A1 北向死 + A1' 南向 pivot 2026-06](a1_northbound_dead_southbound_alive_2026-06.md) — 北向 akshare 2024-08 起停更永久封死; pivot 到南向 overlay
+- [A1' 南向 gate 证伪 2026-06](a1prime_southbound_gate_falsified_2026-06.md) — 4Y -0.058 + base rate spurious; HK sleeve 当前架构饱和 → 四层 efficient set 同构升级
+- [A2 CSI1000 L9-B paradox 证伪 2026-06](a2_csi1000_l9b_paradox_falsified_2026-06.md) — ROIC×ROE Spearman 0.92-0.95 + AR YoY 季节性 artifact; 第 15 条证伪 + 五层 efficient set
+- [Equity C ensemble 4Y PASS / 8Y FAIL](equity_factor_c_ensemble_falsified_2026-06.md) — 4Y +0.082 → 8Y -0.052; paradox 第 6 类 (窗口依赖); 第 17 条; AMBIGUOUS ≡ SOFT-FALSIFY
+- [Equity_factor L9-B ROIC/AR 证伪 2026-05](equity_factor_l9b_falsified_2026-05.md) — ROIC -0.096 (与 ROE 重复) + AR YoY -0.031 (行业属性); L8D2 = HS300 efficient set; 与 zhuang L1-E 同构
+
+### US
+- [SP500 负结果 2026-05](sp500_negative_2026-05.md) — 503 ticker 工程完整, 4Y Sharpe -0.18 FAIL; 换 universe 不救美股 momentum
+- [US fundamentals via yfinance 2026-05](us_fundamentals_yfinance_2026-05.md) — yfinance 93/93 cache; US 4Y baseline -0.22 不变, 待 quality sweep / 换 universe / 维持
+- [US T+0 recal 不对称 2026-06](us_t0_recalibration_asymmetry_2026-06.md) — SP500 4Y +0.153/8Y +0.031 同向; NASDAQ100 4Y -0.195/8Y -0.029 反向 (MAG7 集中度 + 高 RSI 早出场)
+
+## ⚙️ 实时风控 + 日内 T
+
+- [盘中实时风控 v1 (持仓 v2 PR5 收官) 2026-06-07](session_2026_06_07_pr5_intraday_telegram.md) — alerts_sent dedup + TelegramSender + intraday/core.py evaluate_alerts + nohup --loop; 21 case + 281/281 pytest
+- [日内做 T 执行层 PR1-5 闭环 2026-06](intraday_t_execution_pr1_5_2026-06.md) — A 股 advisory only + 3 层综合触发 + 25 case + 6 不变量代码层强制; ≥90 天/30 笔不撬; auto-execute/HK/US 扩展 out-of-scope
+- [盘中实时风控 v0 audit 2026-06-04](session_2026_06_04_realtime_risk_v1.md) — 用户首次实盘 4 只 A_mom "回撤"焦虑; safety margin + 组合层 alerts; max DD + Step 3 推迟
+- [Self-learning pipeline + 实盘亏损诊断 2026-06-08](session_2026_06_08_self_learning_pipeline.md) ⭐ — 真问题=Bug A (VARCHAR32) + Bug B (alembic dormant) + Bug C (DuckDB stale-flock); 5 PR pipeline; 5 条 Backstop; 313/313 pytest
+
+## 🔧 基建 / 架构
+
+- [三层解耦 P0-P3 + journal Postgres 2026-05](db_decouple_phase0_2026-05.md) — 单 repo 强边界; journal SQLite 迁 PG; daily_equity 现硬依赖 PG; builder JSON 降级冷备
+- [DuckDB 数据层迁移 2026-05](duckdb_migration_2026-05.md) — 三策略统一 data/quant.duckdb; loader DB-first + CSV fallback
+- [前后端分离 Apple 风格改造 2026-05](frontend_backend_refactor_2026-05.md) — FastAPI + React/Vite/Tailwind; 自动开平仓; 3 daily 串联
+- [前端 single-pane 2026-06](frontend_single_pane_2026-06.md) — Phase 3 消弭 HTML 孤岛; rebuild_html_report→noop; 新数据走 JSON+API+前端组件
+- [策略-市场解耦 2026-05](strategy_market_decouple_2026-05.md) — equity_factor 内 strategies/+markets/ 拆分; MarketContext 抽象
+- [Options 解耦 Phase 1-A 2026-05](options_decouple_2026-05.md) — options 包按 equity_factor 模板拆; underlying/vol_proxy 参数化; hk_hsi 占位
+- [Monthly KPI 报表脚手架 2026-05](monthly_kpi_scaffold_2026-05.md) — scripts/reporting/monthly_kpi_report.py + 10 单测; 2026-06-30 首次 checkpoint
+- [仓库迁出 Documents 计划](migration_out_of_documents_plan.md) — ~/Documents/projects/quant_system → ~/quant_system 消除 TCC 阻塞 launchd; 8 步
+
+## 🚫 庄股 (Zhuang) — 2026-06-14 弃用
+
+- [Zhuang 弃用决策 2026-06-14](zhuang_deprecated_2026-06.md) ⭐ canonical — 违反支柱 1+2; config disable + 代码归档; 15-25% 权重暂留现金; 重启需先扩框架 5 步
+- [Zhuang 优化 v1→L5 2026-05](zhuang_optimization_2026-05.md) — Sharpe 0.944→1.806; L1-E 入场 + L4 出场收紧 + L5 score 加权
+- [Zhuang L1/L2/L3 实验 2026-05](zhuang_l1_l2_l3_experiments_2026-05.md) — entry filter / accumulation weight / exit rule 三层全记录
+- [Zhuang L4 出场 combo4 2026-05](zhuang_l4_experiments_2026-05.md) — 6Y Sharpe 1.39→1.63 落 yaml
+- [Zhuang L5 score 分级 sizing 2026-05](zhuang_l5_experiments_2026-05.md) — 3%/5%/8% 6Y Sharpe 1.63→1.81 收益 +48→+76%
+- [Zhuang L6-A weights→equal 2026-05](zhuang_l6a_weights_2026-05.md) — equal (0.20×5) 双窗口同向赢 baseline; sleeve→组合放大率 ≈0.45×
+- [Zhuang L7-A position_max_count 证伪](zhuang_l7a_falsified_2026-05.md) — 6/8/10 同分 Sharpe 1.505; cap 永不 binding; 真瓶颈在入场严格度
+- [Zhuang L7-B score 阈值反向证伪](zhuang_l7b_falsified_2026-05.md) — 70→67→65 单调下 1.505→0.925→0.843; L1-E sweet spot 确认
+- [Zhuang L8 fundamentals gate 证伪](zhuang_l8_fundamentals_falsified_2026-05.md) — winner/loser ROE>0 73% vs 79% 反向; 误杀 47% ≈ 随机; 跳完整 sweep
+- [Zhuang gap-up + score precheck 双证伪 2026-06](zhuang_gap_score_precheck_falsified_2026-06.md) — gap-up 5%+ 是唯一正收益 bin; score 缺失 84%; alpha 在 lottery-ticket 尾部
+- [Zhuang overlay 5-asset 2026-05](zhuang_overlay_2026-05.md) — 与 5-asset 相关性≈0; 10% Sharpe 1.30→1.35 / DD -7.94→-7.01
+- [Zhuang L4-combo4 后 6-asset overlay](zhuang_overlay_combo4_2026-05.md) — 单资产 Sharpe 2.35; 25% 把组合 1.91→2.21 / DD -7.6→-5.1
+- [Zhuang sweep 2026-06-12 (B1-B6)](zhuang_sweep_2026-06-12.md) — 6 类 16 变体 3Y+8Y; extreme tiered sizing [70,85]→[2,5,10]% 8Y Sharpe +0.029 落 yaml
+- [Zhuang market dispatch (HK 占位) 2026-05](zhuang_market_dispatch_2026-05.md) — ZhuangDataLoader 加 market 参数; hk_small 占位 NotImplementedError
+- [Zhuang HK 调研 2026-05](zhuang_hk_research_2026-05.md) — HK provider 数据源全 blocked + 庄股先验存疑; 退回先调研
+- [Case 600584 -14.32% 三重 gap 2026-06](case_2026_06_08_600584_distribution.md) — 实盘 6-1 advisory PM 没卖 + DuckDB 4 天 stale + "已跌穿"无视觉差; 拿住做训练样本; M4+M5 修法
+
+## 📅 Sessions (chronological, 倒序)
+
+### 2026-06 (CB + closure)
+- [2026-06-16 CB PR1-7 oneshot](session_2026_06_16_cb_pr1_7_oneshot.md) ⭐⭐⭐ — 见上 CB 区
+- [2026-06-09 实时数据 intraday 5min](session_2026_06_09_realtime_data_intraday_5min.md) — 5min poll 升级 + akshare 限频处理
+- [2026-06-09 PR3 zhuang distribution dashboard poll](session_2026_06_09_pr3_zhuang_distribution_dashboard_poll.md) — distribution alerts 接前端
+- [2026-06-09 PR2 watchlist breakout](session_2026_06_09_pr2_watchlist_breakout.md) — daily_screen_breakout + watchlist asof 滚动
+- [2026-06-08 self-learning pipeline](session_2026_06_08_self_learning_pipeline.md) ⭐ — 见上风控区
+- [2026-06-07 PR5 盘中实时 Telegram](session_2026_06_07_pr5_intraday_telegram.md) ⭐ — 见上风控区
+- [2026-06-07 PR4 HK+A_mr 副腿回归](session_2026_06_07_pr4_hk_amr_regression.md) — 8 case 锁字段集 v1 在副腿生效; 纯测试 PR; 260/260
+- [2026-06-07 PR3 options BCS 持仓字段](session_2026_06_07_pr3_options_positions.md) — options_positions 表 + breach_alerts (DTE<7/loss>50%) + 前端表
+- [2026-06-07 PR2 max_drawdown peak DD](session_2026_06_07_pr2_max_drawdown.md) — peak DD 接 PortfolioRisk + drawdown_pct 阈值 + 前端展示; 236/236
+- [2026-06-07 PR1 portfolio_history 基建](session_2026_06_07_pr1_portfolio_history.md) — portfolio_history 表 + UPSERT + 7 case; 227/227
+- [2026-06-06 zhuang 风控对齐 equity](session_2026_06_06_zhuang_risk_parity.md) — 持仓表加 entry/current/stop/tp; banner; verify_dualwrite sync pop
+- [2026-06-05 dashboard one-click + 止盈视图](session_2026_06_05_dashboard_oneclick.md) — POST /api/daily/run 一键 + take_profit 接持仓表 + MA60 移除前端
+- [2026-06-04 实盘风控 v1 audit](session_2026_06_04_realtime_risk_v1.md) — 见上风控区
+- [2026-06-01 收工 + backlog handoff](session_2026_06_01_handoff.md) ⭐ — 15 证伪 + 五层 efficient set; 下个 alpha 通道仅剩 C ensemble / 新数据源 / 真做空 / 实盘 KPI
+
+### 2026-05 (frontier 探索)
+- [2026-05-31 收工 + backlog](session_2026_05_31_handoff.md) — 已被 06-01 supersede 历史归档
+- [2026-05-28 组合层 >> 单策略迭代方法论](session_2026_05_28.md) — L9-A + P1 grid 1.86→2.22 + P2 capacity + P3 baseline
+- [2026-05-27 HK bug + US yfinance + launchd TCC](session_2026_05_27.md) — HK daily 参数 bug + yfinance 接入 + SP500 universe + launchd TCC 阻塞
+- [2026-05-25 Phase 1 完成](session_2026_05_25_phase1_complete.md) — A/B/C/D + 12-cell 矩阵 + 前后端解耦
+
+## ❌ 反例 / 证伪 (历史 reference, 不再尝试)
+
+(也分散在上述各区, 此处汇总便于 cross-check 17 条 falsified manifest)
+
+- [反向情绪/capitulation 4 重证伪 2026-06](capitulation_strategy_falsified_2026-06.md) — 用户 14% 是盘中 execution alpha 不可系统化; 第 16 条 + paradox 第 5 类
+- A_mr v2 4 路径 / 17 条证伪 manifest 全列见 [scripts/research/learn_from_trades.py](#) FALSIFIED_PATTERNS
+
+## 📝 Project meta / 实盘 case / 协作风格
+
+- [实盘入场诊断 + zhuang 闭环 2026-05](project_live_entry_diagnosis_2026-05.md) — "持仓都在亏"四步; entry_score=0 已查清 (非 bug); 真问题=只上 A_mom 腿, 已补 zhuang 闭环
+- [Feedback — Harness-first + PR 拆分](feedback_harness_first_pr_split.md) ⭐ — 改动前先 spec / 独立 PR / 禁止流式 commit
+- [Feedback — 用户协作风格](feedback_user_collab_style.md) — yaml/实盘改动前 AskUserQuestion; 双窗口验证; idle 提建议; commit 按逻辑单元
+- [Feedback — 视觉异常先截图](feedback_screenshot_first.md) — "弹了个东西/漂位/颜色异常"先 AskUserQuestion 截图不瞎猜
+- [Feedback — venv 命名 (必须 venv/)](feedback_venv_naming.md) — .venv/ 撞 macOS UF_HIDDEN + Python 3.14 site.py 让 .pth 全失效
