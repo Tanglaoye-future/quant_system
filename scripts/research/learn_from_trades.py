@@ -245,6 +245,9 @@ SLEEVE_BENCHMARK: dict[str, Optional[tuple[str, str]]] = {
     "HK_mom": None,         # HSCHK100 / HSI 选哪个留 L5.0.2 决策
     "zhuang": ("sh.000905", "CSI500"),
     "mean_reversion": ("sh.000300", "HS300"),  # M1 启用后归在 A_mom 桶里, 这里留备用
+    # PR12 (2026-06-17): CB sleeve. 集思录 EW 双低指数无 baostock 接口, 留 L5.1.
+    # alpha α 报表暂走 "未接入" 路径, 不阻断 pnl/winner-vs-loser/cb_exit_type 分析.
+    "cb_double_low": None,
 }
 
 
@@ -310,19 +313,51 @@ def _alpha_for_trade(trade: dict, bench_close: Optional[dict[str, float]]) -> tu
 
 # ── 数据拉取 ──────────────────────────────────────────────────────────────────
 
-def fetch_closed_trades(since: date) -> dict[str, list[dict]]:
-    """返 {sleeve: [trade_row, ...]} for sleeves: A_mom / HK_mom / zhuang.
+def _trade_row_to_dict(t) -> dict:
+    """JournalTrade ORM → 报表 dict (与 ZhuangTrade 同款 schema)."""
+    return {
+        "symbol": t.symbol, "market": t.market, "strategy": t.strategy,
+        "entry_date": str(t.entry_date), "exit_date": str(t.exit_date),
+        "entry_price": t.entry_price, "exit_price": t.exit_price,
+        "pnl_pct": t.pnl_pct, "hold_days": t.hold_days,
+        "exit_reason": t.exit_reason,
+        "entry_features": t.entry_features,
+        "exit_features": t.exit_features,
+    }
 
-    A_mom = journal_trades.strategy='equity_momentum' & market='a_share'
-    HK_mom = journal_trades.strategy='equity_hk_momentum' & market='hk_share'
-    zhuang = zhuang_trades (无 strategy 字段, 全归 zhuang)
+
+def _classify_journal_sleeve(t) -> str:
+    """journal_trades 行归桶 — PR12 (2026-06-17) 改: 用 (market, strategy) 联合判定.
+
+    历史 (PR8 前) 只看 market=hk_share → A_mom else HK_mom. 但 PR8 CB sleeve
+    market='cb_a' 也会进 else 分支 → CB 错归 A_mom. 修法: market='cb_a' &
+    strategy='cb_double_low' 显式归 cb_double_low; 其余按 hk_share / a_share 分.
+    """
+    market = t.market
+    strategy = t.strategy or ""
+    if market == "cb_a" and strategy == "cb_double_low":
+        return "cb_double_low"
+    if market == "hk_share":
+        return "HK_mom"
+    return "A_mom"
+
+
+def fetch_closed_trades(since: date) -> dict[str, list[dict]]:
+    """返 {sleeve: [trade_row, ...]} for sleeves: A_mom / HK_mom / cb_double_low / zhuang.
+
+    A_mom = journal_trades.market='a_share' (& strategy != cb_double_low)
+    HK_mom = journal_trades.market='hk_share'
+    cb_double_low = journal_trades.market='cb_a' & strategy='cb_double_low' (PR8/PR11)
+    zhuang = zhuang_trades (独立表 — 历史 PR8 前的 ledger)
     """
     from sqlalchemy import select
     from quant_system.db import JournalTrade
     from quant_system.db.models import ZhuangTrade
     from quant_system.db.session import get_sessionmaker
 
-    out: dict[str, list[dict]] = {"A_mom": [], "HK_mom": [], "zhuang": []}
+    out: dict[str, list[dict]] = {
+        "A_mom": [], "HK_mom": [], "cb_double_low": [], "zhuang": [],
+    }
     Sm = get_sessionmaker()
     with Sm() as s:
         rows = s.scalars(
@@ -332,19 +367,8 @@ def fetch_closed_trades(since: date) -> dict[str, list[dict]]:
             )
         ).all()
         for t in rows:
-            d = {
-                "symbol": t.symbol, "market": t.market, "strategy": t.strategy,
-                "entry_date": str(t.entry_date), "exit_date": str(t.exit_date),
-                "entry_price": t.entry_price, "exit_price": t.exit_price,
-                "pnl_pct": t.pnl_pct, "hold_days": t.hold_days,
-                "exit_reason": t.exit_reason,
-                "entry_features": t.entry_features,
-                "exit_features": t.exit_features,
-            }
-            if t.market == "hk_share":
-                out["HK_mom"].append(d)
-            else:
-                out["A_mom"].append(d)
+            sleeve = _classify_journal_sleeve(t)
+            out[sleeve].append(_trade_row_to_dict(t))
         zhuang_rows = s.scalars(
             select(ZhuangTrade).where(
                 ZhuangTrade.exit_date.isnot(None),
@@ -535,16 +559,20 @@ def build_report(
             cat_data[key] = {"winners": dict(w_counts), "losers": dict(l_counts)}
         sleeve_data["winner_vs_loser_categorical"] = cat_data
 
-        # §5 exit_features 分布
+        # §5 exit_features 分布 — sleeve-aware exit_type 选择 (PR12, 2026-06-17):
+        #   CB sleeve 用 cb_exit_type (PR11 taxonomy: SCORE_EXIT/STOP_LOSS/FORCE_REDEEM/
+        #   REBALANCE/DELISTED/OTHER). equity/zhuang 仍用 equity exit_type (PR10 落地).
+        exit_type_field = "cb_exit_type" if sleeve == "cb_double_low" else "exit_type"
         exit_types_w = Counter(
-            t.get("exit_features", {}).get("exit_type") for t in winners
+            t.get("exit_features", {}).get(exit_type_field) for t in winners
             if t.get("exit_features")
         )
         exit_types_l = Counter(
-            t.get("exit_features", {}).get("exit_type") for t in losers
+            t.get("exit_features", {}).get(exit_type_field) for t in losers
             if t.get("exit_features")
         )
         sleeve_data["exit_summary"] = {
+            "exit_type_field": exit_type_field,
             "exit_type_winners": dict(exit_types_w),
             "exit_type_losers": dict(exit_types_l),
         }
